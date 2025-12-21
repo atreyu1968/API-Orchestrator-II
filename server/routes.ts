@@ -284,6 +284,9 @@ export async function registerRoutes(
         onChapterComplete: (chapterNumber, wordCount) => {
           sendToStreams({ type: "chapter_complete", chapterNumber, wordCount });
         },
+        onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
+          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
+        },
         onProjectComplete: () => {
           sendToStreams({ type: "project_complete" });
         },
@@ -342,6 +345,9 @@ export async function registerRoutes(
         },
         onChapterComplete: (chapterNumber, wordCount) => {
           sendToStreams({ type: "chapter_complete", chapterNumber, wordCount });
+        },
+        onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
+          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
         },
         onProjectComplete: () => {
           sendToStreams({ type: "project_complete" });

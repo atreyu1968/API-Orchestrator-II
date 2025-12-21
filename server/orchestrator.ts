@@ -5,6 +5,7 @@ import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, T
 interface OrchestratorCallbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
   onChapterComplete: (chapterNumber: number, wordCount: number) => void;
+  onChapterRewrite: (chapterNumber: number, chapterTitle: string, currentIndex: number, totalToRewrite: number, reason: string) => void;
   onProjectComplete: () => void;
   onError: (error: string) => void;
 }
@@ -324,11 +325,12 @@ export class Orchestrator {
         return true;
       }
 
-      this.callbacks.onAgentStatus("final-reviewer", "editing", 
-        `Manuscrito REQUIERE REVISIÓN. ${result?.issues?.length || 0} problemas detectados. Reescribiendo capítulos afectados...`
-      );
-
+      const issueCount = result?.issues?.length || 0;
       const chaptersToRewrite = result?.capitulos_para_reescribir || [];
+      
+      this.callbacks.onAgentStatus("final-reviewer", "editing", 
+        `Manuscrito REQUIERE REVISIÓN. ${issueCount} problemas detectados en ${chaptersToRewrite.length || "varios"} capítulos.`
+      );
       
       if (chaptersToRewrite.length === 0) {
         if (result?.issues && result.issues.length > 0) {
@@ -354,7 +356,8 @@ export class Orchestrator {
         }
       }
 
-      for (const chapterNum of chaptersToRewrite) {
+      for (let rewriteIndex = 0; rewriteIndex < chaptersToRewrite.length; rewriteIndex++) {
+        const chapterNum = chaptersToRewrite[rewriteIndex];
         const chapter = updatedChapters.find(c => c.chapterNumber === chapterNum);
         const sectionData = allSections.find(s => s.numero === chapterNum);
         
@@ -368,6 +371,8 @@ export class Orchestrator {
           `[${issue.categoria.toUpperCase()}] ${issue.descripcion}\nCORRECCIÓN: ${issue.instrucciones_correccion}`
         ).join("\n\n");
 
+        const issuesSummary = issuesForChapter.map(i => i.categoria).join(", ") || "correcciones generales";
+
         await storage.updateChapter(chapter.id, { 
           status: "revision",
           needsRevision: true,
@@ -375,8 +380,17 @@ export class Orchestrator {
         });
 
         const sectionLabel = this.getSectionLabel(sectionData);
+        
+        this.callbacks.onChapterRewrite(
+          chapterNum, 
+          sectionData.titulo, 
+          rewriteIndex + 1, 
+          chaptersToRewrite.length,
+          issuesSummary
+        );
+        
         this.callbacks.onAgentStatus("ghostwriter", "writing", 
-          `El Narrador está reescribiendo ${sectionLabel} (corrección de inconsistencias)...`
+          `Reescribiendo ${sectionLabel} (${rewriteIndex + 1}/${chaptersToRewrite.length}): ${issuesSummary}`
         );
 
         const previousChapter = updatedChapters.find(c => c.chapterNumber === chapterNum - 1);

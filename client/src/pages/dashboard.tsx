@@ -10,7 +10,7 @@ import { ConsoleOutput, type LogEntry } from "@/components/console-output";
 import { ConfigPanel, type ConfigFormData } from "@/components/config-panel";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, StopCircle, FileText, Clock, CheckCircle, Pencil, X, Download, Archive, Copy, Trash2, ClipboardCheck } from "lucide-react";
+import { Play, StopCircle, FileText, Clock, CheckCircle, Pencil, X, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw } from "lucide-react";
 import { ProjectSelector } from "@/components/project-selector";
 import type { Project, AgentStatus, Chapter } from "@shared/schema";
 
@@ -223,6 +223,12 @@ export default function Dashboard() {
               setCompletedStages(prev => prev.includes(role) ? prev : [...prev, role]);
               addLog("success", data.message || `${agentNames[role]} completó su tarea`, role);
             }
+          } else if (data.type === "chapter_rewrite") {
+            addLog("editing", 
+              `Reescribiendo capítulo ${data.chapterNumber}: "${data.chapterTitle}" (${data.currentIndex}/${data.totalToRewrite}) - ${data.reason}`,
+              "final-reviewer"
+            );
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
           } else if (data.type === "chapter_complete") {
             addLog("success", `Capítulo ${data.chapterNumber} completado (${data.wordCount} palabras)`);
             queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
@@ -416,6 +422,8 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2">
                         {chapter.status === "completed" ? (
                           <CheckCircle className="h-4 w-4 text-green-500" />
+                        ) : chapter.status === "revision" ? (
+                          <RefreshCw className="h-4 w-4 text-orange-500 animate-spin" />
                         ) : (
                           <Clock className="h-4 w-4 text-muted-foreground" />
                         )}
@@ -435,12 +443,13 @@ export default function Dashboard() {
                           </span>
                         )}
                         <Badge 
-                          variant={chapter.status === "completed" ? "default" : "secondary"}
+                          variant={chapter.status === "completed" ? "default" : chapter.status === "revision" ? "destructive" : "secondary"}
                           className="text-xs"
                         >
                           {chapter.status === "completed" ? "Completado" : 
                            chapter.status === "writing" ? "Escribiendo" :
-                           chapter.status === "editing" ? "Editando" : "Pendiente"}
+                           chapter.status === "editing" ? "Editando" : 
+                           chapter.status === "revision" ? "Reescribiendo" : "Pendiente"}
                         </Badge>
                       </div>
                     </div>
