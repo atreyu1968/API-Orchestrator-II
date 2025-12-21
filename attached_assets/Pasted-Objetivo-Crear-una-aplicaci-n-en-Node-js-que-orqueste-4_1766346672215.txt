@@ -1,0 +1,48 @@
+Objetivo: Crear una aplicación en Node.js que orqueste 4 agentes literarios autónomos utilizando el motor de razonamiento avanzado de Gemini 3 Pro. La aplicación debe gestionar el flujo completo desde la idea hasta el manuscrito final, utilizando "Deep Thinking" para la planificación y la resolución de conflictos narrativos.
+
+1. Requisitos del Modelo y API:
+Modelo Principal: gemini-3-pro-preview.
+
+Configuración de Razonamiento: Todos los agentes deben configurarse con thinking_level: "high". Esto activa el modo de razonamiento profundo para que la IA planifique cada escena antes de redactarla.
+
+Librería: @google/generative-ai (asegurar compatibilidad con SDK v1.51.0+).
+
+Parámetros: temperature: 1.0 (recomendado para el motor de razonamiento de Gemini 3) y top_p: 0.95.
+
+2. Estructura de Agentes (Tus 4 Gems evolucionados):
+Crea un sistema modular donde cada agente sea una clase o módulo independiente:
+
+Agente Planificador (The Architect): Utiliza "Deep Think" para crear una estructura de tres actos y un esquema de capítulos. Genera un archivo world_bible.json que contiene: Cronología, perfiles psicológicos de personajes y reglas del mundo.
+
+Agente Narrador (The Ghostwriter): Recibe el capítulo asignado y la world_bible.json. Debe usar su capacidad de razonamiento para "previsualizar" la escena antes de escribir la prosa, asegurando que los diálogos y el tono sean consistentes.
+
+Agente Crítico (The Story Editor): Compara el capítulo escrito con el plan original y el "Lore". Si detecta una contradicción (ej. un personaje muerto aparece vivo), debe generar un "Refinement Loop" devolviendo el texto al Narrador con instrucciones de corrección.
+
+Agente Estilista (The Copy Editor): Se encarga del pulido final, gramática y formato Markdown profesional.
+
+3. Orquestación y Persistencia:
+Pipeline Autónomo: La app debe procesar los capítulos uno por uno sin intervención humana.
+
+Sistema de Memoria: Implementa una función que, al terminar cada capítulo, resuma los eventos clave y actualice automáticamente el archivo world_bible.json.
+
+Salida: Cada capítulo debe guardarse en /manuscrito/capitulo_N.md.
+
+Logs de Pensamiento: Captura y guarda en una carpeta /logs los thought_signatures o el proceso de razonamiento de la IA para que yo pueda auditar "cómo pensó" la trama la IA.
+
+4. Interfaz y Control:
+Crea un archivo config.js donde pueda ajustar el género, el tono (ej: oscuro, satírico) y la cantidad de capítulos.
+
+Implementa una interfaz de consola elegante (usa ora o chalk) que muestre:
+
+[PENSANDO] El Arquitecto está diseñando el giro final...
+
+[ESCRIBIENDO] Redactando Capítulo 3 (2500 palabras)...
+
+Por favor, genera primero el archivo orchestrator.js con la lógica del bucle de capítulos y luego crea la carpeta /agents con los prompts de sistema optimizados para razonamiento.
+
+¿Por qué este enfoque es superior?
+Thinking Level "High": Al forzar el nivel de razonamiento alto, Gemini 3 dedicará más tiempo de cómputo interno a verificar que el capítulo 8 no contradiga lo que escribió en el capítulo 2.
+
+Refinement Loop: En Node.js, podemos programar que el Agente 3 (Editor) tenga un "poder de veto". Si el texto no es perfecto, el código lo rechaza automáticamente y pide otra versión. Los Gems normales no pueden rechazarse a sí mismos.
+
+Thought Signatures: Al usar la versión de razonamiento, la API devuelve el "hilo de pensamiento". Podrás ver por qué la IA decidió que un personaje debía traicionar a otro.
