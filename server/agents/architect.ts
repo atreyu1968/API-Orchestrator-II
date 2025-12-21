@@ -5,6 +5,9 @@ interface ArchitectInput {
   genre: string;
   tone: string;
   chapterCount: number;
+  hasPrologue?: boolean;
+  hasEpilogue?: boolean;
+  hasAuthorNote?: boolean;
   ideaInicial?: string;
   guiaEstilo?: string;
 }
@@ -61,15 +64,26 @@ export class ArchitectAgent extends BaseAgent {
     const guiaEstilo = input.guiaEstilo || `Género: ${input.genre}, Tono: ${input.tone}`;
     const ideaInicial = input.ideaInicial || input.title;
 
+    const sectionsInfo = [];
+    if (input.hasPrologue) sectionsInfo.push("PRÓLOGO");
+    sectionsInfo.push(`${input.chapterCount} CAPÍTULOS`);
+    if (input.hasEpilogue) sectionsInfo.push("EPÍLOGO");
+    if (input.hasAuthorNote) sectionsInfo.push("NOTA DEL AUTOR");
+
     const prompt = `
     Basándote en esta idea: "${ideaInicial}" 
     Y siguiendo esta Guía de Estilo: "${guiaEstilo}"
     
-    Genera el plan completo para una novela de ${input.chapterCount} capítulos.
+    Genera el plan completo para una novela con la siguiente estructura:
+    ${sectionsInfo.join(" + ")}
     
     TÍTULO: ${input.title}
     GÉNERO: ${input.genre}
     TONO: ${input.tone}
+    
+    ${input.hasPrologue ? "NOTA: La novela incluirá un PRÓLOGO que debe establecer el tono y sembrar intriga." : ""}
+    ${input.hasEpilogue ? "NOTA: La novela terminará con un EPÍLOGO que cierre todos los arcos narrativos." : ""}
+    ${input.hasAuthorNote ? "NOTA: Incluye reflexiones para una NOTA DEL AUTOR al final." : ""}
     
     Genera el plan completo de la novela siguiendo tus protocolos de arquitectura.
     Responde ÚNICAMENTE con el JSON estructurado según las instrucciones.

@@ -3,7 +3,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -20,7 +20,8 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Minus, Plus, Play, RotateCcw } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
+import { Play, RotateCcw, BookOpen, FileText, ScrollText } from "lucide-react";
 
 const genres = [
   { value: "fantasy", label: "Fantasía", description: "Mundos mágicos y criaturas sobrenaturales" },
@@ -30,6 +31,8 @@ const genres = [
   { value: "horror", label: "Horror", description: "Terror y elementos sobrenaturales" },
   { value: "mystery", label: "Misterio", description: "Investigación y resolución de enigmas" },
   { value: "literary", label: "Literaria", description: "Exploración de la condición humana" },
+  { value: "historical", label: "Histórica", description: "Narrativas en contextos del pasado" },
+  { value: "adventure", label: "Aventura", description: "Viajes y descubrimientos épicos" },
 ];
 
 const tones = [
@@ -39,13 +42,18 @@ const tones = [
   { value: "lyrical", label: "Lírico", description: "Prosa poética y descriptiva" },
   { value: "minimalist", label: "Minimalista", description: "Estilo conciso y directo" },
   { value: "epic", label: "Épico", description: "Grandeza y eventos monumentales" },
+  { value: "intimate", label: "Íntimo", description: "Cercanía emocional con los personajes" },
+  { value: "suspenseful", label: "Tenso", description: "Mantiene al lector en vilo" },
 ];
 
 const configSchema = z.object({
   title: z.string().min(1, "El título es requerido").max(100),
   genre: z.string().min(1, "Selecciona un género"),
   tone: z.string().min(1, "Selecciona un tono"),
-  chapterCount: z.number().min(1).max(20),
+  chapterCount: z.number().min(1).max(50),
+  hasPrologue: z.boolean().default(false),
+  hasEpilogue: z.boolean().default(false),
+  hasAuthorNote: z.boolean().default(false),
 });
 
 type ConfigFormData = z.infer<typeof configSchema>;
@@ -64,23 +72,19 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues }: Con
       title: defaultValues?.title || "",
       genre: defaultValues?.genre || "fantasy",
       tone: defaultValues?.tone || "dramatic",
-      chapterCount: defaultValues?.chapterCount || 5,
+      chapterCount: defaultValues?.chapterCount || 10,
+      hasPrologue: defaultValues?.hasPrologue || false,
+      hasEpilogue: defaultValues?.hasEpilogue || false,
+      hasAuthorNote: defaultValues?.hasAuthorNote || false,
     },
   });
 
   const chapterCount = form.watch("chapterCount");
+  const hasPrologue = form.watch("hasPrologue");
+  const hasEpilogue = form.watch("hasEpilogue");
+  const hasAuthorNote = form.watch("hasAuthorNote");
 
-  const handleIncrement = () => {
-    if (chapterCount < 20) {
-      form.setValue("chapterCount", chapterCount + 1);
-    }
-  };
-
-  const handleDecrement = () => {
-    if (chapterCount > 1) {
-      form.setValue("chapterCount", chapterCount - 1);
-    }
-  };
+  const totalSections = chapterCount + (hasPrologue ? 1 : 0) + (hasEpilogue ? 1 : 0) + (hasAuthorNote ? 1 : 0);
 
   return (
     <Form {...form}>
@@ -169,46 +173,113 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues }: Con
         <FormField
           control={form.control}
           name="chapterCount"
-          render={() => (
+          render={({ field }) => (
             <FormItem>
-              <FormLabel>Número de Capítulos</FormLabel>
-              <div className="flex items-center gap-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={handleDecrement}
-                  disabled={chapterCount <= 1}
-                  data-testid="button-decrement-chapters"
-                >
-                  <Minus className="h-4 w-4" />
-                </Button>
-                <div className="flex-1 text-center">
-                  <span className="text-2xl font-semibold" data-testid="text-chapter-count">
-                    {chapterCount}
-                  </span>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    capítulos
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  onClick={handleIncrement}
-                  disabled={chapterCount >= 20}
-                  data-testid="button-increment-chapters"
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-              </div>
+              <FormLabel>Número de Capítulos: {chapterCount}</FormLabel>
+              <FormControl>
+                <Slider
+                  min={1}
+                  max={50}
+                  step={1}
+                  value={[field.value]}
+                  onValueChange={(value) => field.onChange(value[0])}
+                  className="py-4"
+                  data-testid="slider-chapter-count"
+                />
+              </FormControl>
               <FormDescription>
-                Cada capítulo tendrá aproximadamente 2000-3000 palabras
+                Entre 1 y 50 capítulos (aproximadamente {(chapterCount * 2500).toLocaleString()} - {(chapterCount * 3500).toLocaleString()} palabras)
               </FormDescription>
               <FormMessage />
             </FormItem>
           )}
         />
+
+        <div className="space-y-4 pt-2">
+          <FormLabel className="text-base">Secciones Adicionales</FormLabel>
+          
+          <FormField
+            control={form.control}
+            name="hasPrologue"
+            render={({ field }) => (
+              <FormItem className="flex items-center gap-3 space-y-0 rounded-md border p-3">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    data-testid="checkbox-prologue"
+                  />
+                </FormControl>
+                <div className="flex items-center gap-2 flex-1">
+                  <BookOpen className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <FormLabel className="font-medium cursor-pointer">Prólogo</FormLabel>
+                    <FormDescription className="text-xs">
+                      Introducción previa al primer capítulo
+                    </FormDescription>
+                  </div>
+                </div>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="hasEpilogue"
+            render={({ field }) => (
+              <FormItem className="flex items-center gap-3 space-y-0 rounded-md border p-3">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    data-testid="checkbox-epilogue"
+                  />
+                </FormControl>
+                <div className="flex items-center gap-2 flex-1">
+                  <ScrollText className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <FormLabel className="font-medium cursor-pointer">Epílogo</FormLabel>
+                    <FormDescription className="text-xs">
+                      Cierre posterior al último capítulo
+                    </FormDescription>
+                  </div>
+                </div>
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name="hasAuthorNote"
+            render={({ field }) => (
+              <FormItem className="flex items-center gap-3 space-y-0 rounded-md border p-3">
+                <FormControl>
+                  <Checkbox
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                    data-testid="checkbox-author-note"
+                  />
+                </FormControl>
+                <div className="flex items-center gap-2 flex-1">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <div>
+                    <FormLabel className="font-medium cursor-pointer">Nota del Autor</FormLabel>
+                    <FormDescription className="text-xs">
+                      Reflexiones del autor sobre la obra
+                    </FormDescription>
+                  </div>
+                </div>
+              </FormItem>
+            )}
+          />
+        </div>
+
+        <div className="bg-muted/50 rounded-md p-3 text-sm">
+          <span className="font-medium">Total de secciones:</span>{" "}
+          <span className="text-muted-foreground">
+            {totalSections} ({hasPrologue ? "Prólogo + " : ""}{chapterCount} capítulos{hasEpilogue ? " + Epílogo" : ""}{hasAuthorNote ? " + Nota del Autor" : ""})
+          </span>
+        </div>
 
         <div className="flex gap-3 pt-4">
           <Button 
@@ -218,7 +289,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues }: Con
             data-testid="button-start-project"
           >
             <Play className="h-4 w-4 mr-2" />
-            {isLoading ? "Generando..." : "Iniciar Generación"}
+            {isLoading ? "Creando..." : "Crear Proyecto"}
           </Button>
           {onReset && (
             <Button 

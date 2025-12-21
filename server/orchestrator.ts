@@ -20,6 +20,18 @@ interface ParsedWorldBible {
   estructura_tres_actos?: any;
 }
 
+interface SectionData {
+  numero: number;
+  titulo: string;
+  cronologia: string;
+  ubicacion: string;
+  elenco_presente: string[];
+  objetivo_narrativo: string;
+  beats: string[];
+  continuidad_salida?: string;
+  tipo?: "prologue" | "chapter" | "epilogue" | "author_note";
+}
+
 export class Orchestrator {
   private architect = new ArchitectAgent();
   private ghostwriter = new GhostwriterAgent();
@@ -43,6 +55,9 @@ export class Orchestrator {
         genre: project.genre,
         tone: project.tone,
         chapterCount: project.chapterCount,
+        hasPrologue: project.hasPrologue,
+        hasEpilogue: project.hasEpilogue,
+        hasAuthorNote: project.hasAuthorNote,
       });
 
       if (architectResult.thoughtSignature) {
@@ -66,12 +81,15 @@ export class Orchestrator {
 
       this.callbacks.onAgentStatus("architect", "completed", "Estructura narrativa completada");
 
+      const allSections = this.buildSectionsList(project, worldBibleData);
       const chapters: Chapter[] = [];
-      for (let i = 0; i < project.chapterCount; i++) {
+      
+      for (let i = 0; i < allSections.length; i++) {
+        const section = allSections[i];
         const chapter = await storage.createChapter({
           projectId: project.id,
-          chapterNumber: i + 1,
-          title: worldBibleData.escaleta_capitulos?.[i]?.titulo || `Capítulo ${i + 1}`,
+          chapterNumber: section.numero,
+          title: section.titulo,
           status: "pending",
         });
         chapters.push(chapter);
@@ -81,20 +99,13 @@ export class Orchestrator {
 
       for (let i = 0; i < chapters.length; i++) {
         const chapter = chapters[i];
-        const chapterData = worldBibleData.escaleta_capitulos?.[i] || {
-          numero: i + 1,
-          titulo: `Capítulo ${i + 1}`,
-          cronologia: "",
-          ubicacion: "",
-          elenco_presente: [],
-          objetivo_narrativo: "",
-          beats: [],
-        };
+        const sectionData = allSections[i];
 
         await storage.updateChapter(chapter.id, { status: "writing" });
         await storage.updateProject(project.id, { currentChapter: i + 1 });
 
-        this.callbacks.onAgentStatus("ghostwriter", "writing", `El Narrador está escribiendo el Capítulo ${i + 1}...`);
+        const sectionLabel = this.getSectionLabel(sectionData);
+        this.callbacks.onAgentStatus("ghostwriter", "writing", `El Narrador está escribiendo ${sectionLabel}...`);
 
         let chapterContent = "";
         let approved = false;
@@ -103,8 +114,8 @@ export class Orchestrator {
 
         while (!approved && refinementAttempts < this.maxRefinementLoops) {
           const writerResult = await this.ghostwriter.execute({
-            chapterNumber: i + 1,
-            chapterData,
+            chapterNumber: sectionData.numero,
+            chapterData: sectionData,
             worldBible: worldBibleData.world_bible,
             guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
             previousContinuity,
@@ -124,12 +135,12 @@ export class Orchestrator {
           }
 
           await storage.updateChapter(chapter.id, { status: "editing" });
-          this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando el Capítulo ${i + 1}...`);
+          this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
           const editorResult = await this.editor.execute({
-            chapterNumber: i + 1,
+            chapterNumber: sectionData.numero,
             chapterContent,
-            chapterData,
+            chapterData: sectionData,
             worldBible: worldBibleData.world_bible,
             guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
           });
@@ -146,30 +157,30 @@ export class Orchestrator {
 
           if (editorResult.result?.aprobado) {
             approved = true;
-            this.callbacks.onAgentStatus("editor", "completed", `Capítulo ${i + 1} aprobado (${editorResult.result.puntuacion}/10)`);
+            this.callbacks.onAgentStatus("editor", "completed", `${sectionLabel} aprobado (${editorResult.result.puntuacion}/10)`);
           } else {
             refinementAttempts++;
             
             refinementInstructions = this.buildRefinementInstructions(editorResult.result);
             
             this.callbacks.onAgentStatus("editor", "editing", 
-              `Capítulo ${i + 1} rechazado (${editorResult.result?.puntuacion || 0}/10). Intento ${refinementAttempts}/${this.maxRefinementLoops}.`
+              `${sectionLabel} rechazado (${editorResult.result?.puntuacion || 0}/10). Intento ${refinementAttempts}/${this.maxRefinementLoops}.`
             );
 
             if (refinementAttempts < this.maxRefinementLoops) {
               this.callbacks.onAgentStatus("ghostwriter", "writing", 
-                `El Narrador está reescribiendo el Capítulo ${i + 1} siguiendo el Plan Quirúrgico...`
+                `El Narrador está reescribiendo ${sectionLabel} siguiendo el Plan Quirúrgico...`
               );
             }
           }
         }
 
-        this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo el Capítulo ${i + 1}...`);
+        this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
 
         const polishResult = await this.copyeditor.execute({
           chapterContent,
-          chapterNumber: i + 1,
-          chapterTitle: chapterData.titulo || `Capítulo ${i + 1}`,
+          chapterNumber: sectionData.numero,
+          chapterTitle: sectionData.titulo,
         });
 
         if (polishResult.thoughtSignature) {
@@ -191,13 +202,13 @@ export class Orchestrator {
           status: "completed",
         });
 
-        previousContinuity = chapterData.continuidad_salida || 
-          `Capítulo ${i + 1} completado. Los personajes terminaron en: ${chapterData.ubicacion}`;
+        previousContinuity = sectionData.continuidad_salida || 
+          `${sectionLabel} completado. Los personajes terminaron en: ${sectionData.ubicacion}`;
 
         this.callbacks.onChapterComplete(i + 1, wordCount);
-        this.callbacks.onAgentStatus("copyeditor", "completed", `Capítulo ${i + 1} finalizado (${wordCount} palabras)`);
+        this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
 
-        await this.updateWorldBibleTimeline(project.id, worldBible.id, i + 1, chapterData);
+        await this.updateWorldBibleTimeline(project.id, worldBible.id, sectionData.numero, sectionData);
       }
 
       await storage.updateProject(project.id, { status: "completed" });
@@ -207,6 +218,84 @@ export class Orchestrator {
       console.error("[Orchestrator] Error:", error);
       await storage.updateProject(project.id, { status: "error" });
       this.callbacks.onError(error instanceof Error ? error.message : "Error desconocido");
+    }
+  }
+
+  private buildSectionsList(project: Project, worldBibleData: ParsedWorldBible): SectionData[] {
+    const sections: SectionData[] = [];
+    let sectionNumber = 0;
+
+    if (project.hasPrologue) {
+      sectionNumber++;
+      sections.push({
+        numero: sectionNumber,
+        titulo: "Prólogo",
+        cronologia: "Antes del inicio de la historia",
+        ubicacion: "",
+        elenco_presente: [],
+        objetivo_narrativo: "Establecer el tono y generar intriga para la historia que está por comenzar",
+        beats: ["Gancho inicial", "Presentación del mundo", "Sembrar misterio"],
+        tipo: "prologue",
+      });
+    }
+
+    for (let i = 0; i < project.chapterCount; i++) {
+      sectionNumber++;
+      const chapterData = worldBibleData.escaleta_capitulos?.[i] || {};
+      sections.push({
+        numero: sectionNumber,
+        titulo: chapterData.titulo || `Capítulo ${i + 1}`,
+        cronologia: chapterData.cronologia || "",
+        ubicacion: chapterData.ubicacion || "",
+        elenco_presente: chapterData.elenco_presente || [],
+        objetivo_narrativo: chapterData.objetivo_narrativo || "",
+        beats: chapterData.beats || [],
+        continuidad_salida: chapterData.continuidad_salida,
+        tipo: "chapter",
+      });
+    }
+
+    if (project.hasEpilogue) {
+      sectionNumber++;
+      sections.push({
+        numero: sectionNumber,
+        titulo: "Epílogo",
+        cronologia: "Después del final de la historia",
+        ubicacion: "",
+        elenco_presente: [],
+        objetivo_narrativo: "Cerrar los arcos narrativos y ofrecer una conclusión satisfactoria",
+        beats: ["Resolución final", "Mirada al futuro", "Cierre emocional"],
+        tipo: "epilogue",
+      });
+    }
+
+    if (project.hasAuthorNote) {
+      sectionNumber++;
+      sections.push({
+        numero: sectionNumber,
+        titulo: "Nota del Autor",
+        cronologia: "",
+        ubicacion: "",
+        elenco_presente: [],
+        objetivo_narrativo: "Reflexiones del autor sobre el proceso creativo y la historia",
+        beats: ["Agradecimientos", "Inspiración de la obra", "Mensaje personal"],
+        tipo: "author_note",
+      });
+    }
+
+    return sections;
+  }
+
+  private getSectionLabel(section: SectionData): string {
+    switch (section.tipo) {
+      case "prologue":
+        return "el Prólogo";
+      case "epilogue":
+        return "el Epílogo";
+      case "author_note":
+        return "la Nota del Autor";
+      default:
+        return `el Capítulo ${section.numero}`;
     }
   }
 

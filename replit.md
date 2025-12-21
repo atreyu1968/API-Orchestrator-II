@@ -1,0 +1,78 @@
+# LitAgents - Autonomous Literary Agent Orchestration System
+
+## Overview
+
+LitAgents is a Node.js application that orchestrates 4 autonomous AI literary agents using Google's Gemini 3 Pro model with advanced reasoning capabilities. The system manages the complete novel-writing workflow from plot planning to final manuscript production.
+
+The application features:
+- **4 Specialized AI Agents**: Architect (plot planning), Ghostwriter (prose writing), Editor (quality auditing), and Copy Editor (style polishing)
+- **World Bible System**: Persistent memory for characters, locations, timeline events, and lore rules
+- **Thought Signature Logging**: Captures AI reasoning processes for auditing how decisions were made
+- **Real-time Dashboard**: Monitors agent status, chapter progress, and console output
+- **Refinement Loops**: Automatic rejection and rewriting of chapters that don't meet quality thresholds
+
+## User Preferences
+
+Preferred communication style: Simple, everyday language.
+
+## System Architecture
+
+### Frontend Architecture
+- **Framework**: React with TypeScript
+- **Build Tool**: Vite with custom configuration for Replit environment
+- **Routing**: Wouter for lightweight client-side routing
+- **State Management**: TanStack Query for server state and caching
+- **UI Components**: shadcn/ui component library with Radix UI primitives
+- **Styling**: Tailwind CSS with custom theme using CSS variables for light/dark mode
+- **Design System**: Microsoft Fluent Design approach - productivity-focused with clear typography hierarchy (Inter for UI, JetBrains Mono for logs, Merriweather for manuscripts)
+
+### Backend Architecture
+- **Runtime**: Node.js with Express
+- **Language**: TypeScript with ES modules
+- **API Pattern**: RESTful endpoints with Server-Sent Events (SSE) for real-time updates
+- **Agent System**: Modular agent classes extending a BaseAgent abstract class
+  - Each agent has specialized system prompts optimized for Gemini 3's reasoning mode
+  - Orchestrator manages the pipeline flow between agents
+  - Refinement loops allow the Editor agent to reject and trigger rewrites
+
+### Data Storage
+- **Database**: PostgreSQL with Drizzle ORM
+- **Schema Location**: `shared/schema.ts` contains all table definitions
+- **Key Tables**:
+  - `projects`: Novel projects with genre, tone, and chapter count settings
+  - `chapters`: Individual chapter content with status tracking
+  - `worldBibles`: JSON storage for characters, timeline, rules, and plot outlines
+  - `thoughtLogs`: AI reasoning signatures for each agent action
+  - `agentStatuses`: Real-time status tracking for dashboard display
+
+### AI Integration
+- **Model**: Gemini 3 Pro Preview via Replit AI Integrations
+- **Configuration**: 
+  - `thinkingConfig.thinkingBudget: 10000` for deep reasoning
+  - `temperature: 1.0` and `topP: 0.95` for creative output
+- **Client Setup**: Uses `@google/genai` SDK with Replit's proxy endpoints (no external API key required)
+
+### Build System
+- **Development**: `tsx` for TypeScript execution with hot reload
+- **Production**: esbuild bundles server code, Vite builds client assets
+- **Output**: Combined into `dist/` directory with static files in `dist/public/`
+
+## External Dependencies
+
+### AI Services
+- **Replit AI Integrations**: Provides Gemini API access through environment variables:
+  - `AI_INTEGRATIONS_GEMINI_API_KEY`
+  - `AI_INTEGRATIONS_GEMINI_BASE_URL`
+- Models used: `gemini-3-pro-preview` for text generation, `gemini-2.5-flash-image` for image generation
+
+### Database
+- **PostgreSQL**: Connection via `DATABASE_URL` environment variable
+- **Drizzle Kit**: Database migrations stored in `migrations/` directory
+
+### Key NPM Packages
+- `@google/genai`: Gemini AI SDK
+- `drizzle-orm` / `drizzle-zod`: Database ORM with Zod schema validation
+- `express`: HTTP server framework
+- `@tanstack/react-query`: Async state management
+- `wouter`: Client-side routing
+- Radix UI primitives: Accessible component foundations
