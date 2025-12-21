@@ -27,7 +27,18 @@ export default function ManuscriptPage() {
 
     const content = chapters
       .filter(c => c.content)
-      .map(c => `# Capítulo ${c.chapterNumber}${c.title ? `: ${c.title}` : ''}\n\n${c.content}`)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber)
+      .map(c => {
+        const chapterContent = c.content?.trim() || "";
+        const startsWithHeading = /^#/.test(chapterContent);
+        
+        if (startsWithHeading) {
+          return chapterContent;
+        }
+        
+        const header = `# Capítulo ${c.chapterNumber}${c.title ? `: ${c.title}` : ''}`;
+        return `${header}\n\n${chapterContent}`;
+      })
       .join('\n\n---\n\n');
 
     const blob = new Blob([content], { type: 'text/markdown' });
