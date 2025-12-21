@@ -451,6 +451,94 @@ export class Orchestrator {
     return false;
   }
 
+  async runFinalReviewOnly(project: Project): Promise<void> {
+    try {
+      let styleGuideContent = "";
+      let authorName = "";
+      
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) {
+          styleGuideContent = styleGuide.content;
+        }
+      }
+      
+      if (project.pseudonymId) {
+        const pseudonym = await storage.getPseudonym(project.pseudonymId);
+        if (pseudonym) {
+          authorName = pseudonym.name;
+        }
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) {
+        this.callbacks.onError("No se encontró la biblia del mundo para este proyecto");
+        return;
+      }
+
+      const worldBibleData: ParsedWorldBible = {
+        world_bible: {
+          personajes: worldBible.characters as any[] || [],
+          lugares: [],
+          reglas_lore: worldBible.worldRules as any[] || [],
+        },
+        escaleta_capitulos: worldBible.plotOutline as any[] || [],
+      };
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const allSections = this.buildSectionsListFromChapters(chapters, worldBibleData);
+
+      const approved = await this.runFinalReview(
+        project,
+        chapters,
+        allSections,
+        worldBibleData,
+        styleGuideContent,
+        authorName
+      );
+
+      await storage.updateProject(project.id, { 
+        status: "completed",
+        finalReviewResult: { approved }
+      });
+
+      if (approved) {
+        this.callbacks.onAgentStatus("final-reviewer", "completed", "Revisión final aprobada");
+      } else {
+        this.callbacks.onAgentStatus("final-reviewer", "completed", "Revisión final completada (límite de ciclos alcanzado)");
+      }
+
+      this.callbacks.onProjectComplete();
+    } catch (error) {
+      console.error("Final review error:", error);
+      this.callbacks.onError(`Error en revisión final: ${error instanceof Error ? error.message : "Error desconocido"}`);
+      await storage.updateProject(project.id, { status: "completed" });
+    }
+  }
+
+  private buildSectionsListFromChapters(chapters: Chapter[], worldBibleData: ParsedWorldBible): SectionData[] {
+    return chapters.map((chapter, index) => {
+      const chapterData = worldBibleData.escaleta_capitulos?.[index] || {};
+      let tipo: "prologue" | "chapter" | "epilogue" | "author_note" = "chapter";
+      
+      if (chapter.title === "Prólogo") tipo = "prologue";
+      else if (chapter.title === "Epílogo") tipo = "epilogue";
+      else if (chapter.title === "Nota del Autor") tipo = "author_note";
+
+      return {
+        numero: chapter.chapterNumber,
+        titulo: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+        cronologia: chapterData.cronologia || "",
+        ubicacion: chapterData.ubicacion || "",
+        elenco_presente: chapterData.elenco_presente || [],
+        objetivo_narrativo: chapterData.objetivo_narrativo || "",
+        beats: chapterData.beats || [],
+        continuidad_salida: chapterData.continuidad_salida,
+        tipo,
+      };
+    });
+  }
+
   private buildSectionsList(project: Project, worldBibleData: ParsedWorldBible): SectionData[] {
     const sections: SectionData[] = [];
     let sectionNumber = 0;

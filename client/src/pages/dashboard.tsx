@@ -10,7 +10,7 @@ import { ConsoleOutput, type LogEntry } from "@/components/console-output";
 import { ConfigPanel, type ConfigFormData } from "@/components/config-panel";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, StopCircle, FileText, Clock, CheckCircle, Pencil, X, Download, Archive, Copy, Trash2 } from "lucide-react";
+import { Play, StopCircle, FileText, Clock, CheckCircle, Pencil, X, Download, Archive, Copy, Trash2, ClipboardCheck } from "lucide-react";
 import { ProjectSelector } from "@/components/project-selector";
 import type { Project, AgentStatus, Chapter } from "@shared/schema";
 
@@ -173,6 +173,21 @@ export default function Dashboard() {
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo eliminar el proyecto", variant: "destructive" });
+    },
+  });
+
+  const finalReviewMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/final-review`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Revisión final iniciada", description: "El Revisor Final está analizando el manuscrito" });
+      addLog("thinking", "Iniciando revisión final del manuscrito...", "final-reviewer");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo iniciar la revisión final", variant: "destructive" });
     },
   });
 
@@ -364,17 +379,29 @@ export default function Dashboard() {
                     <span>{totalWordCount.toLocaleString()} palabras</span>
                   </div>
                   {currentProject.status === "completed" && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        window.open(`/api/projects/${currentProject.id}/export-docx`, "_blank");
-                      }}
-                      data-testid="button-export-docx"
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Exportar Word
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => finalReviewMutation.mutate(currentProject.id)}
+                        disabled={finalReviewMutation.isPending}
+                        data-testid="button-final-review"
+                      >
+                        <ClipboardCheck className="h-4 w-4 mr-2" />
+                        Revisión Final
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          window.open(`/api/projects/${currentProject.id}/export-docx`, "_blank");
+                        }}
+                        data-testid="button-export-docx"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Exportar Word
+                      </Button>
+                    </>
                   )}
                 </div>
               </CardHeader>

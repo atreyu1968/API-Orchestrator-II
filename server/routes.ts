@@ -300,6 +300,65 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/projects/:id/final-review", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.status !== "completed") {
+        return res.status(400).json({ error: "Solo se puede ejecutar la revisión final en proyectos completados" });
+      }
+
+      await storage.updateProject(id, { 
+        status: "generating",
+        revisionCycle: 0,
+        finalReviewResult: null
+      });
+
+      res.json({ message: "Final review started", projectId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+        },
+        onChapterComplete: (chapterNumber, wordCount) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount });
+        },
+        onProjectComplete: () => {
+          sendToStreams({ type: "project_complete" });
+        },
+        onError: (error) => {
+          sendToStreams({ type: "error", message: error });
+        },
+      });
+
+      orchestrator.runFinalReviewOnly(project).catch(console.error);
+
+    } catch (error) {
+      console.error("Error starting final review:", error);
+      res.status(500).json({ error: "Failed to start final review" });
+    }
+  });
+
   app.get("/api/projects/:id/stream", (req: Request, res: Response) => {
     const id = parseInt(req.params.id);
 
