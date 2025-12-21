@@ -1,6 +1,6 @@
-import { Check, Brain, Pencil, Eye, FileText, ArrowRight } from "lucide-react";
+import { Check, Brain, Pencil, Eye, FileText, ArrowRight, ClipboardCheck } from "lucide-react";
 
-type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor";
+export type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer";
 type StageStatus = "pending" | "active" | "completed";
 
 interface ProcessFlowProps {
@@ -13,6 +13,7 @@ const stages: { role: AgentRole; name: string; icon: React.ReactNode }[] = [
   { role: "ghostwriter", name: "Narrador", icon: <Pencil className="h-4 w-4" /> },
   { role: "editor", name: "Editor", icon: <Eye className="h-4 w-4" /> },
   { role: "copyeditor", name: "Estilista", icon: <FileText className="h-4 w-4" /> },
+  { role: "final-reviewer", name: "Revisor Final", icon: <ClipboardCheck className="h-4 w-4" /> },
 ];
 
 function getStageStatus(role: AgentRole, currentStage: AgentRole | null, completedStages: AgentRole[]): StageStatus {

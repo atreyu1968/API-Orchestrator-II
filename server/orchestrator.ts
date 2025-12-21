@@ -1,5 +1,5 @@
 import { storage } from "./storage";
-import { ArchitectAgent, GhostwriterAgent, EditorAgent, CopyEditorAgent, type EditorResult } from "./agents";
+import { ArchitectAgent, GhostwriterAgent, EditorAgent, CopyEditorAgent, FinalReviewerAgent, type EditorResult, type FinalReviewerResult } from "./agents";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
 
 interface OrchestratorCallbacks {
@@ -37,8 +37,10 @@ export class Orchestrator {
   private ghostwriter = new GhostwriterAgent();
   private editor = new EditorAgent();
   private copyeditor = new CopyEditorAgent();
+  private finalReviewer = new FinalReviewerAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 2;
+  private maxFinalReviewCycles = 3;
 
   constructor(callbacks: OrchestratorCallbacks) {
     this.callbacks = callbacks;
@@ -236,14 +238,217 @@ export class Orchestrator {
         await this.updateWorldBibleTimeline(project.id, worldBible.id, sectionData.numero, sectionData);
       }
 
-      await storage.updateProject(project.id, { status: "completed" });
-      this.callbacks.onProjectComplete();
+      const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
+      const fullStyleGuide = styleGuideContent 
+        ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+        : baseStyleGuide;
+
+      const finalReviewApproved = await this.runFinalReview(
+        project, 
+        chapters, 
+        worldBibleData, 
+        fullStyleGuide, 
+        allSections,
+        styleGuideContent,
+        authorName
+      );
+
+      if (finalReviewApproved) {
+        await storage.updateProject(project.id, { status: "completed" });
+        this.callbacks.onProjectComplete();
+      } else {
+        await storage.updateProject(project.id, { status: "failed_final_review" });
+        this.callbacks.onError("El manuscrito no pasó la revisión final después de múltiples intentos.");
+      }
 
     } catch (error) {
       console.error("[Orchestrator] Error:", error);
       await storage.updateProject(project.id, { status: "error" });
       this.callbacks.onError(error instanceof Error ? error.message : "Error desconocido");
     }
+  }
+
+  private async runFinalReview(
+    project: Project,
+    chapters: Chapter[],
+    worldBibleData: ParsedWorldBible,
+    guiaEstilo: string,
+    allSections: SectionData[],
+    styleGuideContent: string,
+    authorName: string
+  ): Promise<boolean> {
+    let revisionCycle = 0;
+    
+    while (revisionCycle < this.maxFinalReviewCycles) {
+      this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
+        `El Revisor Final está analizando el manuscrito completo... (Ciclo ${revisionCycle + 1}/${this.maxFinalReviewCycles})`
+      );
+
+      const updatedChapters = await storage.getChaptersByProject(project.id);
+      const chaptersForReview = updatedChapters
+        .filter(c => c.content)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber)
+        .map(c => ({
+          numero: c.chapterNumber,
+          titulo: c.title || `Capítulo ${c.chapterNumber}`,
+          contenido: c.content || "",
+        }));
+
+      const reviewResult = await this.finalReviewer.execute({
+        projectTitle: project.title,
+        chapters: chaptersForReview,
+        worldBible: worldBibleData.world_bible,
+        guiaEstilo,
+      });
+
+      if (reviewResult.thoughtSignature) {
+        await storage.createThoughtLog({
+          projectId: project.id,
+          agentName: "El Revisor Final",
+          agentRole: "final-reviewer",
+          thoughtContent: reviewResult.thoughtSignature,
+        });
+      }
+
+      const result = reviewResult.result;
+      
+      await storage.updateProject(project.id, { 
+        revisionCycle: revisionCycle + 1,
+        finalReviewResult: result as any
+      });
+
+      if (result?.veredicto === "APROBADO") {
+        this.callbacks.onAgentStatus("final-reviewer", "completed", 
+          `Manuscrito APROBADO (${result.puntuacion_global}/10). Sin inconsistencias detectadas.`
+        );
+        return true;
+      }
+
+      this.callbacks.onAgentStatus("final-reviewer", "editing", 
+        `Manuscrito REQUIERE REVISIÓN. ${result?.issues?.length || 0} problemas detectados. Reescribiendo capítulos afectados...`
+      );
+
+      const chaptersToRewrite = result?.capitulos_para_reescribir || [];
+      
+      if (chaptersToRewrite.length === 0) {
+        if (result?.issues && result.issues.length > 0) {
+          const affectedChapters = new Set<number>();
+          result.issues.forEach(issue => {
+            issue.capitulos_afectados.forEach(ch => affectedChapters.add(ch));
+          });
+          
+          if (affectedChapters.size > 0) {
+            chaptersToRewrite.push(...Array.from(affectedChapters));
+          } else {
+            this.callbacks.onAgentStatus("final-reviewer", "error", 
+              `Revisión rechazada pero sin capítulos específicos. Marcando como fallo.`
+            );
+            revisionCycle++;
+            continue;
+          }
+        } else {
+          this.callbacks.onAgentStatus("final-reviewer", "completed", 
+            `Revisión completada sin problemas específicos.`
+          );
+          return true;
+        }
+      }
+
+      for (const chapterNum of chaptersToRewrite) {
+        const chapter = updatedChapters.find(c => c.chapterNumber === chapterNum);
+        const sectionData = allSections.find(s => s.numero === chapterNum);
+        
+        if (!chapter || !sectionData) continue;
+
+        const issuesForChapter = result?.issues?.filter(
+          i => i.capitulos_afectados.includes(chapterNum)
+        ) || [];
+        
+        const revisionInstructions = issuesForChapter.map(issue => 
+          `[${issue.categoria.toUpperCase()}] ${issue.descripcion}\nCORRECCIÓN: ${issue.instrucciones_correccion}`
+        ).join("\n\n");
+
+        await storage.updateChapter(chapter.id, { 
+          status: "revision",
+          needsRevision: true,
+          revisionReason: revisionInstructions 
+        });
+
+        const sectionLabel = this.getSectionLabel(sectionData);
+        this.callbacks.onAgentStatus("ghostwriter", "writing", 
+          `El Narrador está reescribiendo ${sectionLabel} (corrección de inconsistencias)...`
+        );
+
+        const previousChapter = updatedChapters.find(c => c.chapterNumber === chapterNum - 1);
+        const previousContinuity = previousChapter?.content 
+          ? `Continuidad del capítulo anterior disponible.` 
+          : "";
+
+        const writerResult = await this.ghostwriter.execute({
+          chapterNumber: sectionData.numero,
+          chapterData: sectionData,
+          worldBible: worldBibleData.world_bible,
+          guiaEstilo,
+          previousContinuity,
+          refinementInstructions: `CORRECCIONES DEL REVISOR FINAL:\n${revisionInstructions}`,
+          authorName,
+        });
+
+        let chapterContent = writerResult.content;
+
+        this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
+
+        const editorResult = await this.editor.execute({
+          chapterNumber: sectionData.numero,
+          chapterContent,
+          chapterData: sectionData,
+          worldBible: worldBibleData.world_bible,
+          guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
+        });
+
+        if (!editorResult.result?.aprobado) {
+          const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
+          const rewriteResult = await this.ghostwriter.execute({
+            chapterNumber: sectionData.numero,
+            chapterData: sectionData,
+            worldBible: worldBibleData.world_bible,
+            guiaEstilo,
+            previousContinuity,
+            refinementInstructions,
+            authorName,
+          });
+          chapterContent = rewriteResult.content;
+        }
+
+        this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
+
+        const polishResult = await this.copyeditor.execute({
+          chapterContent,
+          chapterNumber: sectionData.numero,
+          chapterTitle: sectionData.titulo,
+          guiaEstilo: styleGuideContent || undefined,
+        });
+
+        const finalContent = polishResult.result?.texto_final || chapterContent;
+        const wordCount = finalContent.split(/\s+/).length;
+
+        await storage.updateChapter(chapter.id, {
+          content: finalContent,
+          wordCount,
+          status: "completed",
+          needsRevision: false,
+          revisionReason: null,
+        });
+
+        this.callbacks.onAgentStatus("copyeditor", "completed", 
+          `${sectionLabel} corregido y finalizado (${wordCount} palabras)`
+        );
+      }
+
+      revisionCycle++;
+    }
+
+    return false;
   }
 
   private buildSectionsList(project: Project, worldBibleData: ParsedWorldBible): SectionData[] {

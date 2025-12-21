@@ -14,13 +14,14 @@ import { Play, StopCircle, FileText, Clock, CheckCircle, Pencil, X, Download, Ar
 import { ProjectSelector } from "@/components/project-selector";
 import type { Project, AgentStatus, Chapter } from "@shared/schema";
 
-type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor";
+import type { AgentRole } from "@/components/process-flow";
 
-const agentNames = {
+const agentNames: Record<AgentRole, string> = {
   architect: "El Arquitecto",
   ghostwriter: "El Narrador",
   editor: "El Editor",
   copyeditor: "El Estilista",
+  "final-reviewer": "El Revisor Final",
 };
 
 export default function Dashboard() {
@@ -296,7 +297,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <AgentCard 
           name={agentNames.architect}
           role="architect"
@@ -316,6 +317,11 @@ export default function Dashboard() {
           name={agentNames.copyeditor}
           role="copyeditor"
           {...getAgentStatus("copyeditor")}
+        />
+        <AgentCard 
+          name={agentNames["final-reviewer"]}
+          role="final-reviewer"
+          {...getAgentStatus("final-reviewer")}
         />
       </div>
 

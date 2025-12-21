@@ -49,6 +49,9 @@ export const projects = pgTable("projects", {
   styleGuideId: integer("style_guide_id").references(() => styleGuides.id, { onDelete: "set null" }),
   status: text("status").notNull().default("idle"),
   currentChapter: integer("current_chapter").default(0),
+  revisionCycle: integer("revision_cycle").default(0),
+  maxRevisionCycles: integer("max_revision_cycles").default(3),
+  finalReviewResult: jsonb("final_review_result"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -60,6 +63,8 @@ export const chapters = pgTable("chapters", {
   content: text("content"),
   wordCount: integer("word_count").default(0),
   status: text("status").notNull().default("pending"),
+  needsRevision: boolean("needs_revision").default(false),
+  revisionReason: text("revision_reason"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

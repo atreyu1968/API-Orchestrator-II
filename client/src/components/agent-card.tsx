@@ -1,10 +1,10 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Pencil, Brain, Eye, FileText, Loader2 } from "lucide-react";
+import { Pencil, Brain, Eye, FileText, Loader2, ClipboardCheck } from "lucide-react";
 
-type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor";
-type AgentStatusType = "idle" | "thinking" | "writing" | "editing" | "completed" | "error";
+type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer";
+type AgentStatusType = "idle" | "thinking" | "writing" | "editing" | "reviewing" | "polishing" | "completed" | "error";
 
 interface AgentCardProps {
   name: string;
@@ -20,6 +20,7 @@ const roleIcons: Record<AgentRole, React.ReactNode> = {
   ghostwriter: <Pencil className="h-5 w-5" />,
   editor: <Eye className="h-5 w-5" />,
   copyeditor: <FileText className="h-5 w-5" />,
+  "final-reviewer": <ClipboardCheck className="h-5 w-5" />,
 };
 
 const roleColors: Record<AgentRole, string> = {
@@ -27,6 +28,7 @@ const roleColors: Record<AgentRole, string> = {
   ghostwriter: "bg-chart-2/10 text-chart-2",
   editor: "bg-chart-3/10 text-chart-3",
   copyeditor: "bg-chart-4/10 text-chart-4",
+  "final-reviewer": "bg-chart-5/10 text-chart-5",
 };
 
 const statusColors: Record<AgentStatusType, string> = {
@@ -34,6 +36,8 @@ const statusColors: Record<AgentStatusType, string> = {
   thinking: "bg-chart-1/20 text-chart-1",
   writing: "bg-chart-2/20 text-chart-2",
   editing: "bg-chart-3/20 text-chart-3",
+  reviewing: "bg-chart-5/20 text-chart-5",
+  polishing: "bg-chart-4/20 text-chart-4",
   completed: "bg-green-500/20 text-green-600 dark:text-green-400",
   error: "bg-destructive/20 text-destructive",
 };
@@ -43,6 +47,8 @@ const statusLabels: Record<AgentStatusType, string> = {
   thinking: "Pensando",
   writing: "Escribiendo",
   editing: "Editando",
+  reviewing: "Revisando",
+  polishing: "Puliendo",
   completed: "Completado",
   error: "Error",
 };
