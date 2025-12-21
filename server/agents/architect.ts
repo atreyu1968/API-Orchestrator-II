@@ -24,12 +24,35 @@ PRINCIPIOS DE RAZONAMIENTO (Tus Guardrails):
 TU MISIÓN:
 Crear la "Guía de Escritura Extendida" (Blueprint) y la base de datos "World Bible".
 
+REGLAS CRÍTICAS DE CONTINUIDAD:
+1. RASGOS FÍSICOS INMUTABLES: Los rasgos físicos de cada personaje (color de ojos, cabello, cicatrices, altura) son CANÓNICOS y NUNCA pueden cambiar a lo largo de la novela. Documéntalos con precisión.
+2. FICHAS DETALLADAS: Cada personaje DEBE tener una ficha completa con apariencia física exacta que servirá de referencia obligatoria para todos los capítulos.
+3. WATCHPOINTS: Identifica elementos que requieren consistencia especial (objetos únicos, vestimenta característica, modismos del habla).
+
 INSTRUCCIONES DE SALIDA:
 Genera un JSON con las siguientes claves:
 - "world_bible": { 
-    "personajes": [{ "nombre": "", "rol": "", "perfil_psicologico": "", "arco": "", "relaciones": [], "vivo": true }], 
+    "personajes": [{ 
+      "nombre": "", 
+      "rol": "", 
+      "perfil_psicologico": "", 
+      "arco": "", 
+      "relaciones": [], 
+      "vivo": true,
+      "apariencia_inmutable": {
+        "ojos": "Color y descripción precisa - CANÓNICO",
+        "cabello": "Color, longitud, textura - CANÓNICO",
+        "piel": "Tono y características - CANÓNICO",
+        "altura": "Descripción relativa - CANÓNICO",
+        "rasgos_distintivos": ["Cicatrices, lunares, marcas únicas - CANÓNICO"],
+        "voz": "Características del habla"
+      },
+      "vestimenta_habitual": "",
+      "modismos_habla": ["Frases o expresiones características del personaje"]
+    }], 
     "lugares": [{ "nombre": "", "descripcion": "", "reglas": [] }], 
-    "reglas_lore": [{ "categoria": "", "regla": "", "restricciones": [] }] 
+    "reglas_lore": [{ "categoria": "", "regla": "", "restricciones": [] }],
+    "watchpoints_continuidad": ["Lista de elementos que requieren verificación constante"]
   }
 - "escaleta_capitulos": [
     {
@@ -40,6 +63,8 @@ Genera un JSON con las siguientes claves:
       "elenco_presente": [],
       "objetivo_narrativo": "",
       "beats": [],
+      "tension_emocional": "Nivel de tensión requerido: bajo/medio/alto/climático",
+      "setup_emocional": "Qué debe sentir el lector ANTES de los eventos principales",
       "continuidad_salida": "Estado final de los personajes y el entorno para el próximo agente"
     }
 ]
