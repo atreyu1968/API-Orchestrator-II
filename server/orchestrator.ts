@@ -487,12 +487,14 @@ export class Orchestrator {
 
       const chapters = await storage.getChaptersByProject(project.id);
       const allSections = this.buildSectionsListFromChapters(chapters, worldBibleData);
+      const guiaEstilo = `Género: ${project.genre}, Tono: ${project.tone}`;
 
       const approved = await this.runFinalReview(
         project,
         chapters,
-        allSections,
         worldBibleData,
+        guiaEstilo,
+        allSections,
         styleGuideContent,
         authorName
       );
