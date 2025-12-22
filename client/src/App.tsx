@@ -17,6 +17,7 @@ import ThoughtLogsPage from "@/pages/thought-logs";
 import ConfigPage from "@/pages/config";
 import PseudonymsPage from "@/pages/pseudonyms";
 import ImportPage from "@/pages/import";
+import asdLogo from "@assets/ASD_1766442257801.png";
 
 function Router() {
   return (
@@ -72,6 +73,10 @@ function App() {
                   <main className="flex-1 overflow-auto">
                     <Router />
                   </main>
+                  <footer className="flex items-center justify-center gap-2 px-3 py-1.5 border-t text-xs text-muted-foreground shrink-0">
+                    <img src={asdLogo} alt="ASD" className="h-4 w-auto" />
+                    <span>&copy; {new Date().getFullYear()} Atreyu Servicios Digitales</span>
+                  </footer>
                 </div>
               </div>
             </SidebarProvider>
