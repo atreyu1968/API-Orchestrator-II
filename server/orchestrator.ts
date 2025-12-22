@@ -845,12 +845,10 @@ export class Orchestrator {
 
   private buildSectionsList(project: Project, worldBibleData: ParsedWorldBible): SectionData[] {
     const sections: SectionData[] = [];
-    let sectionNumber = 0;
 
     if (project.hasPrologue) {
-      sectionNumber++;
       sections.push({
-        numero: sectionNumber,
+        numero: 0,
         titulo: "Prólogo",
         cronologia: "Antes del inicio de la historia",
         ubicacion: "",
@@ -862,10 +860,9 @@ export class Orchestrator {
     }
 
     for (let i = 0; i < project.chapterCount; i++) {
-      sectionNumber++;
       const chapterData = worldBibleData.escaleta_capitulos?.[i] || {};
       sections.push({
-        numero: sectionNumber,
+        numero: i + 1,
         titulo: chapterData.titulo || `Capítulo ${i + 1}`,
         cronologia: chapterData.cronologia || "",
         ubicacion: chapterData.ubicacion || "",
@@ -878,9 +875,8 @@ export class Orchestrator {
     }
 
     if (project.hasEpilogue) {
-      sectionNumber++;
       sections.push({
-        numero: sectionNumber,
+        numero: -1,
         titulo: "Epílogo",
         cronologia: "Después del final de la historia",
         ubicacion: "",
@@ -892,9 +888,8 @@ export class Orchestrator {
     }
 
     if (project.hasAuthorNote) {
-      sectionNumber++;
       sections.push({
-        numero: sectionNumber,
+        numero: -2,
         titulo: "Nota del Autor",
         cronologia: "",
         ubicacion: "",
