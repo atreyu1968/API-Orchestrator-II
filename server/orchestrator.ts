@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { ArchitectAgent, GhostwriterAgent, EditorAgent, CopyEditorAgent, FinalReviewerAgent, type EditorResult, type FinalReviewerResult } from "./agents";
+import type { TokenUsage } from "./agents/base-agent";
 import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, TimelineEvent } from "@shared/schema";
 
 interface OrchestratorCallbacks {
@@ -42,13 +43,42 @@ export class Orchestrator {
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 2;
   private maxFinalReviewCycles = 3;
+  
+  private cumulativeTokens = {
+    inputTokens: 0,
+    outputTokens: 0,
+    thinkingTokens: 0,
+  };
 
   constructor(callbacks: OrchestratorCallbacks) {
     this.callbacks = callbacks;
   }
+  
+  private async trackTokenUsage(projectId: number, tokenUsage?: TokenUsage): Promise<void> {
+    if (!tokenUsage) return;
+    
+    this.cumulativeTokens.inputTokens += tokenUsage.inputTokens;
+    this.cumulativeTokens.outputTokens += tokenUsage.outputTokens;
+    this.cumulativeTokens.thinkingTokens += tokenUsage.thinkingTokens;
+    
+    await storage.updateProject(projectId, {
+      totalInputTokens: this.cumulativeTokens.inputTokens,
+      totalOutputTokens: this.cumulativeTokens.outputTokens,
+      totalThinkingTokens: this.cumulativeTokens.thinkingTokens,
+    });
+  }
+  
+  private resetTokenTracking(): void {
+    this.cumulativeTokens = {
+      inputTokens: 0,
+      outputTokens: 0,
+      thinkingTokens: 0,
+    };
+  }
 
   async generateNovel(project: Project): Promise<void> {
     try {
+      this.resetTokenTracking();
       await storage.updateProject(project.id, { status: "generating" });
 
       let styleGuideContent = "";
@@ -80,6 +110,8 @@ export class Orchestrator {
         hasEpilogue: project.hasEpilogue,
         hasAuthorNote: project.hasAuthorNote,
       });
+
+      await this.trackTokenUsage(project.id, architectResult.tokenUsage);
 
       if (architectResult.thoughtSignature) {
         await storage.createThoughtLog({
@@ -150,6 +182,7 @@ export class Orchestrator {
           });
 
           chapterContent = writerResult.content;
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage);
 
           if (writerResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -171,6 +204,8 @@ export class Orchestrator {
             worldBible: worldBibleData.world_bible,
             guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
           });
+
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage);
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -210,6 +245,8 @@ export class Orchestrator {
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
         });
+
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage);
 
         if (polishResult.thoughtSignature) {
           await storage.createThoughtLog({
@@ -301,6 +338,8 @@ export class Orchestrator {
         worldBible: worldBibleData.world_bible,
         guiaEstilo,
       });
+
+      await this.trackTokenUsage(project.id, reviewResult.tokenUsage);
 
       if (reviewResult.thoughtSignature) {
         await storage.createThoughtLog({
@@ -409,6 +448,7 @@ export class Orchestrator {
         });
 
         let chapterContent = writerResult.content;
+        await this.trackTokenUsage(project.id, writerResult.tokenUsage);
 
         this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
@@ -419,6 +459,8 @@ export class Orchestrator {
           worldBible: worldBibleData.world_bible,
           guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
         });
+
+        await this.trackTokenUsage(project.id, editorResult.tokenUsage);
 
         if (!editorResult.result?.aprobado) {
           const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
@@ -432,6 +474,7 @@ export class Orchestrator {
             authorName,
           });
           chapterContent = rewriteResult.content;
+          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage);
         }
 
         this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
@@ -442,6 +485,7 @@ export class Orchestrator {
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
         });
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage);
 
         const finalContent = polishResult.result?.texto_final || chapterContent;
         const wordCount = finalContent.split(/\s+/).length;
