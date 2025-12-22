@@ -6,7 +6,7 @@ import { ChapterViewer } from "@/components/chapter-viewer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Download, BookOpen } from "lucide-react";
-import { ProjectSelector } from "@/components/project-selector";
+import { useProject } from "@/lib/project-context";
 import type { Project, Chapter } from "@shared/schema";
 
 function sortChaptersForDisplay<T extends { chapterNumber: number }>(chapters: T[]): T[] {
@@ -19,16 +19,7 @@ function sortChaptersForDisplay<T extends { chapterNumber: number }>(chapters: T
 
 export default function ManuscriptPage() {
   const [selectedChapter, setSelectedChapter] = useState<Chapter | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
-
-  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
-
-  const selectedProject = selectedProjectId 
-    ? projects.find(p => p.id === selectedProjectId) 
-    : projects.filter(p => p.status !== "archived")[0];
-  const currentProject = selectedProject || projects[0];
+  const { currentProject, isLoading: projectsLoading } = useProject();
 
   const { data: chapters = [], isLoading: chaptersLoading } = useQuery<Chapter[]>({
     queryKey: ["/api/projects", currentProject?.id, "chapters"],
@@ -106,16 +97,6 @@ export default function ManuscriptPage() {
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          {projects.length > 1 && (
-            <ProjectSelector
-              projects={projects}
-              selectedProjectId={currentProject.id}
-              onSelectProject={(id) => {
-                setSelectedProjectId(id);
-                setSelectedChapter(null);
-              }}
-            />
-          )}
           <Button 
             variant="outline"
             onClick={handleDownload}

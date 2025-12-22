@@ -9,7 +9,7 @@ import { ConsoleOutput, type LogEntry } from "@/components/console-output";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus } from "lucide-react";
-import { ProjectSelector } from "@/components/project-selector";
+import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
 import type { Project, AgentStatus, Chapter } from "@shared/schema";
 
@@ -43,11 +43,7 @@ export default function Dashboard() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [currentStage, setCurrentStage] = useState<AgentRole | null>(null);
   const [completedStages, setCompletedStages] = useState<AgentRole[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
-
-  const { data: projects = [], isLoading: projectsLoading } = useQuery<Project[]>({
-    queryKey: ["/api/projects"],
-  });
+  const { projects, currentProject, setSelectedProjectId } = useProject();
 
   const { data: agentStatuses = [] } = useQuery<AgentStatus[]>({
     queryKey: ["/api/agent-statuses"],
@@ -55,10 +51,6 @@ export default function Dashboard() {
   });
 
   const activeProject = projects.find(p => p.status === "generating");
-  const selectedProject = selectedProjectId 
-    ? projects.find(p => p.id === selectedProjectId) 
-    : projects.filter(p => p.status !== "archived")[0];
-  const currentProject = selectedProject || projects[0];
 
   const { data: chapters = [] } = useQuery<Chapter[]>({
     queryKey: ["/api/projects", currentProject?.id, "chapters"],
@@ -316,21 +308,12 @@ export default function Dashboard() {
             Orquestación de agentes literarios autónomos
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          {projects.length > 0 && (
-            <ProjectSelector
-              projects={projects}
-              selectedProjectId={currentProject?.id || null}
-              onSelectProject={setSelectedProjectId}
-            />
-          )}
-          {activeProject && (
-            <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 text-sm px-3 py-1">
-              <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
-              Generando: {activeProject.title}
-            </Badge>
-          )}
-        </div>
+        {activeProject && (
+          <Badge className="bg-green-500/20 text-green-600 dark:text-green-400 text-sm px-3 py-1">
+            <div className="w-2 h-2 rounded-full bg-green-500 mr-2 animate-pulse" />
+            Generando: {activeProject.title}
+          </Badge>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
