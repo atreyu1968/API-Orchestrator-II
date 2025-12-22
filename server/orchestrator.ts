@@ -68,7 +68,7 @@ export class Orchestrator {
   private copyeditor = new CopyEditorAgent();
   private finalReviewer = new FinalReviewerAgent();
   private callbacks: OrchestratorCallbacks;
-  private maxRefinementLoops = 2;
+  private maxRefinementLoops = 3;
   private maxFinalReviewCycles = 3;
   
   private cumulativeTokens = {
@@ -1044,32 +1044,76 @@ export class Orchestrator {
 
     const parts: string[] = [];
     
+    parts.push(`═══════════════════════════════════════════════════════════════════`);
+    parts.push(`FEEDBACK COMPLETO DEL EDITOR - PUNTUACIÓN: ${editorResult.puntuacion}/10`);
+    parts.push(`═══════════════════════════════════════════════════════════════════`);
+    
     if (editorResult.veredicto) {
-      parts.push(`VEREDICTO DEL EDITOR: ${editorResult.veredicto}`);
+      parts.push(`\nVEREDICTO: ${editorResult.veredicto}`);
+    }
+    
+    // CRÍTICO: Errores de continuidad (el problema del cap 16)
+    if (editorResult.errores_continuidad && editorResult.errores_continuidad.length > 0) {
+      parts.push(`\n🚨 ERRORES DE CONTINUIDAD (CRÍTICO - CORREGIR PRIMERO):\n${editorResult.errores_continuidad.map(e => `  ❌ ${e}`).join("\n")}`);
+    }
+    
+    // Problemas de verosimilitud (deus ex machina, coincidencias)
+    if (editorResult.problemas_verosimilitud && editorResult.problemas_verosimilitud.length > 0) {
+      parts.push(`\n🚨 PROBLEMAS DE VEROSIMILITUD (CRÍTICO):\n${editorResult.problemas_verosimilitud.map(p => `  ❌ ${p}`).join("\n")}`);
+    }
+    
+    // Beats faltantes del Arquitecto
+    if (editorResult.beats_faltantes && editorResult.beats_faltantes.length > 0) {
+      parts.push(`\n📋 BEATS FALTANTES (DEBEN INCLUIRSE):\n${editorResult.beats_faltantes.map(b => `  ⚠️ ${b}`).join("\n")}`);
     }
     
     if (editorResult.debilidades_criticas && editorResult.debilidades_criticas.length > 0) {
-      parts.push(`DEBILIDADES A CORREGIR:\n${editorResult.debilidades_criticas.map(d => `- ${d}`).join("\n")}`);
+      parts.push(`\n⚠️ DEBILIDADES A CORREGIR:\n${editorResult.debilidades_criticas.map(d => `  - ${d}`).join("\n")}`);
     }
     
+    // Frases repetidas
+    if (editorResult.frases_repetidas && editorResult.frases_repetidas.length > 0) {
+      parts.push(`\n🔄 FRASES/EXPRESIONES REPETIDAS (VARIAR):\n${editorResult.frases_repetidas.map(f => `  - "${f}"`).join("\n")}`);
+    }
+    
+    // Problemas de ritmo
+    if (editorResult.problemas_ritmo && editorResult.problemas_ritmo.length > 0) {
+      parts.push(`\n⏱️ PROBLEMAS DE RITMO:\n${editorResult.problemas_ritmo.map(r => `  - ${r}`).join("\n")}`);
+    }
+    
+    // Violaciones de estilo
+    if (editorResult.violaciones_estilo && editorResult.violaciones_estilo.length > 0) {
+      parts.push(`\n📝 VIOLACIONES DE ESTILO:\n${editorResult.violaciones_estilo.map(v => `  - ${v}`).join("\n")}`);
+    }
+    
+    // Plan quirúrgico detallado
     if (editorResult.plan_quirurgico) {
       const plan = editorResult.plan_quirurgico;
+      parts.push(`\n═══════════════════════════════════════════════════════════════════`);
+      parts.push(`PLAN QUIRÚRGICO DE CORRECCIÓN (SEGUIR AL PIE DE LA LETRA)`);
+      parts.push(`═══════════════════════════════════════════════════════════════════`);
       if (plan.diagnostico) {
-        parts.push(`DIAGNÓSTICO: ${plan.diagnostico}`);
+        parts.push(`\n📌 DIAGNÓSTICO:\n${plan.diagnostico}`);
       }
       if (plan.procedimiento) {
-        parts.push(`PROCEDIMIENTO DE CORRECCIÓN: ${plan.procedimiento}`);
+        parts.push(`\n📌 PROCEDIMIENTO PASO A PASO:\n${plan.procedimiento}`);
       }
       if (plan.objetivo) {
-        parts.push(`OBJETIVO: ${plan.objetivo}`);
+        parts.push(`\n📌 OBJETIVO FINAL:\n${plan.objetivo}`);
       }
     }
     
+    // Fortalezas a mantener
     if (editorResult.fortalezas && editorResult.fortalezas.length > 0) {
-      parts.push(`MANTENER ESTAS FORTALEZAS:\n${editorResult.fortalezas.map(f => `- ${f}`).join("\n")}`);
+      parts.push(`\n✅ FORTALEZAS A MANTENER:\n${editorResult.fortalezas.map(f => `  + ${f}`).join("\n")}`);
     }
+    
+    parts.push(`\n═══════════════════════════════════════════════════════════════════`);
+    parts.push(`INSTRUCCIÓN FINAL: Reescribe el capítulo corrigiendo TODOS los problemas`);
+    parts.push(`listados arriba. Prioriza errores de continuidad y verosimilitud.`);
+    parts.push(`═══════════════════════════════════════════════════════════════════`);
 
-    return parts.join("\n\n");
+    return parts.join("\n");
   }
 
   private parseArchitectOutput(content: string): ParsedWorldBible {
