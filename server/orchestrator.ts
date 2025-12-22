@@ -196,6 +196,11 @@ export class Orchestrator {
       let previousContinuity = "";
       let previousContinuityStateForEditor: any = null;
       let accumulatedContinuityIssues: string[] = [];
+      
+      const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
+      const fullStyleGuide = styleGuideContent 
+        ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+        : baseStyleGuide;
 
       for (let i = 0; i < chapters.length; i++) {
         const chapter = chapters[i];
@@ -354,17 +359,43 @@ export class Orchestrator {
               accumulatedContinuityIssues
             );
             
-            if (!checkpointResult.passed) {
+            if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
               accumulatedContinuityIssues = [...accumulatedContinuityIssues, ...checkpointResult.issues];
+              
+              const hasCriticalIssues = checkpointResult.issues.some(issue => 
+                issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]")
+              );
+              
+              if (hasCriticalIssues) {
+                this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
+                  `Disparando correcciones inmediatas para ${checkpointResult.chaptersToRevise.length} capítulos con errores críticos`
+                );
+                
+                for (const chapterNum of checkpointResult.chaptersToRevise) {
+                  const chapterToFix = chaptersInScope.find(c => c.chapterNumber === chapterNum);
+                  const sectionForFix = allSections.find(s => s.numero === chapterNum);
+                  
+                  if (chapterToFix && sectionForFix) {
+                    const issuesForChapter = checkpointResult.issues.filter(issue => 
+                      issue.includes(`capítulo ${chapterNum}`) || issue.includes(`Cap ${chapterNum}`)
+                    ).join("\n");
+                    
+                    await this.rewriteChapterForQA(
+                      project,
+                      chapterToFix,
+                      sectionForFix,
+                      worldBibleData,
+                      fullStyleGuide,
+                      "continuity",
+                      issuesForChapter || checkpointResult.issues.join("\n")
+                    );
+                  }
+                }
+              }
             }
           }
         }
       }
-
-      const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
-      const fullStyleGuide = styleGuideContent 
-        ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
-        : baseStyleGuide;
 
       const allCompletedChapters = await storage.getChaptersByProject(project.id);
       const completedForAnalysis = allCompletedChapters.filter(c => c.status === "completed" && c.content);
@@ -376,13 +407,79 @@ export class Orchestrator {
         for (let t = 0; t < totalTranches; t++) {
           const trancheChapters = completedForAnalysis.slice(t * trancheSize, (t + 1) * trancheSize);
           if (trancheChapters.length > 0) {
-            await this.runVoiceRhythmAudit(project, t + 1, trancheChapters, styleGuideContent);
+            const voiceResult = await this.runVoiceRhythmAudit(project, t + 1, trancheChapters, styleGuideContent);
+            
+            if (!voiceResult.passed && voiceResult.chaptersToRevise.length > 0) {
+              this.callbacks.onAgentStatus("voice-auditor", "editing", 
+                `Puliendo ${voiceResult.chaptersToRevise.length} capítulos con problemas de voz/ritmo`
+              );
+              
+              for (const chapterNum of voiceResult.chaptersToRevise) {
+                const chapterToPolish = trancheChapters.find(c => c.chapterNumber === chapterNum);
+                if (chapterToPolish) {
+                  const issuesForChapter = voiceResult.issues.filter(issue => 
+                    issue.includes(`capítulo ${chapterNum}`) || issue.includes(`Cap ${chapterNum}`)
+                  ).join("\n");
+                  
+                  await this.polishChapterForVoice(
+                    project,
+                    chapterToPolish,
+                    styleGuideContent,
+                    issuesForChapter || voiceResult.issues.join("\n")
+                  );
+                }
+              }
+            }
           }
         }
       }
 
-      if (completedForAnalysis.length > 0) {
-        await this.runSemanticRepetitionAnalysis(project, completedForAnalysis, worldBibleData);
+      const refreshedChaptersForSemantic = await storage.getChaptersByProject(project.id);
+      const completedForSemanticAnalysis = refreshedChaptersForSemantic.filter(c => c.status === "completed" && c.content);
+
+      if (completedForSemanticAnalysis.length > 0) {
+        const semanticResult = await this.runSemanticRepetitionAnalysis(project, completedForSemanticAnalysis, worldBibleData);
+        
+        if (!semanticResult.passed && semanticResult.chaptersToRevise.length > 0) {
+          this.callbacks.onAgentStatus("semantic-detector", "editing", 
+            `Corrigiendo ${semanticResult.chaptersToRevise.length} capítulos con repeticiones semánticas`
+          );
+          
+          for (const chapterNum of semanticResult.chaptersToRevise) {
+            const chapterToFix = completedForAnalysis.find(c => c.chapterNumber === chapterNum);
+            const sectionForFix = allSections.find(s => s.numero === chapterNum);
+            
+            if (chapterToFix && sectionForFix) {
+              const freshChapter = await storage.getChaptersByProject(project.id)
+                .then(chs => chs.find(c => c.chapterNumber === chapterNum));
+              if (!freshChapter) continue;
+              
+              const clusterIssues = semanticResult.clusters
+                .filter(c => c.capitulos_afectados?.includes(chapterNum))
+                .map(c => `Repetición de idea: "${c.idea_repetida}" aparece ${c.frecuencia || "múltiples"} veces`)
+                .join("\n");
+              
+              const foreshadowingIssues = semanticResult.foreshadowingStatus
+                .filter(f => f.estado === "sin_payoff")
+                .map(f => `Foreshadowing sin resolver: "${f.descripcion}" (plantado en cap ${f.capitulo_sembrado})`)
+                .join("\n");
+              
+              const allIssues = [clusterIssues, foreshadowingIssues].filter(Boolean).join("\n\n");
+              
+              if (allIssues) {
+                await this.rewriteChapterForQA(
+                  project,
+                  freshChapter,
+                  sectionForFix,
+                  worldBibleData,
+                  fullStyleGuide,
+                  "semantic",
+                  allIssues
+                );
+              }
+            }
+          }
+        }
       }
 
       const finalReviewApproved = await this.runFinalReview(
@@ -1482,7 +1579,7 @@ export class Orchestrator {
     project: Project,
     chapters: Chapter[],
     worldBibleData: ParsedWorldBible
-  ): Promise<{ passed: boolean; clusters: any[]; foreshadowingStatus: any[] }> {
+  ): Promise<{ passed: boolean; clusters: any[]; foreshadowingStatus: any[]; chaptersToRevise: number[] }> {
     this.callbacks.onAgentStatus("semantic-detector", "analyzing", 
       `El Detector Semántico está buscando repeticiones y verificando foreshadowing...`
     );
@@ -1531,7 +1628,116 @@ export class Orchestrator {
     return { 
       passed: analysisResult?.analisis_aprobado || false, 
       clusters: analysisResult?.clusters || [],
-      foreshadowingStatus: analysisResult?.foreshadowing_detectado || []
+      foreshadowingStatus: analysisResult?.foreshadowing_detectado || [],
+      chaptersToRevise: analysisResult?.capitulos_para_revision || []
     };
+  }
+
+  private async rewriteChapterForQA(
+    project: Project,
+    chapter: Chapter,
+    sectionData: any,
+    worldBibleData: ParsedWorldBible,
+    guiaEstilo: string,
+    qaSource: "continuity" | "voice" | "semantic",
+    correctionInstructions: string
+  ): Promise<void> {
+    const qaLabels = {
+      continuity: "Centinela de Continuidad",
+      voice: "Auditor de Voz",
+      semantic: "Detector Semántico"
+    };
+
+    await storage.updateChapter(chapter.id, { 
+      status: "revision",
+      needsRevision: true,
+      revisionReason: correctionInstructions 
+    });
+
+    this.callbacks.onChapterStatusChange(chapter.chapterNumber, "revision");
+    
+    const sectionLabel = this.getSectionLabel(sectionData);
+    
+    this.callbacks.onAgentStatus("ghostwriter", "writing", 
+      `Reescribiendo ${sectionLabel} por ${qaLabels[qaSource]}`
+    );
+
+    const allChapters = await storage.getChaptersByProject(project.id);
+    const previousChapter = allChapters.find(c => c.chapterNumber === chapter.chapterNumber - 1);
+    
+    let previousContinuity = "";
+    if (previousChapter?.continuityState) {
+      previousContinuity = `ESTADO DE CONTINUIDAD DEL CAPÍTULO ANTERIOR:\n${JSON.stringify(previousChapter.continuityState, null, 2)}`;
+    } else if (previousChapter?.content) {
+      const lastParagraphs = previousChapter.content.split("\n\n").slice(-3).join("\n\n");
+      previousContinuity = `FINAL DEL CAPÍTULO ANTERIOR:\n${lastParagraphs}`;
+    }
+
+    const writerResult = await this.ghostwriter.execute({
+      chapterNumber: sectionData.numero,
+      chapterData: sectionData,
+      worldBible: worldBibleData.world_bible,
+      guiaEstilo,
+      previousContinuity,
+      refinementInstructions: `CORRECCIONES DE ${qaLabels[qaSource].toUpperCase()}:\n${correctionInstructions}`,
+    });
+
+    await this.trackTokenUsage(project.id, writerResult.tokenUsage);
+
+    if (writerResult.content) {
+      const wordCount = writerResult.content.split(/\s+/).filter(w => w.length > 0).length;
+      
+      await storage.updateChapter(chapter.id, {
+        content: writerResult.content,
+        status: "completed",
+        wordCount,
+        needsRevision: false,
+        revisionReason: null,
+      });
+
+      this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+      this.callbacks.onAgentStatus("ghostwriter", "completed", 
+        `${sectionLabel} reescrito correctamente`
+      );
+    }
+  }
+
+  private async polishChapterForVoice(
+    project: Project,
+    chapter: Chapter,
+    styleGuideContent: string,
+    voiceIssues: string
+  ): Promise<void> {
+    await storage.updateChapter(chapter.id, { status: "editing" });
+    this.callbacks.onChapterStatusChange(chapter.chapterNumber, "editing");
+    
+    this.callbacks.onAgentStatus("copyeditor", "polishing", 
+      `Puliendo voz y ritmo del capítulo ${chapter.chapterNumber}`
+    );
+
+    const copyEditResult = await this.copyeditor.execute({
+      chapterNumber: chapter.chapterNumber,
+      chapterTitle: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+      chapterContent: chapter.content || "",
+      guiaEstilo: `${styleGuideContent || "Tone: literary, professional"}\n\nCORRECCIONES DEL AUDITOR DE VOZ:\n${voiceIssues}\n\nAjusta el tono y ritmo según las indicaciones manteniendo el contenido narrativo.`,
+    });
+
+    await this.trackTokenUsage(project.id, copyEditResult.tokenUsage);
+
+    const polishedContent = copyEditResult.result?.texto_final;
+    if (polishedContent) {
+      const wordCount = polishedContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+      
+      await storage.updateChapter(chapter.id, {
+        content: polishedContent,
+        status: "completed",
+        wordCount,
+      });
+
+      this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+      this.callbacks.onAgentStatus("copyeditor", "completed", 
+        `Capítulo ${chapter.chapterNumber} pulido correctamente`
+      );
+    }
   }
 }
