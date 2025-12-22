@@ -705,10 +705,182 @@ export class Orchestrator {
         const completedCount = freshChapters.filter(c => c.status === "completed").length;
         this.callbacks.onChapterComplete(completedCount, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
+
+        // QA: Continuity Sentinel checkpoint every 5 chapters
+        if (completedCount > 0 && completedCount % this.continuityCheckpointInterval === 0) {
+          const chaptersForCheckpoint = freshChapters
+            .filter(c => c.status === "completed" && c.chapterNumber > 0)
+            .sort((a, b) => a.chapterNumber - b.chapterNumber)
+            .slice(-this.continuityCheckpointInterval);
+          
+          if (chaptersForCheckpoint.length >= this.continuityCheckpointInterval) {
+            const checkpointNumber = Math.floor(completedCount / this.continuityCheckpointInterval);
+            const checkpointResult = await this.runContinuityCheckpoint(
+              project,
+              checkpointNumber,
+              chaptersForCheckpoint,
+              worldBibleData,
+              []
+            );
+            
+            if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
+              const hasCriticalIssues = checkpointResult.issues.some(issue => 
+                issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]")
+              );
+              
+              if (hasCriticalIssues) {
+                this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
+                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores críticos`
+                );
+                
+                for (const chapterNum of checkpointResult.chaptersToRevise) {
+                  const chapterToFix = chaptersForCheckpoint.find(c => c.chapterNumber === chapterNum);
+                  const sectionForFix = this.buildSectionDataFromChapter(chapterToFix!, worldBibleData);
+                  
+                  if (chapterToFix) {
+                    const issuesForChapter = checkpointResult.issues.filter(issue => 
+                      issue.includes(`capítulo ${chapterNum}`) || issue.includes(`Cap ${chapterNum}`)
+                    ).join("\n");
+                    
+                    const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
+                    const fullStyleGuide = styleGuideContent 
+                      ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+                      : baseStyleGuide;
+                    
+                    await this.rewriteChapterForQA(
+                      project,
+                      chapterToFix,
+                      sectionForFix,
+                      worldBibleData,
+                      fullStyleGuide,
+                      "continuity",
+                      issuesForChapter || checkpointResult.issues.join("\n")
+                    );
+                  }
+                }
+              }
+            }
+          }
+        }
       }
 
-      await storage.updateProject(project.id, { status: "completed" });
-      this.callbacks.onProjectComplete();
+      // QA: Voice & Rhythm Auditor after all chapters complete
+      const allCompletedChapters = await storage.getChaptersByProject(project.id);
+      const completedForAnalysis = allCompletedChapters.filter(c => c.status === "completed" && c.content);
+      
+      if (completedForAnalysis.length >= 5) {
+        const trancheSize = 10;
+        const totalTranches = Math.ceil(completedForAnalysis.length / trancheSize);
+        
+        for (let t = 0; t < totalTranches; t++) {
+          const trancheChapters = completedForAnalysis.slice(t * trancheSize, (t + 1) * trancheSize);
+          if (trancheChapters.length > 0) {
+            const voiceResult = await this.runVoiceRhythmAudit(project, t + 1, trancheChapters, styleGuideContent);
+            
+            if (!voiceResult.passed && voiceResult.chaptersToRevise.length > 0) {
+              this.callbacks.onAgentStatus("voice-auditor", "editing", 
+                `Puliendo ${voiceResult.chaptersToRevise.length} capítulos con problemas de voz/ritmo`
+              );
+              
+              for (const chapterNum of voiceResult.chaptersToRevise) {
+                const chapterToPolish = trancheChapters.find(c => c.chapterNumber === chapterNum);
+                if (chapterToPolish) {
+                  const issuesForChapter = voiceResult.issues.filter(issue => 
+                    issue.includes(`capítulo ${chapterNum}`) || issue.includes(`Cap ${chapterNum}`)
+                  ).join("\n");
+                  
+                  await this.polishChapterForVoice(
+                    project,
+                    chapterToPolish,
+                    styleGuideContent,
+                    issuesForChapter || voiceResult.issues.join("\n")
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // QA: Semantic Repetition Detector
+      const refreshedChaptersForSemantic = await storage.getChaptersByProject(project.id);
+      const completedForSemanticAnalysis = refreshedChaptersForSemantic.filter(c => c.status === "completed" && c.content);
+
+      if (completedForSemanticAnalysis.length > 0) {
+        const semanticResult = await this.runSemanticRepetitionAnalysis(project, completedForSemanticAnalysis, worldBibleData);
+        
+        if (!semanticResult.passed && semanticResult.chaptersToRevise.length > 0) {
+          this.callbacks.onAgentStatus("semantic-detector", "editing", 
+            `Corrigiendo ${semanticResult.chaptersToRevise.length} capítulos con repeticiones semánticas`
+          );
+          
+          for (const chapterNum of semanticResult.chaptersToRevise) {
+            const chapterToFix = completedForSemanticAnalysis.find(c => c.chapterNumber === chapterNum);
+            
+            if (chapterToFix) {
+              const sectionForFix = this.buildSectionDataFromChapter(chapterToFix, worldBibleData);
+              const freshChapter = await storage.getChaptersByProject(project.id)
+                .then(chs => chs.find(c => c.chapterNumber === chapterNum));
+              if (!freshChapter) continue;
+              
+              const clusterIssues = semanticResult.clusters
+                .filter(c => c.capitulos_afectados?.includes(chapterNum))
+                .map(c => `Repetición de idea: "${c.idea_repetida}" aparece ${c.frecuencia || "múltiples"} veces`)
+                .join("\n");
+              
+              const foreshadowingIssues = semanticResult.foreshadowingStatus
+                .filter(f => f.estado === "sin_payoff")
+                .map(f => `Foreshadowing sin resolver: "${f.descripcion}" (plantado en cap ${f.capitulo_sembrado})`)
+                .join("\n");
+              
+              const allIssues = [clusterIssues, foreshadowingIssues].filter(Boolean).join("\n\n");
+              
+              if (allIssues) {
+                const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
+                const fullStyleGuide = styleGuideContent 
+                  ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+                  : baseStyleGuide;
+                
+                await this.rewriteChapterForQA(
+                  project,
+                  freshChapter,
+                  sectionForFix,
+                  worldBibleData,
+                  fullStyleGuide,
+                  "semantic",
+                  allIssues
+                );
+              }
+            }
+          }
+        }
+      }
+
+      // Final Review
+      const finalChapters = await storage.getChaptersByProject(project.id);
+      const allSections = (worldBibleData.escaleta_capitulos as any[]) || [];
+      const baseStyleGuide = `Género: ${project.genre}, Tono: ${project.tone}`;
+      const fullStyleGuide = styleGuideContent 
+        ? `${baseStyleGuide}\n\n--- GUÍA DE ESTILO DEL AUTOR ---\n${styleGuideContent}`
+        : baseStyleGuide;
+      
+      const finalReviewApproved = await this.runFinalReview(
+        project, 
+        finalChapters, 
+        worldBibleData, 
+        fullStyleGuide, 
+        allSections,
+        styleGuideContent,
+        authorName
+      );
+
+      if (finalReviewApproved) {
+        await storage.updateProject(project.id, { status: "completed" });
+        this.callbacks.onProjectComplete();
+      } else {
+        await storage.updateProject(project.id, { status: "failed_final_review" });
+        this.callbacks.onError("El manuscrito no pasó la revisión final después de múltiples intentos.");
+      }
 
     } catch (error) {
       console.error("[Orchestrator] Resume error:", error);
