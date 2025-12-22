@@ -241,17 +241,23 @@ export default function Dashboard() {
 
   const resumeProjectMutation = useMutation({
     mutationFn: async (id: number) => {
+      console.log("[Resume] Sending resume request for project:", id);
       const response = await apiRequest("POST", `/api/projects/${id}/resume`);
-      return response.json();
+      console.log("[Resume] Response status:", response.status);
+      const data = await response.json();
+      console.log("[Resume] Response data:", data);
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("[Resume] Success:", data);
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       queryClient.invalidateQueries({ queryKey: ["/api/agent-statuses"] });
       toast({ title: "Generación reanudada", description: "Continuando desde donde se detuvo" });
       addLog("success", "Reanudando generación del manuscrito...");
       setCompletedStages([]);
     },
-    onError: () => {
+    onError: (error) => {
+      console.error("[Resume] Error:", error);
       toast({ title: "Error", description: "No se pudo reanudar la generación", variant: "destructive" });
     },
   });
