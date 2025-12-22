@@ -22,7 +22,8 @@ import {
   Clock,
   AlertCircle,
   Languages,
-  Pencil
+  Pencil,
+  Download
 } from "lucide-react";
 import type { ImportedManuscript, ImportedChapter } from "@shared/schema";
 
@@ -67,6 +68,56 @@ function sortChaptersForDisplay<T extends { chapterNumber: number }>(chapters: T
     const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
     return orderA - orderB;
   });
+}
+
+function generateMarkdownExport(
+  manuscript: ImportedManuscript,
+  chapters: ImportedChapter[]
+): string {
+  const sortedChapters = sortChaptersForDisplay(chapters);
+  const lines: string[] = [];
+  
+  lines.push(`# ${manuscript.title}`);
+  lines.push("");
+  lines.push("---");
+  lines.push("");
+  
+  for (const chapter of sortedChapters) {
+    const content = chapter.editedContent || chapter.originalContent;
+    if (!content) continue;
+    
+    let heading: string;
+    if (chapter.chapterNumber === 0) {
+      heading = chapter.title || "Prólogo";
+    } else if (chapter.chapterNumber === -1) {
+      heading = chapter.title || "Epílogo";
+    } else if (chapter.chapterNumber === -2) {
+      heading = chapter.title || "Nota del Autor";
+    } else {
+      heading = chapter.title || `Capítulo ${chapter.chapterNumber}`;
+    }
+    
+    lines.push(`## ${heading}`);
+    lines.push("");
+    lines.push(content.trim());
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+  }
+  
+  return lines.join("\n");
+}
+
+function downloadMarkdown(filename: string, content: string) {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function parseChaptersFromText(text: string): { chapterNumber: number; title: string | null; content: string }[] {
@@ -327,6 +378,19 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
           >
             {editAllMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Editar Todos
+          </Button>
+          <Button 
+            variant="secondary"
+            onClick={() => {
+              const md = generateMarkdownExport(manuscript, chapters);
+              const filename = `${manuscript.title.replace(/[^a-zA-Z0-9áéíóúüñÁÉÍÓÚÜÑ\s]/g, "").replace(/\s+/g, "_")}.md`;
+              downloadMarkdown(filename, md);
+            }}
+            disabled={chapters.length === 0}
+            data-testid="button-export-manuscript"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Exportar MD
           </Button>
           <Button variant="outline" onClick={onBack}>Volver</Button>
         </div>
