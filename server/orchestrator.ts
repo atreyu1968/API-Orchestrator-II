@@ -7,6 +7,7 @@ interface OrchestratorCallbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
   onChapterComplete: (chapterNumber: number, wordCount: number, chapterTitle: string) => void;
   onChapterRewrite: (chapterNumber: number, chapterTitle: string, currentIndex: number, totalToRewrite: number, reason: string) => void;
+  onChapterStatusChange: (chapterNumber: number, status: string) => void;
   onProjectComplete: () => void;
   onError: (error: string) => void;
 }
@@ -652,6 +653,8 @@ export class Orchestrator {
           revisionReason: revisionInstructions 
         });
 
+        this.callbacks.onChapterStatusChange(chapterNum, "revision");
+
         const sectionLabel = this.getSectionLabel(sectionData);
         
         this.callbacks.onChapterRewrite(
@@ -732,6 +735,7 @@ export class Orchestrator {
           revisionReason: null,
         });
 
+        this.callbacks.onChapterComplete(chapterNum, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", 
           `${sectionLabel} corregido y finalizado (${wordCount} palabras)`
         );

@@ -393,6 +393,9 @@ export async function registerRoutes(
         onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
           sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
         },
+        onChapterStatusChange: (chapterNumber, status) => {
+          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        },
         onProjectComplete: () => {
           sendToStreams({ type: "project_complete" });
         },
@@ -472,6 +475,9 @@ export async function registerRoutes(
         onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
           sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
         },
+        onChapterStatusChange: (chapterNumber, status) => {
+          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        },
         onProjectComplete: () => {
           sendToStreams({ type: "project_complete" });
         },
@@ -533,6 +539,9 @@ export async function registerRoutes(
         },
         onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
           sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
+        },
+        onChapterStatusChange: (chapterNumber, status) => {
+          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
         },
         onProjectComplete: () => {
           sendToStreams({ type: "project_complete" });

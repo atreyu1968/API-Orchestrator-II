@@ -300,6 +300,8 @@ export default function Dashboard() {
               "final-reviewer"
             );
             queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
+          } else if (data.type === "chapter_status_change") {
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
           } else if (data.type === "chapter_complete") {
             const sectionName = data.chapterTitle === "Prólogo" ? "Prólogo" :
                                data.chapterTitle === "Epílogo" ? "Epílogo" :
