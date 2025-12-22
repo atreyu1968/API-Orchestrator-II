@@ -260,6 +260,21 @@ export class ArchitectAgent extends BaseAgent {
     ${input.hasEpilogue ? "NOTA: La novela terminará con un EPÍLOGO que cierre todos los arcos narrativos." : ""}
     ${input.hasAuthorNote ? "NOTA: Incluye reflexiones para una NOTA DEL AUTOR al final." : ""}
     
+    ═══════════════════════════════════════════════════════════════════
+    REQUISITO CRÍTICO: ESCALETA COMPLETA DE ${input.chapterCount} CAPÍTULOS
+    ═══════════════════════════════════════════════════════════════════
+    DEBES generar una entrada COMPLETA en "escaleta_capitulos" para CADA UNO de los ${input.chapterCount} capítulos.
+    NO es aceptable generar solo los primeros 10 capítulos. TODOS los ${input.chapterCount} capítulos deben tener:
+    - Título único y evocador
+    - Beats detallados
+    - Información nueva
+    - Conflicto central
+    - Continuidad de entrada/salida
+    
+    La escaleta debe contener EXACTAMENTE ${input.chapterCount} elementos, uno por cada capítulo.
+    ${input.hasPrologue ? "Además, incluye el Prólogo como capítulo número 0." : ""}
+    ${input.hasEpilogue ? "Además, incluye el Epílogo como capítulo número -1." : ""}
+    
     Genera el plan completo de la novela siguiendo tus protocolos de arquitectura.
     Responde ÚNICAMENTE con el JSON estructurado según las instrucciones.
     `;
