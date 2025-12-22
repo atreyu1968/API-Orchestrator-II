@@ -37,6 +37,12 @@ const SUPPORTED_LANGUAGES = [
   { code: "es", name: "Español" },
 ];
 
+function getLanguageName(code: string | null | undefined): string {
+  if (!code) return "Sin detectar";
+  const lang = SUPPORTED_LANGUAGES.find(l => l.code === code.toLowerCase());
+  return lang ? lang.name : code.toUpperCase();
+}
+
 const INPUT_PRICE_PER_MILLION = 1.25;
 const OUTPUT_PRICE_PER_MILLION = 10.0;
 const THINKING_PRICE_PER_MILLION = 3.0;
@@ -260,11 +266,11 @@ function ManuscriptCard({ manuscript, onSelect, onDelete }: {
         <div className="flex items-center justify-between text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <Languages className="h-3 w-3" />
-            <span>{manuscript.detectedLanguage?.toUpperCase() || "?"}</span>
+            <span>{getLanguageName(manuscript.detectedLanguage)}</span>
           </div>
           <div className="flex items-center gap-1">
             <FileText className="h-3 w-3" />
-            <span>{manuscript.processedChapters || 0}/{manuscript.totalChapters || 0} capítulos</span>
+            <span>{manuscript.processedChapters || 0}/{manuscript.totalChapters || 0} caps.</span>
           </div>
         </div>
         
@@ -297,10 +303,17 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
 
   const { data: manuscript, isLoading: isLoadingManuscript, refetch: refetchManuscript } = useQuery<ImportedManuscript>({
     queryKey: ['/api/imported-manuscripts', manuscriptId],
+    refetchInterval: (query) => {
+      const data = query.state.data as ImportedManuscript | undefined;
+      return data?.status === "processing" ? 3000 : false;
+    },
   });
 
   const { data: chapters = [], isLoading: isLoadingChapters, refetch: refetchChapters } = useQuery<ImportedChapter[]>({
     queryKey: ['/api/imported-manuscripts', manuscriptId, 'chapters'],
+    refetchInterval: (query) => {
+      return manuscript?.status === "processing" ? 3000 : false;
+    },
   });
 
   const editChapterMutation = useMutation({
@@ -328,12 +341,9 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Edición iniciada", description: "Los capítulos se están editando en segundo plano" });
-      const interval = setInterval(() => {
-        refetchManuscript();
-        refetchChapters();
-      }, 5000);
-      setTimeout(() => clearInterval(interval), 300000);
+      toast({ title: "Edición iniciada", description: "Los capítulos se están editando. La página se actualizará automáticamente." });
+      refetchManuscript();
+      refetchChapters();
     },
     onError: (error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -411,7 +421,7 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="text-2xl font-bold">{manuscript.detectedLanguage?.toUpperCase() || "?"}</div>
+            <div className="text-2xl font-bold">{getLanguageName(manuscript.detectedLanguage)}</div>
             <p className="text-sm text-muted-foreground">Idioma Detectado</p>
           </CardContent>
         </Card>
@@ -439,12 +449,23 @@ function ManuscriptDetail({ manuscriptId, onBack }: { manuscriptId: number; onBa
                     onClick={() => setSelectedChapter(chapter)}
                     data-testid={`button-chapter-${chapter.id}`}
                   >
-                    <span className="font-mono text-xs">{getChapterBadge(chapter.chapterNumber)}</span>
-                    <span className="truncate flex-1 text-left">
+                    <Badge 
+                      variant="outline" 
+                      className={`font-mono text-xs shrink-0 no-default-hover-elevate no-default-active-elevate ${
+                        chapter.status === "completed" ? "bg-green-500/10 text-green-600 border-green-500/30" :
+                        chapter.status === "processing" ? "bg-blue-500/10 text-blue-600 border-blue-500/30" :
+                        "bg-muted text-muted-foreground"
+                      }`}
+                    >
+                      {getChapterBadge(chapter.chapterNumber)}
+                    </Badge>
+                    <span className="truncate flex-1 text-left text-sm">
                       {getChapterDisplayName(chapter.chapterNumber, chapter.title)}
                     </span>
-                    {chapter.status === "completed" && <CheckCircle className="h-3 w-3 text-green-500" />}
-                    {chapter.status === "processing" && <Loader2 className="h-3 w-3 animate-spin" />}
+                    {chapter.status === "completed" && <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />}
+                    {chapter.status === "processing" && <Loader2 className="h-4 w-4 animate-spin text-blue-500 shrink-0" />}
+                    {chapter.status === "pending" && <Clock className="h-4 w-4 text-muted-foreground shrink-0" />}
+                    {chapter.status === "error" && <AlertCircle className="h-4 w-4 text-destructive shrink-0" />}
                   </Button>
                 ))}
               </div>
@@ -539,6 +560,10 @@ export default function ImportPage() {
 
   const { data: manuscripts = [], isLoading } = useQuery<ImportedManuscript[]>({
     queryKey: ['/api/imported-manuscripts'],
+    refetchInterval: (query) => {
+      const data = query.state.data as ImportedManuscript[] | undefined;
+      return data?.some(m => m.status === "processing") ? 3000 : false;
+    },
   });
 
   const createManuscriptMutation = useMutation({
@@ -546,6 +571,7 @@ export default function ImportPage() {
       title: string;
       originalFileName: string;
       targetLanguage: string;
+      detectedLanguage: string;
       chapters: { chapterNumber: number; title: string | null; content: string }[];
     }) => {
       const res = await apiRequest("POST", "/api/imported-manuscripts", data);
@@ -645,6 +671,7 @@ export default function ImportPage() {
       title: uploadState.title || uploadState.file.name,
       originalFileName: uploadState.file.name,
       targetLanguage: uploadState.targetLanguage,
+      detectedLanguage: uploadState.targetLanguage,
       chapters: uploadState.parsedChapters,
     });
   }, [uploadState, createManuscriptMutation]);
