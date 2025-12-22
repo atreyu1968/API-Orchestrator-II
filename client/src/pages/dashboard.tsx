@@ -301,7 +301,11 @@ export default function Dashboard() {
             );
             queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
           } else if (data.type === "chapter_complete") {
-            addLog("success", `Capítulo ${data.chapterNumber} completado (${data.wordCount} palabras)`);
+            const sectionName = data.chapterTitle === "Prólogo" ? "Prólogo" :
+                               data.chapterTitle === "Epílogo" ? "Epílogo" :
+                               data.chapterTitle === "Nota del Autor" ? "Nota del Autor" :
+                               `Capítulo ${data.chapterNumber}`;
+            addLog("success", `${sectionName} completado (${data.wordCount} palabras)`);
             queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject.id, "chapters"] });
           } else if (data.type === "project_complete") {
             addLog("success", "¡Manuscrito completado!");
@@ -449,7 +453,7 @@ export default function Dashboard() {
                 <div className="flex items-center gap-4">
                   <div className="flex items-center gap-2 text-sm">
                     <FileText className="h-4 w-4 text-muted-foreground" />
-                    <span>{completedChapters}/{currentProject.chapterCount} capítulos</span>
+                    <span>{completedChapters}/{currentProject.chapterCount} secciones</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     <Clock className="h-4 w-4 text-muted-foreground" />
@@ -499,9 +503,12 @@ export default function Dashboard() {
                           <Clock className="h-4 w-4 text-muted-foreground" />
                         )}
                         <span className="text-sm font-medium">
-                          Capítulo {chapter.chapterNumber}
+                          {chapter.title === "Prólogo" ? "Prólogo" :
+                           chapter.title === "Epílogo" ? "Epílogo" :
+                           chapter.title === "Nota del Autor" ? "Nota del Autor" :
+                           `Capítulo ${chapter.chapterNumber}`}
                         </span>
-                        {chapter.title && (
+                        {chapter.title && chapter.title !== "Prólogo" && chapter.title !== "Epílogo" && chapter.title !== "Nota del Autor" && (
                           <span className="text-sm text-muted-foreground">
                             - {chapter.title}
                           </span>

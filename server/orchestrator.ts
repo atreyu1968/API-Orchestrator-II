@@ -5,7 +5,7 @@ import type { Project, WorldBible, Chapter, PlotOutline, Character, WorldRule, T
 
 interface OrchestratorCallbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
-  onChapterComplete: (chapterNumber: number, wordCount: number) => void;
+  onChapterComplete: (chapterNumber: number, wordCount: number, chapterTitle: string) => void;
   onChapterRewrite: (chapterNumber: number, chapterTitle: string, currentIndex: number, totalToRewrite: number, reason: string) => void;
   onProjectComplete: () => void;
   onError: (error: string) => void;
@@ -270,7 +270,7 @@ export class Orchestrator {
         previousContinuity = sectionData.continuidad_salida || 
           `${sectionLabel} completado. Los personajes terminaron en: ${sectionData.ubicacion}`;
 
-        this.callbacks.onChapterComplete(i + 1, wordCount);
+        this.callbacks.onChapterComplete(i + 1, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
 
         await this.updateWorldBibleTimeline(project.id, worldBible.id, sectionData.numero, sectionData);
@@ -485,7 +485,7 @@ export class Orchestrator {
 
         const freshChapters = await storage.getChaptersByProject(project.id);
         const completedCount = freshChapters.filter(c => c.status === "completed").length;
-        this.callbacks.onChapterComplete(completedCount, wordCount);
+        this.callbacks.onChapterComplete(completedCount, wordCount, sectionData.titulo);
         this.callbacks.onAgentStatus("copyeditor", "completed", `${sectionLabel} finalizado (${wordCount} palabras)`);
       }
 

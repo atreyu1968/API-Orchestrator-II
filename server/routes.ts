@@ -387,8 +387,8 @@ export async function registerRoutes(
           await storage.updateAgentStatus(id, role, { status, currentTask: message });
           sendToStreams({ type: "agent_status", role, status, message });
         },
-        onChapterComplete: (chapterNumber, wordCount) => {
-          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount });
+        onChapterComplete: (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
         },
         onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
           sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
@@ -466,8 +466,8 @@ export async function registerRoutes(
           await storage.updateAgentStatus(id, role, { status, currentTask: message });
           sendToStreams({ type: "agent_status", role, status, message });
         },
-        onChapterComplete: (chapterNumber, wordCount) => {
-          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount });
+        onChapterComplete: (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
         },
         onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
           sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
@@ -528,8 +528,8 @@ export async function registerRoutes(
           await storage.updateAgentStatus(id, role, { status, currentTask: message });
           sendToStreams({ type: "agent_status", role, status, message });
         },
-        onChapterComplete: (chapterNumber, wordCount) => {
-          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount });
+        onChapterComplete: (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
         },
         onChapterRewrite: (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
           sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
