@@ -562,6 +562,42 @@ export default function Dashboard() {
                   )}
                 </div>
                 
+                {currentProject.status === "completed" && currentProject.finalScore && (
+                  <div className="mt-4 p-4 rounded-md border border-border" 
+                    style={{ 
+                      backgroundColor: currentProject.finalScore >= 9 
+                        ? 'hsl(var(--chart-2) / 0.1)' 
+                        : currentProject.finalScore >= 7 
+                          ? 'hsl(var(--chart-4) / 0.1)' 
+                          : 'hsl(var(--destructive) / 0.1)'
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">Puntuación Final del Revisor</p>
+                        <p className="text-xs text-muted-foreground">
+                          {currentProject.finalScore >= 9 
+                            ? "Publicable - Calidad profesional" 
+                            : currentProject.finalScore >= 7 
+                              ? "Aceptable con reservas"
+                              : "No publicable - Requiere revisión"}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className={`text-3xl font-bold ${
+                          currentProject.finalScore >= 9 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : currentProject.finalScore >= 7 
+                              ? 'text-yellow-600 dark:text-yellow-400' 
+                              : 'text-red-600 dark:text-red-400'
+                        }`} data-testid="text-final-score">
+                          {currentProject.finalScore}/10
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {currentProject.status === "completed" && (currentProject.totalInputTokens || currentProject.totalOutputTokens) && (
                   <div className="mt-4 p-4 rounded-md bg-muted/30 border border-border">
                     <div className="flex items-center justify-between gap-4">

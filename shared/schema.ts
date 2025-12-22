@@ -64,6 +64,7 @@ export const projects = pgTable("projects", {
   revisionCycle: integer("revision_cycle").default(0),
   maxRevisionCycles: integer("max_revision_cycles").default(3),
   finalReviewResult: jsonb("final_review_result"),
+  finalScore: integer("final_score"),
   totalInputTokens: integer("total_input_tokens").default(0),
   totalOutputTokens: integer("total_output_tokens").default(0),
   totalThinkingTokens: integer("total_thinking_tokens").default(0),

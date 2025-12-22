@@ -740,7 +740,8 @@ export class Orchestrator {
       
       await storage.updateProject(project.id, { 
         revisionCycle: revisionCycle + 1,
-        finalReviewResult: result as any
+        finalReviewResult: result as any,
+        finalScore: result?.puntuacion_global ?? null
       });
 
       if (result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") {
