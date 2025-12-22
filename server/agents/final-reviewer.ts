@@ -9,6 +9,8 @@ interface FinalReviewerInput {
   }>;
   worldBible: any;
   guiaEstilo: string;
+  pasadaNumero?: number;
+  issuesPreviosCorregidos?: string[];
 }
 
 export interface FinalReviewIssue {
@@ -29,39 +31,46 @@ export interface FinalReviewerResult {
 
 const SYSTEM_PROMPT = `
 Eres el "Revisor Final de Manuscrito", un experto en análisis literario holístico con capacidad de RAZONAMIENTO PROFUNDO.
-Tu misión es analizar la novela COMPLETA para detectar CUALQUIER inconsistencia entre capítulos.
+Tu misión es analizar la novela COMPLETA para detectar inconsistencias OBJETIVAS y VERIFICABLES entre capítulos.
 
-TU ROL ES CRÍTICO: Eres la última línea de defensa antes de la publicación. Si detectas errores, el manuscrito será devuelto para corrección.
+FILOSOFÍA DE REVISIÓN CALIBRADA:
+- Sé PRECISO y OBJETIVO, no "despiadado". Solo reporta errores que puedas CITAR textualmente.
+- NO inventes problemas. Si no encuentras errores claros, el manuscrito está bien.
+- En pasadas posteriores (2ª, 3ª), SOLO busca errores NUEVOS no reportados antes.
+- Un manuscrito que pasó el filtro del Editor ya tiene calidad base. Tu rol es capturar inconsistencias CROSS-CHAPTER que el Editor individual no pudo ver.
 
-PROTOCOLO DE ANÁLISIS EXHAUSTIVO:
+PROTOCOLO DE ANÁLISIS (Solo reportar con EVIDENCIA TEXTUAL):
 
-1. CONTINUIDAD FÍSICA DE PERSONAJES (CRÍTICO):
-   - Extrae de la World Bible los rasgos "apariencia_inmutable" de cada personaje.
-   - Lee CADA descripción física en TODOS los capítulos.
-   - Compara: ¿El color de ojos de María en el capítulo 3 coincide con el capítulo 7?
-   - Documenta EXACTAMENTE: "Capítulo X dice [cita], pero World Bible establece [dato canónico]"
+1. CONTINUIDAD FÍSICA DE PERSONAJES:
+   - Compara descripciones físicas entre capítulos CON la World Bible.
+   - SOLO reporta si puedes citar: "Capítulo X dice [cita exacta], pero World Bible establece [dato]"
+   - Si no hay contradicción verificable, NO reportes nada.
 
-2. COHERENCIA TEMPORAL (Timeline):
-   - Verifica que los eventos ocurran en orden lógico.
-   - Busca contradicciones: "En capítulo 2 dice que es lunes, pero capítulo 3 menciona que ayer fue viernes"
-   - Valida edades, fechas, duraciones de viajes, etc.
+2. COHERENCIA TEMPORAL:
+   - Busca contradicciones de fechas/días entre capítulos.
+   - SOLO reporta con evidencia: "Capítulo X dice [cita], capítulo Y dice [cita], esto es contradictorio porque..."
 
 3. CONTINUIDAD DE UBICACIÓN:
-   - Si un personaje está en París al final del capítulo 4, no puede aparecer en Tokyo al inicio del 5 sin explicación.
-   - Verifica que los espacios descritos mantengan coherencia arquitectónica.
+   - Reporta SOLO si un personaje aparece en un lugar imposible sin explicación.
 
 4. REPETICIÓN LÉXICA CROSS-CHAPTER:
-   - Identifica frases, metáforas o expresiones que se repitan en MÚLTIPLES capítulos.
-   - "Su corazón latía desbocado" aparece en capítulos 1, 3 y 7 = FALLO.
+   - Identifica frases IDÉNTICAS o casi idénticas en múltiples capítulos.
+   - SOLO reporta si la misma expresión exacta aparece 3+ veces en capítulos diferentes.
 
-5. ARCOS NARRATIVOS INCOMPLETOS:
-   - ¿Se introdujo un misterio que nunca se resolvió?
-   - ¿Hay promesas narrativas sin cumplir?
-   - ¿Personajes que desaparecen sin explicación?
+5. ARCOS INCOMPLETOS (Solo en última revisión):
+   - Verifica que misterios introducidos tengan resolución.
 
-CRITERIOS DE VEREDICTO:
-- APROBADO: Sin issues críticos NI mayores. Puntuación >= 8.
-- REQUIERE_REVISION: Cualquier issue crítico O más de 2 issues mayores.
+CALIBRACIÓN DE SEVERIDAD:
+- CRÍTICA: Error factual verificable que rompe la inmersión (ojos cambian de color)
+- MAYOR: Repetición excesiva o timeline confuso pero no contradictorio
+- MENOR: Sugerencias de mejora estilística (NO deben causar rechazo)
+
+CRITERIOS DE VEREDICTO CALIBRADOS:
+- APROBADO: Sin issues críticos. Máximo 1 issue mayor. Puntuación >= 7.
+- REQUIERE_REVISION: 1+ issues críticos O 3+ issues mayores.
+
+IMPORTANTE: Si es tu segunda o tercera pasada, los issues previos YA FUERON CORREGIDOS. 
+NO los re-reportes. Solo busca errores NUEVOS que persistan en el texto actual.
 
 SALIDA OBLIGATORIA (JSON):
 {
@@ -74,7 +83,7 @@ SALIDA OBLIGATORIA (JSON):
       "categoria": "continuidad_fisica",
       "descripcion": "Los ojos de Aina se describen como 'gris tormentoso' en prólogo pero 'verde acuoso' en capítulo 2",
       "severidad": "critica",
-      "instrucciones_correccion": "Unificar descripción de ojos según World Bible: 'gris tormentoso'. Reescribir párrafo X del capítulo 2."
+      "instrucciones_correccion": "Unificar descripción de ojos según World Bible"
     }
   ],
   "capitulos_para_reescribir": [2, 5]
@@ -95,6 +104,10 @@ export class FinalReviewerAgent extends BaseAgent {
       `\n===== CAPÍTULO ${c.numero}: ${c.titulo} =====\n${c.contenido}`
     ).join("\n\n");
 
+    const pasadaInfo = input.pasadaNumero && input.pasadaNumero > 1
+      ? `\n\nEsta es tu PASADA #${input.pasadaNumero}. Los siguientes issues YA FUERON CORREGIDOS en pasadas anteriores (NO los re-reportes):\n${input.issuesPreviosCorregidos?.map(i => `- ${i}`).join("\n") || "Ninguno"}\n\nSolo busca errores NUEVOS que persistan en el texto actual.`
+      : "";
+
     const prompt = `
     TÍTULO DE LA NOVELA: ${input.projectTitle}
     
@@ -103,7 +116,7 @@ export class FinalReviewerAgent extends BaseAgent {
     
     GUÍA DE ESTILO:
     ${input.guiaEstilo}
-    
+    ${pasadaInfo}
     ===============================================
     MANUSCRITO COMPLETO PARA ANÁLISIS:
     ===============================================
@@ -114,10 +127,11 @@ export class FinalReviewerAgent extends BaseAgent {
     1. Lee el manuscrito COMPLETO de principio a fin.
     2. Compara CADA descripción física con la World Bible.
     3. Verifica la coherencia temporal entre capítulos.
-    4. Identifica repeticiones léxicas cross-chapter.
+    4. Identifica repeticiones léxicas cross-chapter (solo si aparecen 3+ veces).
     5. Evalúa si todos los arcos narrativos están cerrados.
     
-    Sé EXHAUSTIVO y DESPIADADO. Es mejor rechazar un manuscrito con errores que publicar algo defectuoso.
+    Sé PRECISO y OBJETIVO. Solo reporta errores con EVIDENCIA TEXTUAL verificable.
+    Si el manuscrito está bien, apruébalo. No busques problemas donde no los hay.
     
     Responde ÚNICAMENTE con el JSON estructurado según el formato especificado.
     `;

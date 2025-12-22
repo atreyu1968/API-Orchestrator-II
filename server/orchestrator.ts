@@ -572,6 +572,7 @@ export class Orchestrator {
     authorName: string
   ): Promise<boolean> {
     let revisionCycle = 0;
+    let issuesPreviosCorregidos: string[] = [];
     
     while (revisionCycle < this.maxFinalReviewCycles) {
       this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
@@ -593,6 +594,8 @@ export class Orchestrator {
         chapters: chaptersForReview,
         worldBible: worldBibleData.world_bible,
         guiaEstilo,
+        pasadaNumero: revisionCycle + 1,
+        issuesPreviosCorregidos,
       });
 
       await this.trackTokenUsage(project.id, reviewResult.tokenUsage);
@@ -760,6 +763,14 @@ export class Orchestrator {
         this.callbacks.onAgentStatus("copyeditor", "completed", 
           `${sectionLabel} corregido y finalizado (${wordCount} palabras)`
         );
+      }
+
+      // Acumular los issues corregidos para informar al revisor en la siguiente pasada
+      if (result?.issues) {
+        const issuesDeEsteCiclo = result.issues.map(i => 
+          `[${i.categoria}] ${i.descripcion} (Caps ${i.capitulos_afectados.join(", ")})`
+        );
+        issuesPreviosCorregidos = [...issuesPreviosCorregidos, ...issuesDeEsteCiclo];
       }
 
       revisionCycle++;
