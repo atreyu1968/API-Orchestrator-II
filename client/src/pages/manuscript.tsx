@@ -29,16 +29,35 @@ export default function ManuscriptPage() {
   const handleDownload = () => {
     if (!currentProject || chapters.length === 0) return;
 
+    const cleanContent = (rawContent: string): string => {
+      let content = rawContent.trim();
+      const continuityMarker = "---CONTINUITY_STATE---";
+      const markerIndex = content.indexOf(continuityMarker);
+      if (markerIndex !== -1) {
+        content = content.substring(0, markerIndex).trim();
+      }
+      return content;
+    };
+
     const content = sortChaptersForDisplay(chapters.filter(c => c.content))
       .map(c => {
-        const chapterContent = c.content?.trim() || "";
+        const chapterContent = cleanContent(c.content || "");
         const startsWithHeading = /^#/.test(chapterContent);
         
         if (startsWithHeading) {
           return chapterContent;
         }
         
-        const header = `# Capítulo ${c.chapterNumber}${c.title ? `: ${c.title}` : ''}`;
+        let header: string;
+        if (c.chapterNumber === 0) {
+          header = `# Prólogo${c.title ? `: ${c.title}` : ''}`;
+        } else if (c.chapterNumber === -1) {
+          header = `# Epílogo${c.title ? `: ${c.title}` : ''}`;
+        } else if (c.chapterNumber === -2) {
+          header = `# Nota del Autor`;
+        } else {
+          header = `# Capítulo ${c.chapterNumber}${c.title ? `: ${c.title}` : ''}`;
+        }
         return `${header}\n\n${chapterContent}`;
       })
       .join('\n\n---\n\n');

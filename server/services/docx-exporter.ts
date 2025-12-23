@@ -263,11 +263,18 @@ export async function generateManuscriptDocx(data: ManuscriptData): Promise<Buff
 }
 
 function addContentParagraphs(children: Paragraph[], content: string): void {
-  const paragraphs = content.split(/\n\n+/);
+  let cleanedContent = content;
+  const continuityMarker = "---CONTINUITY_STATE---";
+  const markerIndex = cleanedContent.indexOf(continuityMarker);
+  if (markerIndex !== -1) {
+    cleanedContent = cleanedContent.substring(0, markerIndex).trim();
+  }
+  
+  const paragraphs = cleanedContent.split(/\n\n+/);
   
   for (const para of paragraphs) {
     const trimmed = para.trim();
-    if (trimmed) {
+    if (trimmed && !trimmed.startsWith("# ")) {
       children.push(
         new Paragraph({
           children: [
