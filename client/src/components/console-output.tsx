@@ -46,6 +46,42 @@ const logColors: Record<LogType, string> = {
   info: "text-muted-foreground",
 };
 
+function extractChapterNumber(message: string): number | null {
+  const patterns = [
+    /Capítulo\s+(-?\d+)/i,
+    /Cap\.\s*(-?\d+)/i,
+    /el\s+Capítulo\s+(-?\d+)/i,
+    /Checkpoint\s+#(\d+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = message.match(pattern);
+    if (match) {
+      return parseInt(match[1], 10);
+    }
+  }
+  return null;
+}
+
+const chapterColors: Record<number, string> = {};
+const baseColors = [
+  "bg-blue-500/20 text-blue-400",
+  "bg-purple-500/20 text-purple-400",
+  "bg-amber-500/20 text-amber-400",
+  "bg-emerald-500/20 text-emerald-400",
+  "bg-rose-500/20 text-rose-400",
+  "bg-cyan-500/20 text-cyan-400",
+  "bg-orange-500/20 text-orange-400",
+  "bg-indigo-500/20 text-indigo-400",
+];
+
+function getChapterColor(chapterNum: number): string {
+  if (!chapterColors[chapterNum]) {
+    const colorIndex = Math.abs(chapterNum) % baseColors.length;
+    chapterColors[chapterNum] = baseColors[colorIndex];
+  }
+  return chapterColors[chapterNum];
+}
+
 export function ConsoleOutput({ logs }: ConsoleOutputProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -77,26 +113,34 @@ export function ConsoleOutput({ logs }: ConsoleOutputProps) {
               Los registros de actividad aparecerán aquí cuando inicies un proyecto...
             </p>
           ) : (
-            logs.map((log) => (
-              <div 
-                key={log.id} 
-                className="flex items-start gap-2 leading-relaxed"
-                data-testid={`log-entry-${log.id}`}
-              >
-                <span className="text-xs text-muted-foreground shrink-0 w-16">
-                  {new Date(log.timestamp).toLocaleTimeString("es-ES", { 
-                    hour: "2-digit", 
-                    minute: "2-digit",
-                    second: "2-digit"
-                  })}
-                </span>
-                <span className={`flex items-center gap-1 shrink-0 ${logColors[log.type]}`}>
-                  {logIcons[log.type]}
-                  <span className="font-semibold">{logPrefixes[log.type]}</span>
-                </span>
-                <span className="text-foreground">{log.message}</span>
-              </div>
-            ))
+            logs.map((log) => {
+              const chapterNum = extractChapterNumber(log.message);
+              return (
+                <div 
+                  key={log.id} 
+                  className="flex items-start gap-2 leading-relaxed"
+                  data-testid={`log-entry-${log.id}`}
+                >
+                  <span className="text-xs text-muted-foreground shrink-0 w-16">
+                    {new Date(log.timestamp).toLocaleTimeString("es-ES", { 
+                      hour: "2-digit", 
+                      minute: "2-digit",
+                      second: "2-digit"
+                    })}
+                  </span>
+                  {chapterNum !== null && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded font-medium shrink-0 ${getChapterColor(chapterNum)}`}>
+                      {chapterNum === -1 ? "Ep" : chapterNum === 0 ? "Pr" : `C${chapterNum}`}
+                    </span>
+                  )}
+                  <span className={`flex items-center gap-1 shrink-0 ${logColors[log.type]}`}>
+                    {logIcons[log.type]}
+                    <span className="font-semibold">{logPrefixes[log.type]}</span>
+                  </span>
+                  <span className="text-foreground">{log.message}</span>
+                </div>
+              );
+            })
           )}
         </div>
       </ScrollArea>
