@@ -30,10 +30,26 @@ export interface BestsellerAnalysis {
   como_subir_a_9?: string;
 }
 
+export interface ScoreJustification {
+  puntuacion_desglosada: {
+    enganche: number;
+    personajes: number;
+    trama: number;
+    atmosfera: number;
+    ritmo: number;
+    cumplimiento_genero: number;
+  };
+  fortalezas_principales: string[];
+  debilidades_principales: string[];
+  comparacion_mercado: string;
+  recomendaciones_proceso: string[];
+}
+
 export interface FinalReviewerResult {
   veredicto: "APROBADO" | "APROBADO_CON_RESERVAS" | "REQUIERE_REVISION";
   resumen_general: string;
   puntuacion_global: number;
+  justificacion_puntuacion: ScoreJustification;
   analisis_bestseller?: BestsellerAnalysis;
   issues: FinalReviewIssue[];
   capitulos_para_reescribir: number[];
@@ -164,6 +180,20 @@ SALIDA OBLIGATORIA (JSON):
   "veredicto": "APROBADO" | "APROBADO_CON_RESERVAS" | "REQUIERE_REVISION",
   "resumen_general": "Como lector del género, mi experiencia fue...",
   "puntuacion_global": (1-10),
+  "justificacion_puntuacion": {
+    "puntuacion_desglosada": {
+      "enganche": (1-10),
+      "personajes": (1-10),
+      "trama": (1-10),
+      "atmosfera": (1-10),
+      "ritmo": (1-10),
+      "cumplimiento_genero": (1-10)
+    },
+    "fortalezas_principales": ["Lista de 3-5 aspectos destacables de la novela"],
+    "debilidades_principales": ["Lista de 1-3 aspectos a mejorar en futuras novelas"],
+    "comparacion_mercado": "Cómo se compara con bestsellers similares del género",
+    "recomendaciones_proceso": ["Sugerencias para mejorar el proceso creativo en futuras novelas, ej: más beats de acción, más desarrollo de antagonista, etc."]
+  },
   "analisis_bestseller": {
     "hook_inicial": "fuerte/moderado/debil - descripción",
     "cadencia_giros": "Cada X capítulos hay un giro - evaluación",
