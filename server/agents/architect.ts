@@ -224,6 +224,16 @@ INSTRUCCIONES CRÍTICAS PARA EVITAR REPETICIONES
 3. Los "recursos_literarios_sugeridos" no deben repetirse en capítulos adyacentes
 4. Cada "conflicto_central" debe ser único y escalar respecto al anterior
 5. Las "prohibiciones_este_capitulo" deben actualizarse acumulativamente
+
+═══════════════════════════════════════════════════════════════════
+NOMENCLATURA DE CAPÍTULOS - REGLAS ABSOLUTAS
+═══════════════════════════════════════════════════════════════════
+1. La palabra "Prólogo" SOLO puede aparecer en el capítulo número 0. NUNCA en capítulos 1, 2, 3...
+2. La palabra "Epílogo" SOLO puede aparecer en el capítulo número -1. NUNCA en otros capítulos.
+3. Los capítulos regulares (1 a N) deben tener títulos EVOCADORES y LITERARIOS, no estructurales.
+4. PROHIBIDO: "Prólogo: [subtítulo]" para capítulos que no sean el 0.
+5. PROHIBIDO: "Epílogo: [subtítulo]" para capítulos que no sean el -1.
+6. El capítulo 1 SIEMPRE es el PRIMER capítulo de la historia, NO un prólogo adicional.
 `;
 
 export class ArchitectAgent extends BaseAgent {
