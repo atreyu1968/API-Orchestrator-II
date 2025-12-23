@@ -181,6 +181,65 @@ REGLAS DE CONTINUIDAD FÍSICA
 3. CONTINUIDAD TEMPORAL: Respeta la cronología establecida.
 
 ═══════════════════════════════════════════════════════════════════
+⛔ CONTINUITY GATE - VERIFICACIÓN OBLIGATORIA (CRÍTICO)
+═══════════════════════════════════════════════════════════════════
+ANTES de escribir UNA SOLA LÍNEA de prosa, DEBES verificar el estado de CADA personaje:
+
+1. ESTADO VITAL: ¿Está VIVO, MUERTO, HERIDO, INCONSCIENTE, DESAPARECIDO?
+   - Si un personaje murió en capítulos anteriores → NO PUEDE APARECER (excepto flashback explícito)
+   - Si está herido → La herida DEBE afectar sus acciones
+   - Si está inconsciente → NO PUEDE actuar hasta que despierte
+
+2. UBICACIÓN: ¿Dónde está físicamente cada personaje?
+   - Un personaje en Roma NO PUEDE aparecer en Egipto sin viaje narrado
+   - Respeta la última ubicación conocida del capítulo anterior
+
+3. OBJETOS POSEÍDOS: ¿Qué tiene cada personaje?
+   - Si soltó un arma → NO la tiene hasta que la recupere
+   - Si perdió algo → NO puede usarlo
+
+⚠️ Si detectas CUALQUIER conflicto entre el estado anterior y lo que pide la escaleta:
+   - NO escribas el capítulo
+   - Indica el conflicto en tu respuesta
+   - El Editor rechazará automáticamente cualquier violación de continuidad vital
+
+═══════════════════════════════════════════════════════════════════
+🛡️ LEXICAL SHIELD - AUDITORÍA DE VOCABULARIO (OBLIGATORIO)
+═══════════════════════════════════════════════════════════════════
+Para ficción histórica, ANTES de escribir, prepara mentalmente sustituciones para:
+
+PROHIBIDO → USAR EN SU LUGAR:
+- "física" (ciencia) → "naturaleza", "la mecánica del cuerpo"
+- "shock" → "estupor", "parálisis del espanto", "el golpe del horror"
+- "microscópico" → "invisible al ojo", "diminuto", "imperceptible"
+- "psicológico" → "del ánimo", "del espíritu", "mental"
+- "trauma" → "herida del alma", "cicatriz invisible", "la marca"
+- "estrés" → "tensión", "agobio", "peso del momento"
+- "impacto" → "golpe", "efecto", "consecuencia"
+
+Si dudas de una palabra: ¿Existía en la época? Si no → busca alternativa.
+
+═══════════════════════════════════════════════════════════════════
+⚔️ ACTION RULEBOOK - FACTIBILIDAD FÍSICA (PARA ESCENAS DE ACCIÓN)
+═══════════════════════════════════════════════════════════════════
+En escenas de combate o acción física:
+
+1. CAPACIDADES DEL PERSONAJE: Consulta su ficha en World Bible
+   - Un escriba no lucha como un gladiador
+   - Un anciano no corre como un joven
+   - Una herida previa LIMITA las acciones
+
+2. REALISMO MÉDICO:
+   - Un brazo herido NO puede sostener peso
+   - La pérdida de sangre causa debilidad progresiva
+   - El dolor afecta la concentración
+
+3. CAUSALIDAD MECÁNICA:
+   - Cada golpe tiene consecuencia física visible
+   - La fatiga se acumula
+   - Las armas se pierden, se rompen, se atascan
+
+═══════════════════════════════════════════════════════════════════
 PROCESO DE ESCRITURA (Thinking Level: High)
 ═══════════════════════════════════════════════════════════════════
 
@@ -217,7 +276,17 @@ export class GhostwriterAgent extends BaseAgent {
     CONTEXTO DEL MUNDO (World Bible): ${JSON.stringify(input.worldBible)}
     GUÍA DE ESTILO: ${input.guiaEstilo}
     
-    ${input.previousContinuity ? `CONTINUIDAD DEL CAPÍTULO ANTERIOR: ${input.previousContinuity}` : ""}
+    ${input.previousContinuity ? `
+    ═══════════════════════════════════════════════════════════════════
+    ⛔ ESTADO DE CONTINUIDAD DEL CAPÍTULO ANTERIOR (VERIFICACIÓN OBLIGATORIA)
+    ═══════════════════════════════════════════════════════════════════
+    ${input.previousContinuity}
+    
+    ⚠️ ANTES DE ESCRIBIR, verifica que NINGÚN personaje listado como "dead" aparezca activo.
+    ⚠️ Respeta las ubicaciones finales de cada personaje.
+    ⚠️ Si un personaje tiene heridas o limitaciones, DEBEN afectar sus acciones.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
     `;
 
     if (input.refinementInstructions) {
