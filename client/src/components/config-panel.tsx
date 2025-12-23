@@ -24,7 +24,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked } from "lucide-react";
-import type { Pseudonym, StyleGuide, Series } from "@shared/schema";
+import type { Pseudonym, StyleGuide, Series, ExtendedGuide } from "@shared/schema";
 
 const genres = [
   { value: "fantasy", label: "Fantasía", description: "Mundos mágicos y criaturas sobrenaturales" },
@@ -58,7 +58,7 @@ const workTypes = [
 
 const configSchema = z.object({
   title: z.string().min(1, "El título es requerido").max(100),
-  premise: z.string().min(10, "Describe la idea de tu novela (mínimo 10 caracteres)").max(2000),
+  premise: z.string().min(10, "Describe la idea de tu novela (mínimo 10 caracteres)").max(2000).or(z.string().length(0)),
   genre: z.string().min(1, "Selecciona un género"),
   tone: z.string().min(1, "Selecciona un tono"),
   chapterCount: z.number().min(1).max(50),
@@ -67,6 +67,7 @@ const configSchema = z.object({
   hasAuthorNote: z.boolean().default(false),
   pseudonymId: z.number().nullable().optional(),
   styleGuideId: z.number().nullable().optional(),
+  extendedGuideId: z.number().nullable().optional(),
   workType: z.string().default("standalone"),
   seriesId: z.number().nullable().optional(),
   seriesOrder: z.number().nullable().optional(),
@@ -96,6 +97,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       hasAuthorNote: defaultValues?.hasAuthorNote || false,
       pseudonymId: defaultValues?.pseudonymId || null,
       styleGuideId: defaultValues?.styleGuideId || null,
+      extendedGuideId: (defaultValues as any)?.extendedGuideId || null,
       workType: (defaultValues as any)?.workType || "standalone",
       seriesId: (defaultValues as any)?.seriesId || null,
       seriesOrder: (defaultValues as any)?.seriesOrder || null,
@@ -125,6 +127,11 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
     queryKey: ["/api/series"],
   });
 
+  const { data: extendedGuides = [] } = useQuery<ExtendedGuide[]>({
+    queryKey: ["/api/extended-guides"],
+  });
+
+  const selectedExtendedGuideId = form.watch("extendedGuideId");
   const isSerialized = selectedWorkType === "series" || selectedWorkType === "trilogy";
 
   return (
@@ -170,7 +177,49 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
                 />
               </FormControl>
               <FormDescription>
-                Esta premisa guiará a los agentes para diseñar la trama, personajes y mundo de tu novela
+                {selectedExtendedGuideId 
+                  ? "La guía extendida seleccionada proporcionará la premisa completa. Puedes dejar este campo vacío."
+                  : "Esta premisa guiará a los agentes para diseñar la trama, personajes y mundo de tu novela"}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="extendedGuideId"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel className="flex items-center gap-2">
+                <FileText className="h-4 w-4" />
+                Guía Extendida (Opcional)
+              </FormLabel>
+              <Select
+                onValueChange={(val) => field.onChange(val === "none" ? null : parseInt(val))}
+                value={field.value?.toString() || "none"}
+              >
+                <FormControl>
+                  <SelectTrigger data-testid="select-extended-guide">
+                    <SelectValue placeholder="Sin guía extendida" />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent>
+                  <SelectItem value="none">Sin guía extendida</SelectItem>
+                  {extendedGuides.map((guide) => (
+                    <SelectItem key={guide.id} value={guide.id.toString()}>
+                      <div className="flex flex-col">
+                        <span>{guide.title}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {guide.wordCount?.toLocaleString()} palabras
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                Sube una guía de escritura extendida en Word que sustituya o complemente la premisa
               </FormDescription>
               <FormMessage />
             </FormItem>
