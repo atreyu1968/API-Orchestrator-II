@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2 } from "lucide-react";
+import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload } from "lucide-react";
 import type { Pseudonym, Project, Series } from "@shared/schema";
 
 interface SeriesWithDetails extends Series {
@@ -26,6 +27,15 @@ export default function SeriesPage() {
   const [newWorkType, setNewWorkType] = useState<"trilogy" | "series">("trilogy");
   const [newTotalBooks, setNewTotalBooks] = useState(3);
   const [deleteSeriesId, setDeleteSeriesId] = useState<number | null>(null);
+  
+  const [editingSeriesId, setEditingSeriesId] = useState<number | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editWorkType, setEditWorkType] = useState<"trilogy" | "series">("trilogy");
+  const [editTotalBooks, setEditTotalBooks] = useState(3);
+  
+  const [uploadingSeriesId, setUploadingSeriesId] = useState<number | null>(null);
+  const seriesGuideInputRef = useRef<HTMLInputElement>(null);
 
   const { data: registry = [], isLoading } = useQuery<SeriesWithDetails[]>({
     queryKey: ["/api/series/registry"],
@@ -62,6 +72,7 @@ export default function SeriesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      setEditingSeriesId(null);
       toast({ title: "Serie actualizada" });
     },
     onError: () => {
@@ -83,6 +94,56 @@ export default function SeriesPage() {
     },
   });
 
+  const uploadSeriesGuideMutation = useMutation({
+    mutationFn: async ({ seriesId, file }: { seriesId: number; file: File }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch(`/api/series/${seriesId}/guide`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Upload failed");
+      return response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      toast({
+        title: "Guia de serie cargada",
+        description: `Se han cargado ${result.wordCount?.toLocaleString() || 0} palabras de la guia`,
+      });
+      setUploadingSeriesId(null);
+      if (seriesGuideInputRef.current) {
+        seriesGuideInputRef.current.value = "";
+      }
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo subir la guia de serie",
+        variant: "destructive",
+      });
+      if (seriesGuideInputRef.current) {
+        seriesGuideInputRef.current.value = "";
+      }
+    },
+  });
+
+  const deleteSeriesGuideMutation = useMutation({
+    mutationFn: async (seriesId: number) => {
+      await apiRequest("DELETE", `/api/series/${seriesId}/guide`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      toast({ title: "Guia eliminada" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo eliminar la guia", variant: "destructive" });
+    },
+  });
+
   const handleCreateSeries = () => {
     if (!newTitle.trim()) return;
     createSeriesMutation.mutate({
@@ -97,6 +158,54 @@ export default function SeriesPage() {
       id: seriesId,
       data: { pseudonymId: pseudonymId === "none" ? null : parseInt(pseudonymId) },
     });
+  };
+
+  const startEditing = (s: SeriesWithDetails) => {
+    setEditingSeriesId(s.id);
+    setEditTitle(s.title);
+    setEditDescription(s.description || "");
+    setEditWorkType(s.workType as "trilogy" | "series");
+    setEditTotalBooks(s.totalPlannedBooks || 3);
+  };
+
+  const cancelEditing = () => {
+    setEditingSeriesId(null);
+    setEditTitle("");
+    setEditDescription("");
+    setEditWorkType("trilogy");
+    setEditTotalBooks(3);
+  };
+
+  const saveEditing = () => {
+    if (!editingSeriesId || !editTitle.trim()) return;
+    updateSeriesMutation.mutate({
+      id: editingSeriesId,
+      data: {
+        title: editTitle,
+        description: editDescription || null,
+        workType: editWorkType,
+        totalPlannedBooks: editTotalBooks,
+      },
+    });
+  };
+
+  const handleSeriesGuideUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !uploadingSeriesId) return;
+
+    if (!file.name.endsWith(".docx")) {
+      toast({
+        title: "Formato no soportado",
+        description: "Por favor sube un archivo .docx (Word)",
+        variant: "destructive",
+      });
+      if (seriesGuideInputRef.current) {
+        seriesGuideInputRef.current.value = "";
+      }
+      return;
+    }
+
+    uploadSeriesGuideMutation.mutate({ seriesId: uploadingSeriesId, file });
   };
 
   const statusLabels: Record<string, string> = {
@@ -121,11 +230,20 @@ export default function SeriesPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="series-page">
+      <input
+        type="file"
+        ref={seriesGuideInputRef}
+        onChange={handleSeriesGuideUpload}
+        accept=".docx"
+        className="hidden"
+        data-testid="input-series-guide-upload"
+      />
+
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold">Registro de Series</h1>
           <p className="text-muted-foreground mt-1">
-            Gestiona tus series y trilogías con sus volúmenes asignados
+            Gestiona tus series y trilogias con sus volumenes asignados
           </p>
         </div>
         <Button onClick={() => setIsCreating(true)} data-testid="button-create-series">
@@ -142,7 +260,7 @@ export default function SeriesPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="space-y-2">
-                <Label>Título de la Serie</Label>
+                <Label>Titulo de la Serie</Label>
                 <Input
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
@@ -157,7 +275,7 @@ export default function SeriesPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="trilogy">Trilogía</SelectItem>
+                    <SelectItem value="trilogy">Trilogia</SelectItem>
                     <SelectItem value="series">Serie</SelectItem>
                   </SelectContent>
                 </Select>
@@ -193,7 +311,7 @@ export default function SeriesPage() {
             <Library className="h-16 w-16 text-muted-foreground/30 mb-4" />
             <p className="text-muted-foreground text-lg mb-2">No hay series registradas</p>
             <p className="text-muted-foreground/60 text-sm">
-              Crea una serie o trilogía para organizar tus volúmenes
+              Crea una serie o trilogia para organizar tus volumenes
             </p>
           </CardContent>
         </Card>
@@ -204,40 +322,114 @@ export default function SeriesPage() {
               <CardHeader>
                 <div className="flex items-start justify-between gap-4 flex-wrap">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-2 flex-wrap">
-                      <CardTitle className="text-xl">{s.title}</CardTitle>
-                      <Badge variant="outline">
-                        {s.workType === "trilogy" ? "Trilogía" : "Serie"}
-                      </Badge>
-                      <Badge variant="secondary">
-                        {s.completedVolumes}/{s.totalPlannedBooks} volúmenes
-                      </Badge>
-                      {s.seriesGuide && (
-                        <Badge variant="outline" className="text-green-600 dark:text-green-400">
-                          <FileText className="h-3 w-3 mr-1" />
-                          Guía cargada
-                        </Badge>
-                      )}
-                    </div>
-                    <CardDescription>
-                      {s.description || "Sin descripción"}
-                    </CardDescription>
+                    {editingSeriesId === s.id ? (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Titulo</Label>
+                            <Input
+                              value={editTitle}
+                              onChange={(e) => setEditTitle(e.target.value)}
+                              data-testid={`input-edit-title-${s.id}`}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Tipo</Label>
+                            <Select value={editWorkType} onValueChange={(v) => setEditWorkType(v as "trilogy" | "series")}>
+                              <SelectTrigger data-testid={`select-edit-type-${s.id}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="trilogy">Trilogia</SelectItem>
+                                <SelectItem value="series">Serie</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Descripcion</Label>
+                            <Textarea
+                              value={editDescription}
+                              onChange={(e) => setEditDescription(e.target.value)}
+                              placeholder="Descripcion de la serie..."
+                              rows={3}
+                              data-testid={`input-edit-description-${s.id}`}
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Libros Planificados</Label>
+                            <Input
+                              type="number"
+                              min={2}
+                              max={20}
+                              value={editTotalBooks}
+                              onChange={(e) => setEditTotalBooks(parseInt(e.target.value) || 3)}
+                              data-testid={`input-edit-books-${s.id}`}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button onClick={saveEditing} disabled={updateSeriesMutation.isPending} size="sm">
+                            {updateSeriesMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Check className="h-4 w-4 mr-2" />}
+                            Guardar
+                          </Button>
+                          <Button variant="outline" size="sm" onClick={cancelEditing}>
+                            <X className="h-4 w-4 mr-2" />
+                            Cancelar
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                          <CardTitle className="text-xl">{s.title}</CardTitle>
+                          <Badge variant="outline">
+                            {s.workType === "trilogy" ? "Trilogia" : "Serie"}
+                          </Badge>
+                          <Badge variant="secondary">
+                            {s.completedVolumes}/{s.totalPlannedBooks} volumenes
+                          </Badge>
+                          {s.seriesGuide && (
+                            <Badge variant="outline" className="text-green-600 dark:text-green-400">
+                              <FileText className="h-3 w-3 mr-1" />
+                              Guia cargada
+                            </Badge>
+                          )}
+                        </div>
+                        <CardDescription>
+                          {s.description || "Sin descripcion"}
+                        </CardDescription>
+                      </>
+                    )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setDeleteSeriesId(s.id)}
-                    data-testid={`button-delete-series-${s.id}`}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
+                  {editingSeriesId !== s.id && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => startEditing(s)}
+                        data-testid={`button-edit-series-${s.id}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setDeleteSeriesId(s.id)}
+                        data-testid={`button-delete-series-${s.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-center gap-4 flex-wrap">
                   <div className="flex items-center gap-2">
                     <User className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">Seudónimo:</span>
+                    <span className="text-sm text-muted-foreground">Seudonimo:</span>
                   </div>
                   <Select
                     value={s.pseudonymId?.toString() || "none"}
@@ -265,17 +457,63 @@ export default function SeriesPage() {
 
                 <Separator />
 
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">
+                      Guia de Serie:
+                    </span>
+                    {s.seriesGuideFileName && (
+                      <span className="text-xs text-muted-foreground/60">
+                        {s.seriesGuideFileName}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setUploadingSeriesId(s.id);
+                        seriesGuideInputRef.current?.click();
+                      }}
+                      disabled={uploadSeriesGuideMutation.isPending}
+                      data-testid={`button-upload-guide-${s.id}`}
+                    >
+                      {uploadSeriesGuideMutation.isPending && uploadingSeriesId === s.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <Upload className="h-4 w-4 mr-2" />
+                      )}
+                      {s.seriesGuide ? "Reemplazar" : "Subir"} Guia
+                    </Button>
+                    {s.seriesGuide && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => deleteSeriesGuideMutation.mutate(s.id)}
+                        disabled={deleteSeriesGuideMutation.isPending}
+                        data-testid={`button-delete-guide-${s.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
                 <div>
                   <div className="flex items-center gap-2 mb-3">
                     <BookOpen className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm font-medium">Volúmenes</span>
+                    <span className="text-sm font-medium">Volumenes</span>
                   </div>
                   
                   {s.projects.length === 0 ? (
                     <div className="text-sm text-muted-foreground/60 py-4 text-center bg-muted/30 rounded-md">
-                      No hay proyectos asignados a esta serie todavía.
+                      No hay proyectos asignados a esta serie todavia.
                       <br />
-                      Crea un proyecto y selecciona esta serie en la configuración.
+                      Crea un proyecto y selecciona esta serie en la configuracion.
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -316,7 +554,7 @@ export default function SeriesPage() {
         open={deleteSeriesId !== null}
         onOpenChange={(open) => !open && setDeleteSeriesId(null)}
         title="Eliminar Serie"
-        description="Esta acción eliminará la serie pero mantendrá los proyectos asociados como obras independientes."
+        description="Esta accion eliminara la serie pero mantendra los proyectos asociados como obras independientes."
         confirmText="Eliminar"
         onConfirm={() => {
           if (deleteSeriesId) {
