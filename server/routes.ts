@@ -760,6 +760,63 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/series/:id/guide", upload.single('file'), async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const file = req.file;
+      
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const series = await storage.getSeries(id);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      const guideContent = result.value.trim();
+
+      if (!guideContent || guideContent.length < 100) {
+        return res.status(400).json({ error: "El documento está vacío o tiene muy poco contenido" });
+      }
+
+      const updated = await storage.updateSeries(id, {
+        seriesGuide: guideContent,
+        seriesGuideFileName: file.originalname,
+      });
+
+      res.json({
+        message: "Guía de serie cargada correctamente",
+        series: updated,
+        wordCount: guideContent.split(/\s+/).length,
+      });
+    } catch (error) {
+      console.error("Error uploading series guide:", error);
+      res.status(500).json({ error: "Failed to upload series guide" });
+    }
+  });
+
+  app.delete("/api/series/:id/guide", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const series = await storage.getSeries(id);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      await storage.updateSeries(id, {
+        seriesGuide: null,
+        seriesGuideFileName: null,
+      });
+
+      res.json({ message: "Guía de serie eliminada" });
+    } catch (error) {
+      console.error("Error deleting series guide:", error);
+      res.status(500).json({ error: "Failed to delete series guide" });
+    }
+  });
+
   app.get("/api/pseudonyms", async (req: Request, res: Response) => {
     try {
       const pseudonyms = await storage.getAllPseudonyms();

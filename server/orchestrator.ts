@@ -289,8 +289,45 @@ ${contextParts.join("\n")}
         }
       }
 
-      const effectivePremise = extendedGuideContent 
-        ? `${project.premise || ""}\n\n--- GUÍA DE ESCRITURA EXTENDIDA ---\n${extendedGuideContent}`
+      let seriesContextContent = "";
+      if (project.seriesId) {
+        const seriesData = await storage.getSeries(project.seriesId);
+        if (seriesData) {
+          if (seriesData.seriesGuide) {
+            seriesContextContent += `\n\n═══════════════════════════════════════════════════════════════════
+GUÍA DE LA SERIE: "${seriesData.title}"
+═══════════════════════════════════════════════════════════════════
+${seriesData.seriesGuide}
+═══════════════════════════════════════════════════════════════════\n`;
+            console.log(`[Orchestrator] Using series guide for "${seriesData.title}" (${seriesData.seriesGuide.split(/\s+/).length} words)`);
+          }
+
+          const previousSnapshots = await storage.getSeriesContinuitySnapshots(project.seriesId);
+          const previousVolumes = previousSnapshots.filter(s => {
+            const snapProject = s.projectId;
+            return snapProject !== project.id;
+          });
+
+          if (previousVolumes.length > 0) {
+            seriesContextContent += `\n═══════════════════════════════════════════════════════════════════
+VOLÚMENES ANTERIORES DE LA SERIE (${previousVolumes.length} libros completados)
+═══════════════════════════════════════════════════════════════════\n`;
+            for (const snapshot of previousVolumes) {
+              seriesContextContent += `
+--- VOLUMEN (Project ID: ${snapshot.projectId}) ---
+Sinopsis: ${snapshot.synopsis || "No disponible"}
+Estado de personajes: ${JSON.stringify(snapshot.characterStates)}
+Hilos no resueltos: ${JSON.stringify(snapshot.unresolvedThreads)}
+Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
+───────────────────────────────────────────────────────────────────\n`;
+            }
+            console.log(`[Orchestrator] Loaded ${previousVolumes.length} previous volume snapshots for series continuity`);
+          }
+        }
+      }
+
+      const effectivePremise = extendedGuideContent || seriesContextContent
+        ? `${project.premise || ""}${extendedGuideContent ? `\n\n--- GUÍA DE ESCRITURA EXTENDIDA ---\n${extendedGuideContent}` : ""}${seriesContextContent}`
         : (project.premise || "");
 
       this.callbacks.onAgentStatus("architect", "thinking", "El Arquitecto está diseñando la estructura narrativa...");
