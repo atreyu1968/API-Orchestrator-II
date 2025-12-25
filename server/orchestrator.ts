@@ -1851,33 +1851,54 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
   }
 
   private convertCharacters(data: ParsedWorldBible): Character[] {
-    return (data.world_bible?.personajes || []).map((p: any) => {
+    // Try multiple possible locations for characters array (use any for flexible access)
+    const d = data as any;
+    const personajes = d.world_bible?.personajes 
+      || d.world_bible?.characters 
+      || d.personajes 
+      || d.characters 
+      || [];
+    
+    console.log(`[Orchestrator] Converting ${personajes.length} characters`);
+    
+    return personajes.map((p: any) => {
       // Extraer apariencia inmutable del formato del Architect
-      const aparienciaRaw = p.apariencia_inmutable || p.aparienciaInmutable || {};
+      const aparienciaRaw = p.apariencia_inmutable || p.aparienciaInmutable || p.appearance || {};
       return {
         name: p.nombre || p.name || "",
         role: p.rol || p.role || "",
-        psychologicalProfile: p.perfil_psicologico || p.psychologicalProfile || "",
+        psychologicalProfile: p.perfil_psicologico || p.psychologicalProfile || p.psychology || "",
         arc: p.arco || p.arc || "",
         relationships: p.relaciones || p.relationships || [],
         isAlive: p.vivo !== false && p.isAlive !== false,
         // CRÍTICO: Preservar apariencia física para continuidad
         aparienciaInmutable: {
-          ojos: aparienciaRaw.ojos || aparienciaRaw.color_ojos || "",
-          cabello: aparienciaRaw.cabello || aparienciaRaw.color_cabello || "",
-          rasgosDistintivos: aparienciaRaw.rasgos_distintivos || aparienciaRaw.rasgosDistintivos || [],
-          altura: aparienciaRaw.altura || aparienciaRaw.estatura || "",
-          edad: aparienciaRaw.edad || aparienciaRaw.edad_aparente || "",
+          ojos: aparienciaRaw.ojos || aparienciaRaw.color_ojos || aparienciaRaw.eyes || "",
+          cabello: aparienciaRaw.cabello || aparienciaRaw.color_cabello || aparienciaRaw.hair || "",
+          rasgosDistintivos: aparienciaRaw.rasgos_distintivos || aparienciaRaw.rasgosDistintivos || aparienciaRaw.features || [],
+          altura: aparienciaRaw.altura || aparienciaRaw.estatura || aparienciaRaw.height || "",
+          edad: aparienciaRaw.edad || aparienciaRaw.edad_aparente || aparienciaRaw.age || "",
         },
       };
     });
   }
 
   private convertWorldRules(data: ParsedWorldBible): WorldRule[] {
-    return (data.world_bible?.reglas_lore || []).map((r: any) => ({
+    // Try multiple possible locations for rules array (use any for flexible access)
+    const d = data as any;
+    const reglas = d.world_bible?.reglas_lore 
+      || d.world_bible?.rules 
+      || d.world_bible?.world_rules
+      || d.reglas_lore 
+      || d.rules 
+      || [];
+    
+    console.log(`[Orchestrator] Converting ${reglas.length} world rules`);
+    
+    return reglas.map((r: any) => ({
       category: r.categoria || r.category || "General",
-      rule: r.regla || r.rule || "",
-      constraints: r.restricciones || r.constraints || [],
+      rule: r.regla || r.rule || r.descripcion || r.description || "",
+      constraints: r.restricciones || r.constraints || r.limitaciones || [],
     }));
   }
 
@@ -1891,9 +1912,15 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
   }
 
   private convertPlotOutline(data: ParsedWorldBible): PlotOutline {
-    const acts = data.estructura_tres_actos || {};
+    // Try multiple possible locations for structure (use any for flexible access)
+    const d = data as any;
+    const acts = d.estructura_tres_actos || d.three_act_structure || d.estructura || {};
+    const premise = d.premisa || d.premise || d.world_bible?.premisa || "";
+    
+    console.log(`[Orchestrator] Converting plot outline - Premise length: ${premise.length}, Chapters: ${(d.escaleta_capitulos || []).length}`);
+    
     return {
-      premise: data.premisa || "",
+      premise,
       threeActStructure: {
         act1: {
           setup: acts.acto1?.planteamiento || "",
