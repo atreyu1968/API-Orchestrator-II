@@ -541,6 +541,53 @@ export default function Dashboard() {
                         </p>
                       </div>
                     </div>
+                    
+                    {/* Show Final Review Issues if available */}
+                    {currentProject.finalReviewResult && (currentProject.finalReviewResult as any).issues?.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <p className="text-sm font-medium mb-2">Issues Documentados ({(currentProject.finalReviewResult as any).issues.length})</p>
+                        <div className="space-y-2 max-h-48 overflow-y-auto">
+                          {((currentProject.finalReviewResult as any).issues as Array<{capitulo: number; problema: string; severidad: string; instrucciones_correccion: string}>).map((issue, idx) => (
+                            <div 
+                              key={idx} 
+                              className="text-xs p-2 rounded bg-background/50 border border-border/30"
+                              data-testid={`issue-${idx}`}
+                            >
+                              <div className="flex items-center gap-2 mb-1">
+                                <Badge 
+                                  variant={issue.severidad === "critica" ? "destructive" : issue.severidad === "mayor" ? "secondary" : "outline"}
+                                  className="text-[10px] px-1.5 py-0"
+                                >
+                                  {issue.severidad}
+                                </Badge>
+                                <span className="text-muted-foreground">
+                                  {issue.capitulo === 0 ? "Prólogo" : issue.capitulo === -1 ? "Epílogo" : `Cap. ${issue.capitulo}`}
+                                </span>
+                              </div>
+                              <p className="text-foreground">{issue.problema}</p>
+                              {issue.instrucciones_correccion && (
+                                <p className="text-muted-foreground mt-1 italic">{issue.instrucciones_correccion}</p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Show Score Justification if available */}
+                    {currentProject.finalReviewResult && (currentProject.finalReviewResult as any).justificacion_puntuacion && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <p className="text-sm font-medium mb-2">Desglose de Puntuación</p>
+                        <div className="grid grid-cols-2 gap-2 text-xs">
+                          {Object.entries((currentProject.finalReviewResult as any).justificacion_puntuacion.puntuacion_desglosada || {}).map(([key, value]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}:</span>
+                              <span className="font-medium">{value as number}/10</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
