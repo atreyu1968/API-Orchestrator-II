@@ -168,12 +168,19 @@ MENORES (El lector ni nota):
 - Variaciones estilísticas sutiles
 
 ═══════════════════════════════════════════════════════════════════
-PROTOCOLO DE PASADAS
+PROTOCOLO DE PASADAS - OBJETIVO: PUNTUACIÓN 9+
 ═══════════════════════════════════════════════════════════════════
 
 PASADA 1: Lectura completa como lector. ¿Qué me sacó de la historia?
-PASADA 2: Verificar si las correcciones mejoraron la experiencia.
-PASADA 3: Veredicto final obligatorio (APROBADO o APROBADO_CON_RESERVAS).
+PASADA 2+: Verificar correcciones. ¿Mejoró la experiencia?
+
+REGLA CRÍTICA: Solo emitir APROBADO cuando la puntuación sea 9 o superior.
+- Si puntuación < 9 → REQUIERE_REVISION con instrucciones específicas
+- Si puntuación >= 9 → APROBADO
+- El sistema continuará ciclos hasta alcanzar 9+
+
+En cada pasada donde puntuación < 9, incluye en analisis_bestseller.como_subir_a_9
+instrucciones CONCRETAS para elevar la puntuación.
 
 SALIDA OBLIGATORIA (JSON):
 {
@@ -231,11 +238,18 @@ export class FinalReviewerAgent extends BaseAgent {
 
     let pasadaInfo = "";
     if (input.pasadaNumero === 1) {
-      pasadaInfo = "\n\nEsta es tu PASADA #1 - AUDITORÍA COMPLETA. Analiza exhaustivamente y reporta máximo 5 issues (los más graves).";
-    } else if (input.pasadaNumero === 2) {
-      pasadaInfo = `\n\nEsta es tu PASADA #2 - VERIFICACIÓN. Los siguientes issues fueron reportados en pasada 1:\n${input.issuesPreviosCorregidos?.map(i => `- ${i}`).join("\n") || "Ninguno"}\n\nSOLO verifica si persisten. NO busques problemas nuevos. Si los principales están corregidos → APROBADO.`;
-    } else if (input.pasadaNumero && input.pasadaNumero >= 3) {
-      pasadaInfo = `\n\nEsta es tu PASADA #3 - VEREDICTO FINAL OBLIGATORIO.\nIssues previos: ${input.issuesPreviosCorregidos?.map(i => `- ${i}`).join("\n") || "Ninguno"}\n\nDEBES emitir veredicto definitivo:\n- APROBADO: Sin issues críticos\n- APROBADO_CON_RESERVAS: Issues menores pero publicable\nNO puedes devolver REQUIERE_REVISION en pasada 3.`;
+      pasadaInfo = "\n\nEsta es tu PASADA #1 - AUDITORÍA COMPLETA. Analiza exhaustivamente y reporta máximo 5 issues (los más graves). OBJETIVO: puntuación 9+.";
+    } else if (input.pasadaNumero && input.pasadaNumero >= 2) {
+      pasadaInfo = `\n\nEsta es tu PASADA #${input.pasadaNumero} - VERIFICACIÓN Y RE-EVALUACIÓN.
+Issues previos: ${input.issuesPreviosCorregidos?.map(i => `- ${i}`).join("\n") || "Ninguno"}
+
+INSTRUCCIONES:
+1. Verifica si los issues anteriores fueron corregidos
+2. Re-evalúa la puntuación global con criterio fresco
+3. Si puntuación >= 9 → APROBADO
+4. Si puntuación < 9 → REQUIERE_REVISION con instrucciones específicas en "como_subir_a_9"
+
+RECUERDA: El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     }
 
     const prompt = `
@@ -284,6 +298,20 @@ export class FinalReviewerAgent extends BaseAgent {
         veredicto: "APROBADO",
         resumen_general: "Revisión completada automáticamente",
         puntuacion_global: 8,
+        justificacion_puntuacion: {
+          puntuacion_desglosada: {
+            enganche: 8,
+            personajes: 8,
+            trama: 8,
+            atmosfera: 8,
+            ritmo: 8,
+            cumplimiento_genero: 8
+          },
+          fortalezas_principales: ["Manuscrito completado"],
+          debilidades_principales: [],
+          comparacion_mercado: "Evaluación automática por fallo de parsing",
+          recomendaciones_proceso: []
+        },
         issues: [],
         capitulos_para_reescribir: []
       } 

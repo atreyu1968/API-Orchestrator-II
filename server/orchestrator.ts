@@ -86,7 +86,8 @@ export class Orchestrator {
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
   private callbacks: OrchestratorCallbacks;
   private maxRefinementLoops = 3;
-  private maxFinalReviewCycles = 3;
+  private maxFinalReviewCycles = 10; // Continue until score >= 9, up to this maximum
+  private minAcceptableScore = 9; // Minimum score required for approval
   private continuityCheckpointInterval = 5;
   private currentProjectGenre = "";
   
@@ -1259,19 +1260,45 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
         finalScore: result?.puntuacion_global ?? null
       });
 
-      if (result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") {
+      const currentScore = result?.puntuacion_global || 0;
+      
+      // APROBADO: El revisor aprobó Y la puntuación es >= 9
+      if ((result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") && currentScore >= this.minAcceptableScore) {
         const mensaje = result.veredicto === "APROBADO_CON_RESERVAS"
-          ? `Manuscrito APROBADO CON RESERVAS (${result.puntuacion_global}/10). Issues menores documentados.`
-          : `Manuscrito APROBADO (${result.puntuacion_global}/10). Sin inconsistencias detectadas.`;
+          ? `Manuscrito APROBADO CON RESERVAS (${currentScore}/10). Issues menores documentados.`
+          : `Manuscrito APROBADO (${currentScore}/10). Sin inconsistencias detectadas.`;
         this.callbacks.onAgentStatus("final-reviewer", "completed", mensaje);
         return true;
       }
       
-      // TERMINACIÓN FORZADA en pasada 3: si el revisor devuelve REQUIERE_REVISION,
-      // forzamos aprobación con advertencias ya que no se permiten más ciclos
+      // Si el revisor aprobó pero la puntuación es < 9, continuamos refinando
+      if ((result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") && currentScore < this.minAcceptableScore) {
+        this.callbacks.onAgentStatus("final-reviewer", "editing", 
+          `Puntuación ${currentScore}/10 insuficiente. Objetivo: ${this.minAcceptableScore}+. Refinando manuscrito...`
+        );
+        // Create generic issues based on the bestseller analysis if available
+        const genericIssues = result?.analisis_bestseller?.como_subir_a_9 
+          ? [{ 
+              capitulos_afectados: [1], // Will be expanded below
+              categoria: "enganche" as const,
+              descripcion: result.analisis_bestseller.como_subir_a_9,
+              severidad: "mayor" as const,
+              instrucciones_correccion: result.analisis_bestseller.como_subir_a_9
+            }]
+          : result?.issues || [];
+        
+        if (result) {
+          result.veredicto = "REQUIERE_REVISION";
+          if (!result.issues?.length && genericIssues.length) {
+            result.issues = genericIssues;
+          }
+        }
+      }
+      
+      // LÍMITE MÁXIMO DE CICLOS alcanzado - aceptar con la puntuación actual
       if (revisionCycle === this.maxFinalReviewCycles - 1) {
         this.callbacks.onAgentStatus("final-reviewer", "completed", 
-          `Pasada final completada. Manuscrito aceptado con ${result?.issues?.length || 0} issues menores documentados (${result?.puntuacion_global || 7}/10).`
+          `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Manuscrito finalizado con puntuación ${currentScore}/10.`
         );
         return true;
       }
