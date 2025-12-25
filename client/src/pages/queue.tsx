@@ -385,7 +385,7 @@ export default function QueuePage() {
                   className="flex items-center gap-4 p-4 rounded-lg border bg-card hover-elevate"
                   data-testid={`queue-item-${item.id}`}
                 >
-                  <div className="text-lg font-bold text-muted-foreground w-8">{item.position}</div>
+                  <div className="text-lg font-bold text-muted-foreground w-8">{index + 1}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-medium truncate">{item.project?.title || `Proyecto #${item.projectId}`}</div>
                     <div className="text-sm text-muted-foreground">
