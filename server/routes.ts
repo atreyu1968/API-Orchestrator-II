@@ -1897,5 +1897,192 @@ IMPORTANTE:
     }
   });
 
+  // Execute AI-powered arc verification for a project
+  app.post("/api/series/:id/verify-project", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { projectId } = req.body;
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const series = await storage.getSeries(seriesId);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      const chapters = await storage.getChaptersByProject(projectId);
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      const milestones = await storage.getMilestonesBySeries(seriesId);
+      const threads = await storage.getPlotThreadsBySeries(seriesId);
+
+      const chaptersSummary = chapters
+        .filter((c: any) => c.content && c.content.length > 100)
+        .sort((a: any, b: any) => a.chapterNumber - b.chapterNumber)
+        .map((c: any) => `Capítulo ${c.chapterNumber}: ${c.title || ""}\n${c.content?.substring(0, 2000) || "Sin contenido"}...`)
+        .join("\n\n");
+
+      const { ArcValidatorAgent } = await import("./agents/arc-validator");
+      const arcValidator = new ArcValidatorAgent();
+      
+      const result = await arcValidator.execute({
+        projectTitle: project.title,
+        seriesTitle: series.title,
+        volumeNumber: project.seriesOrder || 1,
+        totalVolumes: series.totalPlannedBooks || 10,
+        chaptersSummary,
+        milestones,
+        plotThreads: threads,
+        worldBible: worldBible || {},
+      });
+
+      if (result.result) {
+        const verification = await storage.createArcVerification({
+          seriesId,
+          projectId,
+          volumeNumber: project.seriesOrder || 1,
+          status: result.result.passed ? "passed" : "needs_attention",
+          overallScore: result.result.overallScore,
+          milestonesChecked: result.result.milestonesChecked,
+          milestonesFulfilled: result.result.milestonesFulfilled,
+          threadsProgressed: result.result.threadsProgressed,
+          threadsResolved: result.result.threadsResolved,
+          findings: JSON.stringify(result.result.findings),
+          recommendations: result.result.recommendations,
+        });
+
+        for (const mv of result.result.milestoneVerifications) {
+          if (mv.isFulfilled) {
+            await storage.updateMilestone(mv.milestoneId, {
+              isFulfilled: true,
+              fulfilledInProjectId: projectId,
+              fulfilledInChapter: mv.fulfilledInChapter,
+              verificationNotes: mv.verificationNotes,
+            });
+          }
+        }
+
+        for (const tp of result.result.threadProgressions) {
+          if (tp.currentStatus !== "active") {
+            await storage.updatePlotThread(tp.threadId, {
+              status: tp.currentStatus,
+              resolvedVolume: tp.resolvedInVolume ? project.seriesOrder : undefined,
+              resolvedChapter: tp.resolvedInChapter,
+            });
+          }
+        }
+
+        res.json({ 
+          verification, 
+          result: result.result,
+          tokensUsed: {
+            input: (result as any).inputTokens || 0,
+            output: (result as any).outputTokens || 0,
+          }
+        });
+      } else {
+        res.status(500).json({ error: "Verification failed to produce results" });
+      }
+    } catch (error) {
+      console.error("Error executing arc verification:", error);
+      res.status(500).json({ error: "Failed to execute arc verification" });
+    }
+  });
+
+  // Apply arc corrections to chapters
+  app.post("/api/series/:id/apply-corrections", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { projectId, corrections } = req.body;
+
+      if (!projectId || !corrections || !corrections.length) {
+        return res.status(400).json({ error: "projectId and corrections array required" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const series = await storage.getSeries(seriesId);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      const milestones = await storage.getMilestonesBySeries(seriesId);
+      
+      const { CopyEditorAgent } = await import("./agents/copyeditor");
+      const copyEditor = new CopyEditorAgent();
+      
+      const results: any[] = [];
+      
+      for (const correction of corrections) {
+        const { chapterNumber, instruction, milestoneId } = correction;
+        
+        const chapters = await storage.getChaptersByProject(projectId);
+        const chapter = chapters.find((c: any) => c.chapterNumber === chapterNumber);
+        
+        if (!chapter) {
+          results.push({ chapterNumber, success: false, error: "Chapter not found" });
+          continue;
+        }
+
+        const milestone = milestones.find((m: any) => m.id === milestoneId);
+        const milestoneContext = milestone 
+          ? `\n\nHITO A CUMPLIR:\n- Descripción: ${milestone.description}\n- Tipo: ${milestone.milestoneType}\n`
+          : "";
+
+        const correctionPrompt = `INSTRUCCIÓN DE CORRECCIÓN DE ARCO ARGUMENTAL:
+${instruction}
+${milestoneContext}
+
+El capítulo debe incorporar el elemento indicado mientras mantiene la coherencia narrativa y el estilo existente.`;
+
+        const result = await copyEditor.execute({
+          chapterContent: chapter.content || "",
+          chapterNumber,
+          chapterTitle: chapter.title || `Capítulo ${chapterNumber}`,
+          guiaEstilo: correctionPrompt,
+        });
+
+        if ((result as any).result?.texto_final) {
+          await storage.updateChapter(chapter.id, {
+            content: (result as any).result.texto_final,
+            status: "pending_review",
+          });
+          
+          if (milestoneId && milestone) {
+            await storage.updateMilestone(milestoneId, {
+              isFulfilled: true,
+              fulfilledInProjectId: projectId,
+              fulfilledInChapter: chapterNumber,
+              verificationNotes: `Corregido automáticamente: ${instruction}`,
+            });
+          }
+
+          results.push({ 
+            chapterNumber, 
+            success: true, 
+            tokensUsed: { input: (result as any).inputTokens || 0, output: (result as any).outputTokens || 0 }
+          });
+        } else {
+          results.push({ chapterNumber, success: false, error: "Editor failed" });
+        }
+      }
+
+      res.json({ results, totalCorrected: results.filter(r => r.success).length });
+    } catch (error) {
+      console.error("Error applying arc corrections:", error);
+      res.status(500).json({ error: "Failed to apply arc corrections" });
+    }
+  });
+
   return httpServer;
 }

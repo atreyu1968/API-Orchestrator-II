@@ -556,7 +556,7 @@ export default function SeriesPage() {
                   <ArcVerificationPanel 
                     seriesId={s.id} 
                     seriesTitle={s.title}
-                    totalVolumes={s.totalPlannedBooks}
+                    totalVolumes={s.totalPlannedBooks || 0}
                   />
                 </div>
               </CardContent>

@@ -19,9 +19,11 @@ import {
   Loader2,
   AlertTriangle,
   CheckCircle2,
-  Circle
+  Circle,
+  Play,
+  Wrench
 } from "lucide-react";
-import type { SeriesArcMilestone, SeriesPlotThread, SeriesArcVerification } from "@shared/schema";
+import type { SeriesArcMilestone, SeriesPlotThread, SeriesArcVerification, Project } from "@shared/schema";
 
 interface ArcVerificationPanelProps {
   seriesId: number;
@@ -46,6 +48,13 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
     description: "",
     introducedVolume: 1,
     importance: "major" as const,
+  });
+
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [lastVerificationResult, setLastVerificationResult] = useState<any>(null);
+
+  const { data: projects = [] } = useQuery<Project[]>({
+    queryKey: [`/api/series/${seriesId}/projects`],
   });
 
   const { data: milestones = [], isLoading: milestonesLoading } = useQuery<SeriesArcMilestone[]>({
@@ -114,6 +123,75 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
     },
   });
 
+  const verifyProjectMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/verify-project`, { projectId });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/verifications`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/milestones`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/threads`] });
+      setLastVerificationResult(data.result);
+      toast({ 
+        title: data.result?.passed ? "Verificacion exitosa" : "Verificacion con observaciones",
+        description: `Puntuacion: ${data.result?.overallScore || 0}/100`
+      });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo ejecutar la verificacion", variant: "destructive" });
+    },
+  });
+
+  const applyCorrectionssMutation = useMutation({
+    mutationFn: async (corrections: any[]) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/apply-corrections`, { 
+        projectId: parseInt(selectedProjectId), 
+        corrections 
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/verifications`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/series/${seriesId}/milestones`] });
+      setLastVerificationResult(null);
+      toast({ 
+        title: "Correcciones aplicadas",
+        description: `${data.totalCorrected} capitulos corregidos`
+      });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudieron aplicar las correcciones", variant: "destructive" });
+    },
+  });
+
+  const handleRunVerification = () => {
+    if (!selectedProjectId) {
+      toast({ title: "Error", description: "Selecciona un proyecto primero", variant: "destructive" });
+      return;
+    }
+    verifyProjectMutation.mutate(parseInt(selectedProjectId));
+  };
+
+  const handleApplyCorrections = () => {
+    if (!lastVerificationResult?.milestoneVerifications) return;
+    
+    const unfulfilled = lastVerificationResult.milestoneVerifications
+      .filter((m: any) => !m.isFulfilled && m.suggestedChapter)
+      .map((m: any) => ({
+        chapterNumber: m.suggestedChapter || m.fulfilledInChapter || 1,
+        instruction: m.verificationNotes || m.description || "Incorporar elemento del arco argumental",
+        milestoneId: m.milestoneId
+      }));
+
+    if (unfulfilled.length === 0) {
+      toast({ title: "Info", description: "No hay correcciones con capitulos identificados" });
+      return;
+    }
+
+    applyCorrectionssMutation.mutate(unfulfilled);
+  };
+
   const getMilestoneTypeLabel = (type: string) => {
     switch (type) {
       case "plot_point": return "Punto de Trama";
@@ -152,8 +230,92 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
   const resolvedThreads = threads.filter(t => t.status === "resolved").length;
   const latestVerification = verifications[0];
 
+  const unfulfilledMilestones = lastVerificationResult?.milestoneVerifications?.filter((m: any) => !m.isFulfilled) || [];
+
   return (
     <div className="space-y-4 pt-4">
+      <div className="p-4 rounded-lg border bg-muted/30 space-y-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex-1 min-w-48">
+            <Label className="text-sm text-muted-foreground mb-1 block">Proyecto a verificar</Label>
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger data-testid="select-project-verify">
+                <SelectValue placeholder="Seleccionar volumen..." />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((p) => (
+                  <SelectItem key={p.id} value={p.id.toString()}>
+                    Vol. {p.seriesOrder}: {p.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-2 pt-5">
+            <Button 
+              onClick={handleRunVerification}
+              disabled={!selectedProjectId || verifyProjectMutation.isPending}
+              data-testid="button-run-verification"
+            >
+              {verifyProjectMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Play className="h-4 w-4 mr-2" />
+              )}
+              Ejecutar Verificacion
+            </Button>
+            {unfulfilledMilestones.length > 0 && (
+              <Button 
+                variant="secondary"
+                onClick={handleApplyCorrections}
+                disabled={applyCorrectionssMutation.isPending}
+                data-testid="button-apply-corrections"
+              >
+                {applyCorrectionssMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Wrench className="h-4 w-4 mr-2" />
+                )}
+                Aplicar Correcciones ({unfulfilledMilestones.length})
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {lastVerificationResult && (
+          <div className="p-3 rounded-lg border bg-card">
+            <div className="flex items-center gap-2 mb-2">
+              {lastVerificationResult.passed ? (
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+              ) : (
+                <AlertTriangle className="h-5 w-5 text-yellow-500" />
+              )}
+              <span className="font-medium">
+                Resultado: {lastVerificationResult.passed ? "Aprobado" : "Requiere atencion"}
+              </span>
+              <Badge variant="outline">{lastVerificationResult.overallScore}/100</Badge>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Hitos: {lastVerificationResult.milestonesFulfilled}/{lastVerificationResult.milestonesChecked} | 
+              Hilos resueltos: {lastVerificationResult.threadsResolved}
+            </div>
+            {lastVerificationResult.recommendations && (
+              <p className="text-sm mt-2 text-muted-foreground">{lastVerificationResult.recommendations}</p>
+            )}
+            {lastVerificationResult.findings?.length > 0 && (
+              <div className="mt-2">
+                <span className="text-xs font-medium text-muted-foreground">Hallazgos:</span>
+                <ul className="text-xs text-muted-foreground list-disc pl-4">
+                  {lastVerificationResult.findings.slice(0, 5).map((f: string, i: number) => (
+                    <li key={i}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="text-center p-4 rounded-lg bg-muted/50">
           <Target className="h-5 w-5 mx-auto mb-2 text-primary" />
