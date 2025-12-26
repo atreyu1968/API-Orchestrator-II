@@ -27,6 +27,14 @@ const agentNames: Record<AgentRole, string> = {
   "semantic-detector": "El Detector Semántico",
 };
 
+function sortChaptersForDisplay(chapters: Chapter[]): Chapter[] {
+  return [...chapters].sort((a, b) => {
+    const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+    const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+    return orderA - orderB;
+  });
+}
+
 function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
   const INPUT_PRICE_PER_MILLION = 1.25;
   const OUTPUT_PRICE_PER_MILLION = 10.0;
@@ -457,7 +465,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {chapters.map((chapter) => (
+                  {sortChaptersForDisplay(chapters).map((chapter) => (
                     <div 
                       key={chapter.id}
                       className="flex items-center justify-between gap-4 p-2 rounded-md bg-muted/50"
