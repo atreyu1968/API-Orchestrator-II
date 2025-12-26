@@ -298,28 +298,54 @@ export class QueueManager {
 
   private async handleProjectError(queueItem: ProjectQueueItem, project: Project, error: string): Promise<void> {
     const state = await this.getState();
-
-    await storage.updateQueueItem(queueItem.id, {
-      status: "failed",
-      completedAt: new Date(),
-      errorMessage: error,
-    });
-
-    await storage.updateQueueState({ currentProjectId: null });
-    this.currentOrchestrator = null;
+    const isRateLimit = error.includes("RATELIMIT") || error.includes("Rate limit") || error.includes("429");
 
     this.emit({
       type: "project_failed",
       projectId: project.id,
       projectTitle: project.title,
       error,
-      message: `Failed: ${project.title} - ${error}`,
+      message: `Error: ${project.title} - ${error}`,
     });
 
-    if (state.skipOnError && state.autoAdvance) {
-      setTimeout(() => this.processQueue(), 5000);
-    } else if (!state.skipOnError) {
-      await this.pause();
+    if (!state.skipOnError) {
+      if (isRateLimit) {
+        console.log(`[QueueManager] Rate limit for ${project.title}. Waiting 120s before retry...`);
+        await storage.updateQueueItem(queueItem.id, {
+          status: "waiting",
+          startedAt: null,
+          errorMessage: error,
+        });
+        await storage.updateQueueState({ currentProjectId: null });
+        this.currentOrchestrator = null;
+        
+        setTimeout(() => {
+          if (this.isRunning && !this.isPaused) {
+            this.processQueue();
+          }
+        }, 120000);
+      } else {
+        await storage.updateQueueItem(queueItem.id, {
+          status: "failed",
+          completedAt: new Date(),
+          errorMessage: error,
+        });
+        await storage.updateQueueState({ currentProjectId: null });
+        this.currentOrchestrator = null;
+        await this.pause();
+      }
+    } else {
+      await storage.updateQueueItem(queueItem.id, {
+        status: "failed",
+        completedAt: new Date(),
+        errorMessage: error,
+      });
+      await storage.updateQueueState({ currentProjectId: null });
+      this.currentOrchestrator = null;
+      
+      if (state.autoAdvance) {
+        setTimeout(() => this.processQueue(), 5000);
+      }
     }
   }
 

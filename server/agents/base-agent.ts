@@ -36,6 +36,17 @@ const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
 const MAX_RETRIES = 2;
 const RETRY_DELAY_MS = 5000;
 
+const RATE_LIMIT_MAX_RETRIES = 5;
+const RATE_LIMIT_DELAYS_MS = [30000, 60000, 90000, 120000, 180000];
+
+function isRateLimitError(error: any): boolean {
+  const errorStr = String(error?.message || error || "");
+  return errorStr.includes("RATELIMIT_EXCEEDED") || 
+         errorStr.includes("429") || 
+         errorStr.includes("Rate limit") ||
+         errorStr.includes("rate limit");
+}
+
 const activeAbortControllers = new Map<number, AbortController>();
 
 export function registerProjectAbortController(projectId: number): AbortController {
@@ -110,8 +121,11 @@ export abstract class BaseAgent {
   protected async generateContent(prompt: string, projectId?: number, options?: { temperature?: number }): Promise<AgentResponse> {
     let lastError: Error | null = null;
     const temperature = options?.temperature ?? 1.0;
+    let rateLimitAttempts = 0;
     
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const maxAttempts = MAX_RETRIES + RATE_LIMIT_MAX_RETRIES + 1;
+    
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (projectId && isProjectCancelled(projectId)) {
         return {
           content: "",
@@ -155,7 +169,6 @@ export abstract class BaseAgent {
 
         if (candidate?.content?.parts) {
           for (const part of candidate.content.parts) {
-            // El campo 'thought' indica que es contenido de pensamiento del modelo
             if ((part as any).thought === true) {
               thoughtSignature += part.text || "";
             } else if (part.text) {
@@ -164,7 +177,6 @@ export abstract class BaseAgent {
           }
         }
         
-        // Log para debug si no hay pensamiento capturado
         if (!thoughtSignature && candidate?.content?.parts) {
           console.log(`[${this.config.name}] No thought signature captured. Parts structure:`, 
             candidate.content.parts.map((p: any) => ({ 
@@ -188,7 +200,23 @@ export abstract class BaseAgent {
         lastError = error as Error;
         const errorMessage = lastError.message || String(error);
         
-        console.error(`[${this.config.name}] Attempt ${attempt + 1}/${MAX_RETRIES + 1} failed:`, errorMessage);
+        if (isRateLimitError(error)) {
+          rateLimitAttempts++;
+          if (rateLimitAttempts <= RATE_LIMIT_MAX_RETRIES) {
+            const delayMs = RATE_LIMIT_DELAYS_MS[Math.min(rateLimitAttempts - 1, RATE_LIMIT_DELAYS_MS.length - 1)];
+            console.log(`[${this.config.name}] Rate limit hit (attempt ${rateLimitAttempts}/${RATE_LIMIT_MAX_RETRIES}). Waiting ${delayMs / 1000}s before retry...`);
+            await sleep(delayMs);
+            continue;
+          }
+          console.error(`[${this.config.name}] Rate limit exceeded after ${RATE_LIMIT_MAX_RETRIES} retries`);
+          return {
+            content: "",
+            error: `RATE_LIMIT: ${errorMessage}`,
+            timedOut: false,
+          };
+        }
+        
+        console.error(`[${this.config.name}] Attempt ${attempt + 1} failed:`, errorMessage);
         
         if (errorMessage.startsWith("TIMEOUT:")) {
           if (attempt < MAX_RETRIES) {
