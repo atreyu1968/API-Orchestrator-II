@@ -590,6 +590,72 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/projects/:id/force-sentinel", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.status === "generating") {
+        return res.status(400).json({ error: "El proyecto ya está siendo procesado" });
+      }
+
+      await storage.updateProject(id, { status: "generating" });
+
+      res.json({ message: "Centinela forzado iniciado", projectId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new Orchestrator({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+          if (message) await persistActivityLog(id, "info", message, role);
+        },
+        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
+          await persistActivityLog(id, "success", `Capítulo ${chapterNumber} corregido (${wordCount} palabras)`, "ghostwriter");
+        },
+        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
+          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
+          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: Cap. ${chapterNumber} - ${reason}`, "continuity-sentinel");
+        },
+        onChapterStatusChange: (chapterNumber, status) => {
+          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        },
+        onProjectComplete: async () => {
+          sendToStreams({ type: "project_complete" });
+          await persistActivityLog(id, "success", "Corrección del Centinela completada", "continuity-sentinel");
+        },
+        onError: async (error) => {
+          sendToStreams({ type: "error", message: error });
+          await persistActivityLog(id, "error", error, "continuity-sentinel");
+        },
+      });
+
+      orchestrator.runContinuitySentinelForce(project).catch(console.error);
+
+    } catch (error) {
+      console.error("Error starting forced sentinel:", error);
+      res.status(500).json({ error: "Failed to start forced sentinel" });
+    }
+  });
+
   app.get("/api/projects/:id/stream", (req: Request, res: Response) => {
     const id = parseInt(req.params.id);
 

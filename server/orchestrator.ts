@@ -1610,6 +1610,115 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
     }
   }
 
+  async runContinuitySentinelForce(project: Project): Promise<void> {
+    try {
+      this.cumulativeTokens = {
+        inputTokens: project.totalInputTokens || 0,
+        outputTokens: project.totalOutputTokens || 0,
+        thinkingTokens: project.totalThinkingTokens || 0,
+      };
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) {
+        this.callbacks.onError("No se encontró la biblia del mundo para este proyecto");
+        return;
+      }
+
+      const worldBibleData: ParsedWorldBible = {
+        world_bible: {
+          personajes: worldBible.characters as any[] || [],
+          lugares: [],
+          reglas_lore: worldBible.worldRules as any[] || [],
+        },
+        escaleta_capitulos: worldBible.plotOutline as any[] || [],
+      };
+
+      let styleGuideContent = "";
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) {
+          styleGuideContent = styleGuide.content;
+        }
+      }
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const allSections = this.buildSectionsListFromChapters(chapters, worldBibleData);
+      const guiaEstilo = `Género: ${project.genre}, Tono: ${project.tone}. ${styleGuideContent}`;
+
+      this.callbacks.onAgentStatus("continuity-sentinel", "analyzing", 
+        "Ejecutando análisis de continuidad forzado sobre todo el manuscrito..."
+      );
+
+      // Run Sentinel on all chapters
+      const result = await this.runContinuityCheckpoint(
+        project,
+        99, // Special checkpoint number indicating forced run
+        chapters,
+        worldBibleData,
+        []
+      );
+
+      if (result.passed) {
+        this.callbacks.onAgentStatus("continuity-sentinel", "completed", 
+          "No se encontraron issues de continuidad"
+        );
+        await storage.updateProject(project.id, { status: "completed" });
+        this.callbacks.onProjectComplete();
+        return;
+      }
+
+      // Process issues and rewrite affected chapters
+      const hasCriticalOrMajor = result.issues.some(issue => 
+        issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
+        issue.includes("[MAYOR]") || issue.includes("[mayor]")
+      );
+
+      if (hasCriticalOrMajor && result.chaptersToRevise.length > 0) {
+        this.callbacks.onAgentStatus("continuity-sentinel", "warning", 
+          `${result.issues.length} issues detectados. Forzando reescritura de capítulos: ${result.chaptersToRevise.join(", ")}`
+        );
+
+        const correctionInstructions = result.issues.join("\n");
+
+        for (const chapterNum of result.chaptersToRevise) {
+          const chapter = chapters.find(c => c.chapterNumber === chapterNum);
+          const sectionData = allSections.find(s => s.numero === chapterNum);
+
+          if (chapter && sectionData) {
+            this.callbacks.onChapterRewrite(
+              chapterNum,
+              chapter.title || `Capítulo ${chapterNum}`,
+              result.chaptersToRevise.indexOf(chapterNum) + 1,
+              result.chaptersToRevise.length,
+              "Corrección forzada por Centinela"
+            );
+
+            await this.rewriteChapterForQA(
+              project,
+              chapter,
+              sectionData,
+              worldBibleData,
+              guiaEstilo,
+              "continuity",
+              correctionInstructions
+            );
+          }
+        }
+
+        this.callbacks.onAgentStatus("continuity-sentinel", "completed", 
+          `Reescritura completada para ${result.chaptersToRevise.length} capítulos`
+        );
+      }
+
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onProjectComplete();
+    } catch (error) {
+      console.error("Force continuity sentinel error:", error);
+      this.callbacks.onError(`Error en Centinela forzado: ${error instanceof Error ? error.message : "Error desconocido"}`);
+      await storage.updateProject(project.id, { status: "error" });
+    }
+  }
+
   private buildSectionsListFromChapters(chapters: Chapter[], worldBibleData: ParsedWorldBible): SectionData[] {
     return chapters.map((chapter, index) => {
       const chapterData = worldBibleData.escaleta_capitulos?.[index] || {};
