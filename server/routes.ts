@@ -723,6 +723,160 @@ export async function registerRoutes(
     }
   });
 
+  // Simple endpoint to regenerate a single chapter with timeout
+  app.post("/api/projects/:id/regenerate-chapter/:chapterNumber", async (req: Request, res: Response) => {
+    const REGENERATION_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max
+    const projectId = parseInt(req.params.id);
+    const chapterNumber = parseInt(req.params.chapterNumber);
+    
+    try {
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(c => c.chapterNumber === chapterNumber);
+      if (!chapter) {
+        return res.status(404).json({ error: "Chapter not found" });
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      if (!worldBible) {
+        return res.status(400).json({ error: "No world bible found for project" });
+      }
+
+      // Build world bible data from the database fields
+      const worldBibleData: any = {
+        world_bible: {
+          characters: worldBible.characters,
+          timeline: worldBible.timeline,
+          worldRules: worldBible.worldRules,
+          plotOutline: worldBible.plotOutline,
+          seccion_por_capitulo: (worldBible.plotOutline as any)?.seccion_por_capitulo || []
+        }
+      };
+
+      await storage.updateAgentStatus(projectId, "ghostwriter", { 
+        status: "writing", 
+        currentTask: `Regenerando Capítulo ${chapterNumber}...` 
+      });
+
+      const GhostwriterAgent = (await import("./agents/ghostwriter")).GhostwriterAgent;
+      const ghostwriter = new GhostwriterAgent();
+
+      const sectionData: any = {
+        numero: chapterNumber,
+        titulo: chapter.title || `Capítulo ${chapterNumber}`,
+        cronologia: "",
+        ubicacion: "",
+        elenco_presente: [],
+        objetivo_narrativo: "",
+        beats: [],
+        resumen: "",
+        escenas: [],
+        giro_dramatico: "",
+        pov_character: "",
+        emotional_arc: "",
+        conflicts: [],
+        revelations: [],
+        cliffhanger: "",
+      };
+
+      // Build section data from world bible if available
+      if (worldBibleData.world_bible?.seccion_por_capitulo) {
+        const sections = worldBibleData.world_bible.seccion_por_capitulo;
+        const foundSection = sections.find((s: any) => s.numero === chapterNumber);
+        if (foundSection) {
+          Object.assign(sectionData, foundSection);
+        }
+      }
+
+      // Get previous chapters for continuity
+      const prevChapters = chapters
+        .filter(c => c.chapterNumber < chapterNumber && c.content && c.content.length > 100)
+        .sort((a, b) => b.chapterNumber - a.chapterNumber)
+        .slice(0, 3);
+      
+      const previousContinuity = prevChapters.length > 0
+        ? `Resumen de capítulos anteriores:\n${prevChapters.map(c => `Cap ${c.chapterNumber}: ${c.content?.slice(0, 500)}...`).join("\n\n")}`
+        : "";
+
+      // Guía de estilo
+      let guiaEstilo = "";
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide?.content) {
+          guiaEstilo = typeof styleGuide.content === 'string' 
+            ? styleGuide.content 
+            : JSON.stringify(styleGuide.content);
+        }
+      }
+
+      // Create timeout promise
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("Timeout: La regeneración tardó demasiado tiempo")), REGENERATION_TIMEOUT_MS);
+      });
+
+      // Execute with timeout
+      const writerPromise = ghostwriter.execute({
+        chapterNumber,
+        chapterData: sectionData,
+        worldBible: worldBibleData.world_bible || worldBibleData,
+        guiaEstilo,
+        previousContinuity,
+        refinementInstructions: "CRÍTICO: Escribe un capítulo COMPLETO de 2500-3500 palabras. NO truncar.",
+        authorName: "",
+        isRewrite: true,
+      });
+
+      const result = await Promise.race([writerPromise, timeoutPromise]);
+      
+      const { cleanContent } = ghostwriter.extractContinuityState(result.content);
+      const wordCount = cleanContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+
+      if (wordCount < 500) {
+        await storage.updateAgentStatus(projectId, "ghostwriter", { 
+          status: "error", 
+          currentTask: `Capítulo ${chapterNumber} truncado (${wordCount} palabras)` 
+        });
+        return res.status(400).json({ 
+          error: "Chapter still truncated", 
+          wordCount,
+          message: `El capítulo solo tiene ${wordCount} palabras. Intenta de nuevo más tarde.`
+        });
+      }
+
+      await storage.updateChapter(chapter.id, {
+        content: cleanContent,
+        status: "completed"
+      });
+
+      await storage.updateAgentStatus(projectId, "ghostwriter", { 
+        status: "idle", 
+        currentTask: `Capítulo ${chapterNumber} regenerado (${wordCount} palabras)` 
+      });
+
+      res.json({ 
+        success: true, 
+        chapterNumber, 
+        wordCount,
+        message: `Capítulo ${chapterNumber} regenerado exitosamente con ${wordCount} palabras`
+      });
+
+    } catch (error) {
+      console.error("Error regenerating single chapter:", error);
+      await storage.updateAgentStatus(projectId, "ghostwriter", { 
+        status: "idle", 
+        currentTask: "Error en regeneración" 
+      });
+      res.status(500).json({ 
+        error: "Failed to regenerate chapter",
+        message: error instanceof Error ? error.message : "Error desconocido"
+      });
+    }
+  });
+
   app.get("/api/projects/:id/stream", (req: Request, res: Response) => {
     const id = parseInt(req.params.id);
 
