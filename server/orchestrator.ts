@@ -1349,15 +1349,23 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
         }
       }
       
-      // LÍMITE MÁXIMO DE CICLOS alcanzado - aceptar con la puntuación actual
+      // LÍMITE MÁXIMO DE CICLOS alcanzado
       if (revisionCycle === this.maxFinalReviewCycles - 1) {
         const avgScore = previousScores.length > 0 
           ? (previousScores.reduce((a, b) => a + b, 0) / previousScores.length).toFixed(1)
           : currentScore;
-        this.callbacks.onAgentStatus("final-reviewer", "completed", 
-          `Límite de ${this.maxFinalReviewCycles} ciclos. Puntuación final: ${currentScore}/10 (promedio: ${avgScore}).`
-        );
-        return true;
+        
+        if (currentScore >= this.minAcceptableScore) {
+          this.callbacks.onAgentStatus("final-reviewer", "completed", 
+            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 (promedio: ${avgScore}). APROBADO.`
+          );
+          return true;
+        } else {
+          this.callbacks.onAgentStatus("final-reviewer", "error", 
+            `Límite de ${this.maxFinalReviewCycles} ciclos alcanzado. Puntuación final: ${currentScore}/10 NO alcanza el mínimo de ${this.minAcceptableScore}. Proyecto NO APROBADO.`
+          );
+          return false;
+        }
       }
 
       const issueCount = result?.issues?.length || 0;
@@ -1384,10 +1392,18 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
             continue;
           }
         } else {
-          this.callbacks.onAgentStatus("final-reviewer", "completed", 
-            `Revisión completada sin problemas específicos.`
-          );
-          return true;
+          if (currentScore >= this.minAcceptableScore) {
+            this.callbacks.onAgentStatus("final-reviewer", "completed", 
+              `Revisión completada sin problemas específicos. Puntuación: ${currentScore}/10.`
+            );
+            return true;
+          } else {
+            this.callbacks.onAgentStatus("final-reviewer", "reviewing", 
+              `Sin problemas específicos pero puntuación ${currentScore}/10 < ${this.minAcceptableScore}. Continuando refinamiento...`
+            );
+            revisionCycle++;
+            continue;
+          }
         }
       }
 
@@ -1570,22 +1586,25 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
         authorName
       );
 
-      await storage.updateProject(project.id, { 
-        status: "completed",
-        finalReviewResult: { approved }
-      });
-
       if (approved) {
+        await storage.updateProject(project.id, { 
+          status: "completed",
+          finalReviewResult: { approved }
+        });
         this.callbacks.onAgentStatus("final-reviewer", "completed", "Revisión final aprobada");
+        this.callbacks.onProjectComplete();
       } else {
-        this.callbacks.onAgentStatus("final-reviewer", "completed", "Revisión final completada (límite de ciclos alcanzado)");
+        await storage.updateProject(project.id, { 
+          status: "failed_final_review",
+          finalReviewResult: { approved }
+        });
+        this.callbacks.onAgentStatus("final-reviewer", "error", "Revisión final NO aprobada - puntuación insuficiente");
+        this.callbacks.onError("El manuscrito no alcanzó la puntuación mínima de 9 después de múltiples intentos.");
       }
-
-      this.callbacks.onProjectComplete();
     } catch (error) {
       console.error("Final review error:", error);
       this.callbacks.onError(`Error en revisión final: ${error instanceof Error ? error.message : "Error desconocido"}`);
-      await storage.updateProject(project.id, { status: "completed" });
+      await storage.updateProject(project.id, { status: "error" });
     }
   }
 
