@@ -614,13 +614,14 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
             if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
               accumulatedContinuityIssues = [...accumulatedContinuityIssues, ...checkpointResult.issues];
               
-              const hasCriticalIssues = checkpointResult.issues.some(issue => 
-                issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]")
+              const hasSignificantIssues = checkpointResult.issues.some(issue => 
+                issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
+                issue.includes("[MAYOR]") || issue.includes("[mayor]")
               );
               
-              if (hasCriticalIssues) {
+              if (hasSignificantIssues) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
-                  `Disparando correcciones inmediatas para ${checkpointResult.chaptersToRevise.length} capítulos con errores críticos`
+                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores detectados`
                 );
                 
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
@@ -997,13 +998,14 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
             );
             
             if (!checkpointResult.passed && checkpointResult.chaptersToRevise.length > 0) {
-              const hasCriticalIssues = checkpointResult.issues.some(issue => 
-                issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]")
+              const hasSignificantIssues = checkpointResult.issues.some(issue => 
+                issue.includes("[CRITICA]") || issue.includes("[CRÍTICA]") ||
+                issue.includes("[MAYOR]") || issue.includes("[mayor]")
               );
               
-              if (hasCriticalIssues) {
+              if (hasSignificantIssues) {
                 this.callbacks.onAgentStatus("continuity-sentinel", "editing", 
-                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores críticos`
+                  `Disparando correcciones para ${checkpointResult.chaptersToRevise.length} capítulos con errores detectados`
                 );
                 
                 for (const chapterNum of checkpointResult.chaptersToRevise) {
