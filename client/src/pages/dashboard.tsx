@@ -9,7 +9,7 @@ import { ConsoleOutput, type LogEntry } from "@/components/console-output";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database } from "lucide-react";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
 import type { Project, AgentStatus, Chapter } from "@shared/schema";
@@ -55,7 +55,67 @@ export default function Dashboard() {
   const [currentStage, setCurrentStage] = useState<AgentRole | null>(null);
   const [completedStages, setCompletedStages] = useState<AgentRole[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmType>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
   const { projects, currentProject, setSelectedProjectId } = useProject();
+
+  const handleExportData = async () => {
+    setIsExporting(true);
+    try {
+      const response = await fetch("/api/data-export");
+      if (!response.ok) throw new Error("Export failed");
+      const data = await response.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `litagents-backup-${new Date().toISOString().split("T")[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: "Exportación completada", description: "Los datos se han descargado correctamente" });
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudieron exportar los datos", variant: "destructive" });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleImportData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    
+    setIsImporting(true);
+    try {
+      const text = await file.text();
+      const jsonData = JSON.parse(text);
+      
+      const response = await fetch("/api/data-import", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(jsonData),
+      });
+      
+      if (!response.ok) throw new Error("Import failed");
+      const result = await response.json();
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/pseudonyms"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/style-guides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      
+      toast({ 
+        title: "Importación completada", 
+        description: `Importados: ${Object.entries(result.results?.imported || {}).map(([k, v]) => `${v} ${k}`).join(", ")}` 
+      });
+    } catch (error) {
+      toast({ title: "Error", description: "No se pudieron importar los datos. Verifica el formato del archivo.", variant: "destructive" });
+    } finally {
+      setIsImporting(false);
+      event.target.value = "";
+    }
+  };
 
   const { data: agentStatuses = [] } = useQuery<AgentStatus[]>({
     queryKey: ["/api/agent-statuses"],
@@ -764,6 +824,54 @@ export default function Dashboard() {
               </CardContent>
             </Card>
           )}
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Gestión de Datos
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Exporta o importa todos los datos de la aplicación (proyectos, capítulos, configuraciones).
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExportData}
+                  disabled={isExporting}
+                  data-testid="button-export-data"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  {isExporting ? "Exportando..." : "Exportar Datos"}
+                </Button>
+                
+                <label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={isImporting}
+                    asChild
+                    data-testid="button-import-data"
+                  >
+                    <span>
+                      <Upload className="h-4 w-4 mr-2" />
+                      {isImporting ? "Importando..." : "Importar Datos"}
+                    </span>
+                  </Button>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportData}
+                    className="hidden"
+                    data-testid="input-import-file"
+                  />
+                </label>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
