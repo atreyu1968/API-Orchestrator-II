@@ -161,9 +161,18 @@ export default function SeriesPage() {
         description: `${data.milestonesCreated} hitos y ${data.threadsCreated} hilos extraidos` 
       });
     },
-    onError: () => {
+    onError: async (error: any) => {
       setExtractingSeriesId(null);
-      toast({ title: "Error", description: "No se pudo extraer de la guia", variant: "destructive" });
+      let details = "Error desconocido";
+      try {
+        if (error?.response) {
+          const data = await error.response.json();
+          details = data.details || data.error || "Error desconocido";
+        } else if (error?.message) {
+          details = error.message;
+        }
+      } catch { /* ignore */ }
+      toast({ title: "Error", description: details, variant: "destructive" });
     },
   });
 

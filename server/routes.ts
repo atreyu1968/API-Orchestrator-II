@@ -1276,9 +1276,16 @@ ${series.seriesGuide.substring(0, 50000)}`;
         ...results,
         extracted
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error extracting from series guide:", error);
-      res.status(500).json({ error: "Failed to extract milestones and threads" });
+      const errorMessage = error?.message || String(error);
+      const isRateLimit = errorMessage.includes("RATELIMIT") || errorMessage.includes("429");
+      res.status(isRateLimit ? 429 : 500).json({ 
+        error: isRateLimit 
+          ? "Límite de tasa excedido. Espera unos minutos e inténtalo de nuevo." 
+          : "No se pudo extraer de la guía",
+        details: errorMessage.substring(0, 500)
+      });
     }
   });
 
