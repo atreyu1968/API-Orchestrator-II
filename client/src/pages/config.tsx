@@ -6,24 +6,33 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload } from "lucide-react";
+import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, BookMarked } from "lucide-react";
 import { Link } from "wouter";
-import type { Project, ExtendedGuide } from "@shared/schema";
+import type { Project, ExtendedGuide, Series } from "@shared/schema";
 
 export default function ConfigPage() {
   const { toast } = useToast();
   const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [editTitle, setEditTitle] = useState("");
+  const [editWorkType, setEditWorkType] = useState<string>("standalone");
+  const [editSeriesId, setEditSeriesId] = useState<number | null>(null);
+  const [editSeriesOrder, setEditSeriesOrder] = useState<number | null>(null);
   const [deleteProjectId, setDeleteProjectId] = useState<number | null>(null);
   const [deleteGuideId, setDeleteGuideId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+  });
+
+  const { data: allSeries = [] } = useQuery<Series[]>({
+    queryKey: ["/api/series"],
   });
 
   const { data: extendedGuides = [], isLoading: isLoadingGuides } = useQuery<ExtendedGuide[]>({
@@ -72,16 +81,28 @@ export default function ConfigPage() {
   });
 
   const updateProjectMutation = useMutation({
-    mutationFn: async ({ id, title }: { id: number; title: string }) => {
-      const response = await apiRequest("PATCH", `/api/projects/${id}`, { title });
+    mutationFn: async ({ id, title, workType, seriesId, seriesOrder }: { 
+      id: number; 
+      title: string;
+      workType?: string;
+      seriesId?: number | null;
+      seriesOrder?: number | null;
+    }) => {
+      const response = await apiRequest("PATCH", `/api/projects/${id}`, { 
+        title, 
+        workType, 
+        seriesId, 
+        seriesOrder 
+      });
       return response.json();
     },
     onSuccess: (project) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
       setEditingProject(null);
       toast({
         title: "Proyecto actualizado",
-        description: `El nombre se ha cambiado a "${project.title}"`,
+        description: `"${project.title}" ha sido actualizado correctamente`,
       });
     },
     onError: () => {
@@ -271,6 +292,9 @@ export default function ConfigPage() {
                         onClick={() => {
                           setEditingProject(project);
                           setEditTitle(project.title);
+                          setEditWorkType(project.workType || "standalone");
+                          setEditSeriesId(project.seriesId || null);
+                          setEditSeriesOrder(project.seriesOrder || null);
                         }}
                         data-testid={`button-edit-${project.id}`}
                       >
@@ -424,17 +448,84 @@ export default function ConfigPage() {
       </Card>
 
       <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
-        <DialogContent>
+        <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Editar nombre del proyecto</DialogTitle>
+            <DialogTitle>Editar proyecto</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            <Input
-              value={editTitle}
-              onChange={(e) => setEditTitle(e.target.value)}
-              placeholder="Nombre del proyecto"
-              data-testid="input-edit-title"
-            />
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-title">Título</Label>
+              <Input
+                id="edit-title"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="Nombre del proyecto"
+                data-testid="input-edit-title"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Tipo de obra</Label>
+              <Select 
+                value={editWorkType} 
+                onValueChange={(value) => {
+                  setEditWorkType(value);
+                  if (value === "standalone") {
+                    setEditSeriesId(null);
+                    setEditSeriesOrder(null);
+                  }
+                }}
+              >
+                <SelectTrigger data-testid="select-edit-worktype">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="standalone">Novela independiente</SelectItem>
+                  <SelectItem value="series">Serie</SelectItem>
+                  <SelectItem value="trilogy">Trilogía</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {(editWorkType === "series" || editWorkType === "trilogy") && (
+              <>
+                <div className="space-y-2">
+                  <Label>Serie / Saga</Label>
+                  <Select 
+                    value={editSeriesId?.toString() || "none"} 
+                    onValueChange={(value) => setEditSeriesId(value === "none" ? null : parseInt(value))}
+                  >
+                    <SelectTrigger data-testid="select-edit-series">
+                      <SelectValue placeholder="Selecciona una serie" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Ninguna</SelectItem>
+                      {allSeries.map((s) => (
+                        <SelectItem key={s.id} value={s.id.toString()}>
+                          <div className="flex items-center gap-2">
+                            <BookMarked className="h-3 w-3" />
+                            <span>{s.title}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-order">Orden en la serie</Label>
+                  <Input
+                    id="edit-order"
+                    type="number"
+                    min={1}
+                    value={editSeriesOrder || ""}
+                    onChange={(e) => setEditSeriesOrder(e.target.value ? parseInt(e.target.value) : null)}
+                    placeholder="Ej: 1, 2, 3..."
+                    data-testid="input-edit-order"
+                  />
+                </div>
+              </>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditingProject(null)}>
@@ -443,11 +534,17 @@ export default function ConfigPage() {
             <Button 
               onClick={() => {
                 if (editingProject && editTitle.trim()) {
-                  updateProjectMutation.mutate({ id: editingProject.id, title: editTitle.trim() });
+                  updateProjectMutation.mutate({ 
+                    id: editingProject.id, 
+                    title: editTitle.trim(),
+                    workType: editWorkType,
+                    seriesId: editSeriesId,
+                    seriesOrder: editSeriesOrder
+                  });
                 }
               }}
               disabled={updateProjectMutation.isPending || !editTitle.trim()}
-              data-testid="button-save-title"
+              data-testid="button-save-project"
             >
               Guardar
             </Button>
