@@ -1180,19 +1180,45 @@ Responde ÚNICAMENTE en JSON válido con esta estructura exacta:
 GUÍA DE SERIE:
 ${series.seriesGuide.substring(0, 50000)}`;
 
+      console.log(`[ExtractMilestones] Starting extraction for series ${id}`);
+      console.log(`[ExtractMilestones] Series guide length: ${series.seriesGuide?.length || 0} chars`);
+
       const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
         contents: [{ role: "user", parts: [{ text: extractionPrompt }] }],
         config: { temperature: 0.3 },
       });
 
-      const text = response.text || (response as any).response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      // Try multiple ways to extract the text from the response
+      let text = "";
+      if (typeof response.text === "string") {
+        text = response.text;
+      } else if (typeof response.text === "function") {
+        text = (response as any).text();
+      } else if ((response as any).response?.candidates?.[0]?.content?.parts?.[0]?.text) {
+        text = (response as any).response.candidates[0].content.parts[0].text;
+      }
+      
+      console.log(`[ExtractMilestones] Raw response length: ${text.length} chars`);
+      console.log(`[ExtractMilestones] Response preview: ${text.substring(0, 500)}...`);
+
       const jsonMatch = text.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        return res.status(500).json({ error: "Failed to parse AI response" });
+        console.error(`[ExtractMilestones] No JSON found in response. Full text: ${text}`);
+        return res.status(500).json({ error: "No se pudo parsear la respuesta de la IA. Inténtalo de nuevo." });
       }
 
-      const extracted = JSON.parse(jsonMatch[0]);
+      let extracted;
+      try {
+        extracted = JSON.parse(jsonMatch[0]);
+      } catch (parseError) {
+        console.error(`[ExtractMilestones] JSON parse error:`, parseError);
+        console.error(`[ExtractMilestones] JSON string that failed: ${jsonMatch[0].substring(0, 500)}...`);
+        return res.status(500).json({ error: "Error parseando JSON de la respuesta de IA" });
+      }
+
+      console.log(`[ExtractMilestones] Extracted milestones: ${extracted.milestones?.length || 0}, threads: ${extracted.threads?.length || 0}`);
+
       const results = { milestonesCreated: 0, threadsCreated: 0 };
 
       for (const m of extracted.milestones || []) {
