@@ -13,6 +13,7 @@ The application features:
 - **Thought Signature Logging**: Captures AI reasoning processes for auditing how decisions were made
 - **Real-time Dashboard**: Monitors agent status, chapter progress, and console output
 - **Refinement Loops**: Automatic rejection and rewriting of chapters that don't meet quality thresholds
+- **Auto-Recovery System**: Heartbeat monitoring detects frozen generations (8 min inactivity) and automatically restarts them with logging
 - **Imported Manuscripts**: Upload external Word documents in 6 languages (EN, FR, DE, IT, PT, CA), automatically parse chapters, and professionally edit them using the CopyEditor agent with token cost tracking
 
 ## User Preferences

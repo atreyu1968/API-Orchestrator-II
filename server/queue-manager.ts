@@ -12,14 +12,107 @@ interface QueueEvent {
   error?: string;
 }
 
+const HEARTBEAT_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes without activity = frozen
+const HEARTBEAT_CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
+
 export class QueueManager {
   private isRunning = false;
   private isPaused = false;
   private currentOrchestrator: Orchestrator | null = null;
   private eventCallbacks: Set<QueueEventCallback> = new Set();
   private checkInterval: NodeJS.Timeout | null = null;
+  private lastHeartbeat: Date | null = null;
+  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private currentProjectId: number | null = null;
+  private autoRecoveryCount = 0;
 
   constructor() {}
+  
+  private updateHeartbeat() {
+    this.lastHeartbeat = new Date();
+  }
+  
+  private startHeartbeatMonitor() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+    }
+    
+    this.lastHeartbeat = new Date();
+    this.heartbeatInterval = setInterval(async () => {
+      await this.checkHeartbeat();
+    }, HEARTBEAT_CHECK_INTERVAL_MS);
+  }
+  
+  private stopHeartbeatMonitor() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    this.lastHeartbeat = null;
+  }
+  
+  private async checkHeartbeat(): Promise<void> {
+    if (!this.isRunning || this.isPaused || !this.currentProjectId) {
+      return;
+    }
+    
+    if (!this.lastHeartbeat) {
+      return;
+    }
+    
+    const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat.getTime();
+    
+    if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+      console.log(`[QueueManager] FROZEN DETECTED: No activity for ${Math.round(timeSinceLastHeartbeat / 60000)} minutes. Auto-recovering...`);
+      await this.autoRecover();
+    }
+  }
+  
+  private async autoRecover(): Promise<void> {
+    if (!this.currentProjectId) return;
+    
+    this.autoRecoveryCount++;
+    const projectId = this.currentProjectId;
+    
+    console.log(`[QueueManager] Auto-recovery attempt #${this.autoRecoveryCount} for project ${projectId}`);
+    
+    // Log the recovery event
+    try {
+      await storage.createActivityLog({
+        projectId,
+        level: "warn",
+        message: `Auto-recovery triggered after ${HEARTBEAT_TIMEOUT_MS / 60000} minutes of inactivity (attempt #${this.autoRecoveryCount})`,
+        agentRole: "system",
+        metadata: { autoRecoveryCount: this.autoRecoveryCount },
+      });
+    } catch (e) {
+      console.error("[QueueManager] Failed to log auto-recovery event:", e);
+    }
+    
+    // Get the queue item and reset it
+    const queueItem = await storage.getQueueItemByProject(projectId);
+    if (queueItem) {
+      await storage.updateQueueItem(queueItem.id, {
+        status: "waiting",
+        startedAt: null,
+        errorMessage: `Auto-recovery after freeze (attempt #${this.autoRecoveryCount})`,
+      });
+    }
+    
+    // Clear current state
+    await storage.updateQueueState({ currentProjectId: null });
+    this.currentOrchestrator = null;
+    this.currentProjectId = null;
+    this.stopHeartbeatMonitor();
+    
+    // Wait a bit and restart
+    console.log(`[QueueManager] Waiting 30s before restarting project ${projectId}...`);
+    setTimeout(() => {
+      if (this.isRunning && !this.isPaused) {
+        this.processQueue();
+      }
+    }, 30000);
+  }
 
   async initialize(): Promise<void> {
     const state = await storage.getQueueState();
@@ -113,6 +206,8 @@ export class QueueManager {
   async stop(): Promise<void> {
     this.isRunning = false;
     this.isPaused = false;
+    this.stopHeartbeatMonitor();
+    this.currentProjectId = null;
     
     // Reset any item currently in "processing" status back to "waiting"
     const state = await storage.getQueueState();
@@ -138,6 +233,7 @@ export class QueueManager {
 
   async pause(): Promise<void> {
     this.isPaused = true;
+    this.stopHeartbeatMonitor();
     await storage.updateQueueState({ status: "paused" });
     this.emit({ type: "queue_paused", message: "Queue processing paused" });
   }
@@ -158,6 +254,9 @@ export class QueueManager {
   async skipCurrent(): Promise<void> {
     const state = await storage.getQueueState();
     if (state?.currentProjectId) {
+      this.stopHeartbeatMonitor();
+      this.currentProjectId = null;
+      
       const queueItem = await storage.getQueueItemByProject(state.currentProjectId);
       if (queueItem) {
         await storage.updateQueueItem(queueItem.id, {
@@ -230,6 +329,9 @@ export class QueueManager {
     });
 
     await storage.updateQueueState({ currentProjectId: project.id });
+    this.currentProjectId = project.id;
+    this.autoRecoveryCount = 0;
+    this.startHeartbeatMonitor();
 
     this.emit({
       type: "project_started",
@@ -238,20 +340,31 @@ export class QueueManager {
       message: `Starting generation of: ${project.title}`,
     });
 
+    const self = this;
     const orchestrator = new Orchestrator({
       onAgentStatus: async (role, status, message) => {
+        self.updateHeartbeat();
         console.log(`[Queue] ${project.title} - ${role}: ${status}`, message || "");
       },
       onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+        self.updateHeartbeat();
         console.log(`[Queue] ${project.title} - Chapter ${chapterNumber} complete: ${wordCount} words`);
       },
-      onChapterRewrite: async () => {},
-      onChapterStatusChange: async () => {},
+      onChapterRewrite: async () => {
+        self.updateHeartbeat();
+      },
+      onChapterStatusChange: async () => {
+        self.updateHeartbeat();
+      },
       onProjectComplete: async () => {
-        await this.handleProjectComplete(queueItem, project);
+        self.stopHeartbeatMonitor();
+        self.currentProjectId = null;
+        await self.handleProjectComplete(queueItem, project);
       },
       onError: async (error) => {
-        await this.handleProjectError(queueItem, project, error);
+        self.stopHeartbeatMonitor();
+        self.currentProjectId = null;
+        await self.handleProjectError(queueItem, project, error);
       },
     });
 
