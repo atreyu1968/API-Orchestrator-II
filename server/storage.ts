@@ -69,6 +69,10 @@ export interface IStorage {
   getContinuitySnapshotByProject(projectId: number): Promise<ContinuitySnapshot | undefined>;
   updateContinuitySnapshot(id: number, data: Partial<ContinuitySnapshot>): Promise<ContinuitySnapshot | undefined>;
   getSeriesContinuitySnapshots(seriesId: number): Promise<ContinuitySnapshot[]>;
+  getSeriesFullContinuity(seriesId: number): Promise<{
+    projectSnapshots: ContinuitySnapshot[];
+    manuscriptSnapshots: Array<{ manuscriptId: number; title: string; seriesOrder: number | null; snapshot: any }>;
+  }>;
   getAllContinuitySnapshots(): Promise<ContinuitySnapshot[]>;
 
   createImportedManuscript(data: InsertImportedManuscript): Promise<ImportedManuscript>;
@@ -332,7 +336,6 @@ export class DatabaseStorage implements IStorage {
   async getSeriesContinuitySnapshots(seriesId: number): Promise<ContinuitySnapshot[]> {
     const seriesProjects = await this.getProjectsBySeries(seriesId);
     const projectIds = seriesProjects.map(p => p.id);
-    if (projectIds.length === 0) return [];
     
     const snapshots: ContinuitySnapshot[] = [];
     for (const projectId of projectIds) {
@@ -340,6 +343,25 @@ export class DatabaseStorage implements IStorage {
       if (snapshot) snapshots.push(snapshot);
     }
     return snapshots;
+  }
+
+  async getSeriesFullContinuity(seriesId: number): Promise<{
+    projectSnapshots: ContinuitySnapshot[];
+    manuscriptSnapshots: Array<{ manuscriptId: number; title: string; seriesOrder: number | null; snapshot: any }>;
+  }> {
+    const projectSnapshots = await this.getSeriesContinuitySnapshots(seriesId);
+    const manuscripts = await this.getImportedManuscriptsBySeries(seriesId);
+    
+    const manuscriptSnapshots = manuscripts
+      .filter(m => m.continuitySnapshot)
+      .map(m => ({
+        manuscriptId: m.id,
+        title: m.title,
+        seriesOrder: m.seriesOrder,
+        snapshot: m.continuitySnapshot,
+      }));
+    
+    return { projectSnapshots, manuscriptSnapshots };
   }
 
   async getAllContinuitySnapshots(): Promise<ContinuitySnapshot[]> {

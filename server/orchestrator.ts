@@ -311,26 +311,53 @@ ${seriesData.seriesGuide}
             console.log(`[Orchestrator] Using series guide for "${seriesData.title}" (${seriesData.seriesGuide.split(/\s+/).length} words)`);
           }
 
-          const previousSnapshots = await storage.getSeriesContinuitySnapshots(project.seriesId);
-          const previousVolumes = previousSnapshots.filter(s => {
-            const snapProject = s.projectId;
-            return snapProject !== project.id;
-          });
+          const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
+          const previousVolumes = fullContinuity.projectSnapshots.filter(s => s.projectId !== project.id);
+          const manuscriptSnapshots = fullContinuity.manuscriptSnapshots;
 
-          if (previousVolumes.length > 0) {
+          const totalPreviousVolumes = previousVolumes.length + manuscriptSnapshots.length;
+          
+          if (totalPreviousVolumes > 0) {
             seriesContextContent += `\n═══════════════════════════════════════════════════════════════════
-VOLÚMENES ANTERIORES DE LA SERIE (${previousVolumes.length} libros completados)
+VOLÚMENES ANTERIORES DE LA SERIE (${totalPreviousVolumes} libros con información de continuidad)
 ═══════════════════════════════════════════════════════════════════\n`;
+            
+            const allVolumes: Array<{ order: number | null; content: string }> = [];
+            
             for (const snapshot of previousVolumes) {
-              seriesContextContent += `
---- VOLUMEN (Project ID: ${snapshot.projectId}) ---
+              allVolumes.push({
+                order: null,
+                content: `
+--- VOLUMEN AI (Project ID: ${snapshot.projectId}) ---
 Sinopsis: ${snapshot.synopsis || "No disponible"}
 Estado de personajes: ${JSON.stringify(snapshot.characterStates)}
 Hilos no resueltos: ${JSON.stringify(snapshot.unresolvedThreads)}
 Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
-───────────────────────────────────────────────────────────────────\n`;
+───────────────────────────────────────────────────────────────────\n`
+              });
             }
-            console.log(`[Orchestrator] Loaded ${previousVolumes.length} previous volume snapshots for series continuity`);
+            
+            for (const ms of manuscriptSnapshots) {
+              const snapshot = ms.snapshot;
+              allVolumes.push({
+                order: ms.seriesOrder,
+                content: `
+--- VOLUMEN ${ms.seriesOrder || "?"}: "${ms.title}" (Manuscrito Importado) ---
+Sinopsis: ${snapshot?.synopsis || "No disponible"}
+Estado de personajes: ${JSON.stringify(snapshot?.characterStates || [])}
+Hilos no resueltos: ${JSON.stringify(snapshot?.unresolvedThreads || [])}
+Ganchos de serie: ${JSON.stringify(snapshot?.seriesHooks || [])}
+Eventos clave: ${JSON.stringify(snapshot?.keyEvents || [])}
+───────────────────────────────────────────────────────────────────\n`
+              });
+            }
+            
+            allVolumes.sort((a, b) => (a.order || 0) - (b.order || 0));
+            for (const vol of allVolumes) {
+              seriesContextContent += vol.content;
+            }
+            
+            console.log(`[Orchestrator] Loaded ${previousVolumes.length} AI project snapshots and ${manuscriptSnapshots.length} imported manuscript snapshots for series continuity`);
           }
         }
       }

@@ -130,6 +130,8 @@ export const importedManuscripts = pgTable("imported_manuscripts", {
   seriesOrder: integer("series_order"),
   pseudonymId: integer("pseudonym_id").references(() => pseudonyms.id, { onDelete: "set null" }),
   totalWordCount: integer("total_word_count").default(0),
+  continuitySnapshot: jsonb("continuity_snapshot"),
+  continuityAnalysisStatus: text("continuity_analysis_status").default("pending"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

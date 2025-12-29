@@ -24,6 +24,8 @@ interface SeriesVolume {
   seriesOrder: number | null;
   status: string;
   wordCount: number;
+  continuityAnalysisStatus?: string | null;
+  hasContinuitySnapshot?: boolean;
 }
 
 interface SeriesWithDetails extends Series {
@@ -211,6 +213,36 @@ export default function SeriesPage() {
     },
     onError: async (error: any) => {
       let details = "No se pudo vincular el manuscrito";
+      try {
+        if (error?.response) {
+          const data = await error.response.json();
+          details = data.error || details;
+        }
+      } catch { /* ignore */ }
+      toast({ title: "Error", description: details, variant: "destructive" });
+    },
+  });
+
+  const [analyzingManuscriptId, setAnalyzingManuscriptId] = useState<number | null>(null);
+
+  const analyzeContinuityMutation = useMutation({
+    mutationFn: async (manuscriptId: number) => {
+      setAnalyzingManuscriptId(manuscriptId);
+      const response = await apiRequest("POST", `/api/imported-manuscripts/${manuscriptId}/analyze-continuity`, {});
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setAnalyzingManuscriptId(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/imported-manuscripts"] });
+      toast({ 
+        title: "Análisis completado", 
+        description: `Se han extraído ${(data.snapshot?.characterStates?.length || 0)} personajes y ${(data.snapshot?.unresolvedThreads?.length || 0)} hilos narrativos` 
+      });
+    },
+    onError: async (error: any) => {
+      setAnalyzingManuscriptId(null);
+      let details = "No se pudo analizar el manuscrito";
       try {
         if (error?.response) {
           const data = await error.response.json();
@@ -680,9 +712,33 @@ export default function SeriesPage() {
                                 {statusLabels[vol.status] || vol.status}
                               </Badge>
                             ) : (
-                              <Badge variant="outline" className="text-green-600 dark:text-green-400">
-                                Completado
-                              </Badge>
+                              <>
+                                <Badge variant="outline" className="text-green-600 dark:text-green-400">
+                                  Completado
+                                </Badge>
+                                {vol.hasContinuitySnapshot ? (
+                                  <Badge variant="secondary" className="text-blue-600 dark:text-blue-400">
+                                    <Check className="h-3 w-3 mr-1" />
+                                    Continuidad
+                                  </Badge>
+                                ) : vol.continuityAnalysisStatus === "analyzing" || analyzingManuscriptId === vol.id ? (
+                                  <Badge variant="secondary">
+                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    Analizando...
+                                  </Badge>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => analyzeContinuityMutation.mutate(vol.id)}
+                                    disabled={analyzeContinuityMutation.isPending}
+                                    data-testid={`button-analyze-continuity-${vol.id}`}
+                                  >
+                                    <Sparkles className="h-3 w-3 mr-1" />
+                                    Extraer Hilos
+                                  </Button>
+                                )}
+                              </>
                             )}
                             {vol.wordCount > 0 && (
                               <Badge variant="secondary">

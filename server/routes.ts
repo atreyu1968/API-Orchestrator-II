@@ -999,6 +999,8 @@ export async function registerRoutes(
             seriesOrder: p.seriesOrder,
             status: p.status,
             wordCount: 0,
+            continuityAnalysisStatus: null,
+            hasContinuitySnapshot: false,
           })),
           ...seriesManuscripts.map(m => ({
             type: "imported" as const,
@@ -1007,6 +1009,8 @@ export async function registerRoutes(
             seriesOrder: m.seriesOrder,
             status: m.status === "completed" ? "completed" : "imported",
             wordCount: m.totalWordCount || 0,
+            continuityAnalysisStatus: m.continuityAnalysisStatus || "pending",
+            hasContinuitySnapshot: !!m.continuitySnapshot,
           })),
         ].sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
         
@@ -1128,12 +1132,119 @@ export async function registerRoutes(
         seriesId,
         seriesOrder,
         pseudonymId: series.pseudonymId,
+        continuityAnalysisStatus: "pending",
       });
       
       res.json(updated);
     } catch (error) {
       console.error("Error linking manuscript to series:", error);
       res.status(500).json({ error: "Failed to link manuscript to series" });
+    }
+  });
+
+  app.post("/api/imported-manuscripts/:id/analyze-continuity", async (req: Request, res: Response) => {
+    try {
+      const manuscriptId = parseInt(req.params.id);
+      const manuscript = await storage.getImportedManuscript(manuscriptId);
+      
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscript not found" });
+      }
+      
+      if (!manuscript.seriesId) {
+        return res.status(400).json({ error: "Manuscript must be linked to a series before analysis" });
+      }
+      
+      const series = await storage.getSeries(manuscript.seriesId);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+      
+      await storage.updateImportedManuscript(manuscriptId, {
+        continuityAnalysisStatus: "analyzing",
+      });
+      
+      const chapters = await storage.getImportedChaptersByManuscript(manuscriptId);
+      
+      if (chapters.length === 0) {
+        await storage.updateImportedManuscript(manuscriptId, {
+          continuityAnalysisStatus: "error",
+        });
+        return res.status(400).json({ error: "Manuscript has no chapters to analyze" });
+      }
+      
+      const { ManuscriptAnalyzerAgent } = await import("./agents/manuscript-analyzer");
+      const analyzer = new ManuscriptAnalyzerAgent();
+      
+      const previousManuscripts = await storage.getImportedManuscriptsBySeries(manuscript.seriesId);
+      const earlierVolumes = previousManuscripts
+        .filter(m => m.id !== manuscriptId && m.seriesOrder && manuscript.seriesOrder && m.seriesOrder < manuscript.seriesOrder && m.continuitySnapshot)
+        .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+      
+      let previousContext = "";
+      if (earlierVolumes.length > 0) {
+        previousContext = earlierVolumes.map(v => {
+          const snapshot = v.continuitySnapshot as any;
+          return `**Volumen ${v.seriesOrder}: ${v.title}**\n${snapshot?.synopsis || "Sin sinopsis"}`;
+        }).join("\n\n");
+      }
+      
+      const analyzerResult = await analyzer.analyze({
+        manuscriptTitle: manuscript.title,
+        seriesTitle: series.title,
+        volumeNumber: manuscript.seriesOrder || 1,
+        chapters: chapters.map(ch => ({
+          chapterNumber: ch.chapterNumber,
+          title: ch.title || undefined,
+          content: ch.editedContent || ch.originalContent,
+        })),
+        previousVolumesContext: previousContext || undefined,
+      });
+      
+      const tokenUpdate: any = {
+        totalInputTokens: (manuscript.totalInputTokens || 0) + (analyzerResult.tokenUsage.inputTokens || 0),
+        totalOutputTokens: (manuscript.totalOutputTokens || 0) + (analyzerResult.tokenUsage.outputTokens || 0),
+        totalThinkingTokens: (manuscript.totalThinkingTokens || 0) + (analyzerResult.tokenUsage.thinkingTokens || 0),
+      };
+      
+      if (analyzerResult.result) {
+        await storage.updateImportedManuscript(manuscriptId, {
+          continuitySnapshot: analyzerResult.result,
+          continuityAnalysisStatus: "completed",
+          ...tokenUpdate,
+        });
+        res.json({ 
+          success: true, 
+          snapshot: analyzerResult.result,
+          tokenUsage: analyzerResult.tokenUsage,
+        });
+      } else {
+        await storage.updateImportedManuscript(manuscriptId, {
+          continuityAnalysisStatus: "error",
+          ...tokenUpdate,
+        });
+        res.status(500).json({ error: "Failed to analyze manuscript continuity" });
+      }
+    } catch (error) {
+      console.error("Error analyzing manuscript continuity:", error);
+      res.status(500).json({ error: "Failed to analyze manuscript continuity" });
+    }
+  });
+
+  app.get("/api/series/:id/full-continuity", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const series = await storage.getSeries(seriesId);
+      
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+      
+      const fullContinuity = await storage.getSeriesFullContinuity(seriesId);
+      res.json(fullContinuity);
+    } catch (error) {
+      console.error("Error fetching series full continuity:", error);
+      res.status(500).json({ error: "Failed to fetch series full continuity" });
     }
   });
 
