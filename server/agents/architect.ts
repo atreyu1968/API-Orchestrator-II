@@ -307,7 +307,30 @@ INSTRUCCIONES CRÍTICAS PARA EVITAR REPETICIONES
 5. Las "prohibiciones_este_capitulo" deben actualizarse acumulativamente
 
 ═══════════════════════════════════════════════════════════════════
-NOMENCLATURA DE CAPÍTULOS - REGLAS ABSOLUTAS (CRÍTICO)
+🏷️ TÍTULOS DE CAPÍTULOS - OBLIGATORIOS SIEMPRE (CRÍTICO)
+═══════════════════════════════════════════════════════════════════
+⛔ REGLA ABSOLUTA: TODOS los capítulos DEBEN tener un título en el campo "titulo".
+   - NUNCA dejar el campo "titulo" vacío, null, o con valor genérico como "Capítulo X"
+   - CADA capítulo (1 a N) DEBE tener un título EVOCADOR, LITERARIO y ÚNICO
+   - El título debe reflejar el contenido emocional o temático del capítulo
+   - Longitud ideal: 2-6 palabras
+
+✅ EJEMPLOS DE BUENOS TÍTULOS:
+   - "El Sabor del Oro"
+   - "La Sombra del Testigo"  
+   - "Cenizas y Promesas"
+   - "El Último Anochecer"
+   - "Sangre en la Arena"
+
+❌ TÍTULOS PROHIBIDOS:
+   - "" (vacío) → FATAL
+   - null → FATAL
+   - "Capítulo 1" → PROHIBIDO (es redundante con el número)
+   - "Continuación" → PROHIBIDO (genérico)
+   - "Desarrollo" → PROHIBIDO (estructural, no literario)
+
+═══════════════════════════════════════════════════════════════════
+NOMENCLATURA DE SECCIONES ESPECIALES
 ═══════════════════════════════════════════════════════════════════
 ⛔ ERRORES FATALES QUE DEBES EVITAR:
 1. La palabra "Prólogo" SOLO puede aparecer en el capítulo número 0. NUNCA en capítulos 1, 2, 3...
@@ -367,11 +390,14 @@ export class ArchitectAgent extends BaseAgent {
     ═══════════════════════════════════════════════════════════════════
     DEBES generar una entrada COMPLETA en "escaleta_capitulos" para CADA UNO de los ${input.chapterCount} capítulos.
     NO es aceptable generar solo los primeros 10 capítulos. TODOS los ${input.chapterCount} capítulos deben tener:
-    - Título único y evocador
+    - ⛔ TÍTULO OBLIGATORIO: Campo "titulo" con valor literario (2-6 palabras), NUNCA vacío
     - Beats detallados
     - Información nueva
     - Conflicto central
     - Continuidad de entrada/salida
+    
+    🏷️ RECORDATORIO TÍTULOS: Si algún capítulo tiene "titulo": "" o "titulo": null, el sistema FALLARÁ.
+    Cada título debe ser evocador: "El Sabor del Oro", "Cenizas y Promesas", NO "Capítulo 1".
     
     La escaleta debe contener EXACTAMENTE ${input.chapterCount} elementos, uno por cada capítulo.
     ${input.hasPrologue ? "Además, incluye el Prólogo como capítulo número 0." : ""}
