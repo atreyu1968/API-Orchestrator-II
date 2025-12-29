@@ -32,7 +32,7 @@ const mainNavItems = [
 ];
 
 const translationsNavItems = [
-  { title: "Traducciones", url: "/translations", icon: Upload },
+  { title: "Importar Libros", url: "/translations", icon: Upload },
 ];
 
 const settingsNavItems = [
@@ -83,7 +83,7 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>Traducciones</SidebarGroupLabel>
+          <SidebarGroupLabel>Manuscritos</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {translationsNavItems.map((item) => (
