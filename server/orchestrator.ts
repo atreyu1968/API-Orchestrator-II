@@ -314,12 +314,19 @@ ${seriesData.seriesGuide}
           const fullContinuity = await storage.getSeriesFullContinuity(project.seriesId);
           const previousVolumes = fullContinuity.projectSnapshots.filter(s => s.projectId !== project.id);
           const manuscriptSnapshots = fullContinuity.manuscriptSnapshots;
+          
+          const allSeriesManuscripts = await storage.getImportedManuscriptsBySeries(project.seriesId);
+          const manuscriptsWithoutAnalysis = allSeriesManuscripts.filter(m => !m.continuitySnapshot);
+          
+          if (manuscriptsWithoutAnalysis.length > 0) {
+            console.log(`[Orchestrator] WARNING: ${manuscriptsWithoutAnalysis.length} imported manuscript(s) in series without continuity analysis: ${manuscriptsWithoutAnalysis.map(m => `"${m.title}"`).join(", ")}`);
+          }
 
-          const totalPreviousVolumes = previousVolumes.length + manuscriptSnapshots.length;
+          const totalPreviousVolumes = previousVolumes.length + manuscriptSnapshots.length + manuscriptsWithoutAnalysis.length;
           
           if (totalPreviousVolumes > 0) {
             seriesContextContent += `\n═══════════════════════════════════════════════════════════════════
-VOLÚMENES ANTERIORES DE LA SERIE (${totalPreviousVolumes} libros con información de continuidad)
+VOLÚMENES ANTERIORES DE LA SERIE (${totalPreviousVolumes} libros)
 ═══════════════════════════════════════════════════════════════════\n`;
             
             const allVolumes: Array<{ order: number | null; content: string }> = [];
@@ -342,7 +349,7 @@ Eventos clave: ${JSON.stringify(snapshot.keyEvents)}
               allVolumes.push({
                 order: ms.seriesOrder,
                 content: `
---- VOLUMEN ${ms.seriesOrder || "?"}: "${ms.title}" (Manuscrito Importado) ---
+--- VOLUMEN ${ms.seriesOrder || "?"}: "${ms.title}" (Manuscrito Importado - Análisis Completo) ---
 Sinopsis: ${snapshot?.synopsis || "No disponible"}
 Estado de personajes: ${JSON.stringify(snapshot?.characterStates || [])}
 Hilos no resueltos: ${JSON.stringify(snapshot?.unresolvedThreads || [])}
@@ -352,12 +359,33 @@ Eventos clave: ${JSON.stringify(snapshot?.keyEvents || [])}
               });
             }
             
+            for (const unanalyzedMs of manuscriptsWithoutAnalysis) {
+              const chapters = await storage.getImportedChaptersByManuscript(unanalyzedMs.id);
+              const chapterSummaries = chapters.slice(0, 5).map(ch => {
+                const content = ch.editedContent || ch.originalContent;
+                const preview = content.length > 500 ? content.substring(0, 500) + "..." : content;
+                return `Cap ${ch.chapterNumber}: ${preview}`;
+              }).join("\n\n");
+              
+              allVolumes.push({
+                order: unanalyzedMs.seriesOrder,
+                content: `
+--- VOLUMEN ${unanalyzedMs.seriesOrder || "?"}: "${unanalyzedMs.title}" (Manuscrito Importado - Sin Análisis Detallado) ---
+NOTA: Este manuscrito no tiene análisis de continuidad completo. Extractos de los primeros capítulos:
+
+${chapterSummaries || "Sin capítulos disponibles"}
+
+(Se recomienda ejecutar el análisis de continuidad para obtener información detallada)
+───────────────────────────────────────────────────────────────────\n`
+              });
+            }
+            
             allVolumes.sort((a, b) => (a.order || 0) - (b.order || 0));
             for (const vol of allVolumes) {
               seriesContextContent += vol.content;
             }
             
-            console.log(`[Orchestrator] Loaded ${previousVolumes.length} AI project snapshots and ${manuscriptSnapshots.length} imported manuscript snapshots for series continuity`);
+            console.log(`[Orchestrator] Loaded ${previousVolumes.length} AI project snapshots, ${manuscriptSnapshots.length} analyzed manuscripts, and ${manuscriptsWithoutAnalysis.length} unanalyzed manuscripts for series continuity`);
           }
         }
       }
