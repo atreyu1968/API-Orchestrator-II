@@ -126,6 +126,10 @@ export const importedManuscripts = pgTable("imported_manuscripts", {
   totalInputTokens: integer("total_input_tokens").default(0),
   totalOutputTokens: integer("total_output_tokens").default(0),
   totalThinkingTokens: integer("total_thinking_tokens").default(0),
+  seriesId: integer("series_id").references(() => series.id, { onDelete: "set null" }),
+  seriesOrder: integer("series_order"),
+  pseudonymId: integer("pseudonym_id").references(() => pseudonyms.id, { onDelete: "set null" }),
+  totalWordCount: integer("total_word_count").default(0),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
