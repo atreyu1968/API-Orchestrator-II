@@ -95,6 +95,7 @@ export interface IStorage {
 
   createActivityLog(data: InsertActivityLog): Promise<ActivityLog>;
   getActivityLogsByProject(projectId: number | null, limit?: number): Promise<ActivityLog[]>;
+  getLastActivityLogTime(projectId: number): Promise<Date | null>;
   cleanupOldActivityLogs(projectId: number | null, keepCount: number): Promise<void>;
 
   // Project Queue operations
@@ -457,6 +458,15 @@ export class DatabaseStorage implements IStorage {
       .where(or(eq(activityLogs.projectId, projectId), isNull(activityLogs.projectId)))
       .orderBy(desc(activityLogs.createdAt))
       .limit(limit);
+  }
+
+  async getLastActivityLogTime(projectId: number): Promise<Date | null> {
+    const [log] = await db.select({ createdAt: activityLogs.createdAt })
+      .from(activityLogs)
+      .where(eq(activityLogs.projectId, projectId))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(1);
+    return log?.createdAt ?? null;
   }
 
   async cleanupOldActivityLogs(projectId: number | null, keepCount: number = 1000): Promise<void> {

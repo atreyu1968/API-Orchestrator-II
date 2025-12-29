@@ -115,8 +115,14 @@ export class QueueManager {
   }
 
   async initialize(): Promise<void> {
+    // Start global frozen project monitor (survives deploys)
+    this.startGlobalFrozenMonitor();
+    
     const state = await storage.getQueueState();
     if (!state) return;
+
+    // Check for frozen projects first (based on activity logs, not memory)
+    await this.checkForFrozenProjects();
 
     // If the server crashed while running, clean up and optionally restart
     if (state.status === "running" && state.currentProjectId) {
@@ -166,6 +172,85 @@ export class QueueManager {
     } else if (state.status === "paused") {
       this.isPaused = true;
       console.log("[QueueManager] Queue is paused, waiting for manual resume");
+    }
+  }
+  
+  private globalFrozenInterval: NodeJS.Timeout | null = null;
+  
+  private startGlobalFrozenMonitor() {
+    if (this.globalFrozenInterval) {
+      clearInterval(this.globalFrozenInterval);
+    }
+    
+    // Check every 2 minutes for frozen projects (uses DB, survives deploys)
+    this.globalFrozenInterval = setInterval(async () => {
+      await this.checkForFrozenProjects();
+    }, 2 * 60 * 1000);
+    
+    console.log("[QueueManager] Global frozen project monitor started");
+  }
+  
+  private async checkForFrozenProjects(): Promise<void> {
+    try {
+      // Get all projects in "generating" status
+      const projects = await storage.getAllProjects();
+      const generatingProjects = projects.filter((p: Project) => p.status === "generating");
+      
+      for (const project of generatingProjects) {
+        const lastActivity = await storage.getLastActivityLogTime(project.id);
+        
+        if (lastActivity) {
+          const timeSinceActivity = Date.now() - lastActivity.getTime();
+          
+          if (timeSinceActivity > HEARTBEAT_TIMEOUT_MS) {
+            console.log(`[QueueManager] FROZEN PROJECT DETECTED: "${project.title}" (ID: ${project.id}) - no activity for ${Math.round(timeSinceActivity / 60000)} minutes`);
+            
+            // Log the recovery event
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `Auto-recovery: proyecto congelado detectado (${Math.round(timeSinceActivity / 60000)} min sin actividad). Reiniciando...`,
+              agentRole: "system",
+            });
+            
+            // Reset project status to allow resume
+            await storage.updateProject(project.id, { status: "paused" });
+            
+            // Clear queue state if this was the current project
+            const state = await storage.getQueueState();
+            if (state?.currentProjectId === project.id) {
+              await storage.updateQueueState({ currentProjectId: null });
+              this.currentOrchestrator = null;
+              this.currentProjectId = null;
+            }
+            
+            // Reset queue item to waiting
+            const queueItem = await storage.getQueueItemByProject(project.id);
+            if (queueItem && queueItem.status === "processing") {
+              await storage.updateQueueItem(queueItem.id, {
+                status: "waiting",
+                startedAt: null,
+                errorMessage: `Auto-recovery after ${Math.round(timeSinceActivity / 60000)} min freeze`,
+              });
+            }
+            
+            // Trigger resume after short delay
+            console.log(`[QueueManager] Restarting frozen project "${project.title}" in 10s...`);
+            setTimeout(async () => {
+              if (!this.isRunning) {
+                this.isRunning = true;
+                this.isPaused = false;
+                await storage.updateQueueState({ status: "running" });
+              }
+              this.processQueue();
+            }, 10000);
+            
+            break; // Handle one frozen project at a time
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[QueueManager] Error checking for frozen projects:", error);
     }
   }
 
