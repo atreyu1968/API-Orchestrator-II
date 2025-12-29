@@ -980,18 +980,43 @@ export async function registerRoutes(
       const allSeries = await storage.getAllSeries();
       const allPseudonyms = await storage.getAllPseudonyms();
       const allProjects = await storage.getAllProjects();
+      const allManuscripts = await storage.getAllImportedManuscripts();
       
       const registry = allSeries.map(s => {
         const pseudonym = s.pseudonymId ? allPseudonyms.find(p => p.id === s.pseudonymId) : null;
         const seriesProjects = allProjects
           .filter(p => p.seriesId === s.id)
           .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+        const seriesManuscripts = allManuscripts
+          .filter(m => m.seriesId === s.id)
+          .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+        
+        const volumes = [
+          ...seriesProjects.map(p => ({
+            type: "project" as const,
+            id: p.id,
+            title: p.title,
+            seriesOrder: p.seriesOrder,
+            status: p.status,
+            wordCount: 0,
+          })),
+          ...seriesManuscripts.map(m => ({
+            type: "imported" as const,
+            id: m.id,
+            title: m.title,
+            seriesOrder: m.seriesOrder,
+            status: m.status === "completed" ? "completed" : "imported",
+            wordCount: m.totalWordCount || 0,
+          })),
+        ].sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
         
         return {
           ...s,
           pseudonym: pseudonym || null,
           projects: seriesProjects,
-          completedVolumes: seriesProjects.filter(p => p.status === "completed").length,
+          importedManuscripts: seriesManuscripts,
+          volumes,
+          completedVolumes: volumes.filter(v => v.status === "completed" || v.status === "imported").length,
         };
       });
       
@@ -1024,6 +1049,91 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching series projects:", error);
       res.status(500).json({ error: "Failed to fetch series projects" });
+    }
+  });
+
+  app.get("/api/series/:id/volumes", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const series = await storage.getSeries(id);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+      
+      const projects = await storage.getProjectsBySeries(id);
+      const manuscripts = await storage.getImportedManuscriptsBySeries(id);
+      
+      const volumes = [
+        ...projects.map(p => ({
+          type: "project" as const,
+          id: p.id,
+          title: p.title,
+          seriesOrder: p.seriesOrder,
+          status: p.status,
+          wordCount: 0,
+          createdAt: p.createdAt,
+        })),
+        ...manuscripts.map(m => ({
+          type: "imported" as const,
+          id: m.id,
+          title: m.title,
+          seriesOrder: m.seriesOrder,
+          status: "imported" as const,
+          wordCount: m.totalWordCount || 0,
+          createdAt: m.createdAt,
+        })),
+      ].sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+      
+      const nextOrder = Math.max(0, ...volumes.map(v => v.seriesOrder || 0)) + 1;
+      
+      res.json({ volumes, nextOrder });
+    } catch (error) {
+      console.error("Error fetching series volumes:", error);
+      res.status(500).json({ error: "Failed to fetch series volumes" });
+    }
+  });
+
+  app.post("/api/series/:id/link-manuscript", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { manuscriptId, seriesOrder } = req.body;
+      
+      if (!manuscriptId || !seriesOrder) {
+        return res.status(400).json({ error: "manuscriptId and seriesOrder are required" });
+      }
+      
+      const series = await storage.getSeries(seriesId);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+      
+      const manuscript = await storage.getImportedManuscript(manuscriptId);
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscript not found" });
+      }
+      
+      const existingProjects = await storage.getProjectsBySeries(seriesId);
+      const existingManuscripts = await storage.getImportedManuscriptsBySeries(seriesId);
+      
+      const orderConflict = [
+        ...existingProjects.map(p => p.seriesOrder),
+        ...existingManuscripts.filter(m => m.id !== manuscriptId).map(m => m.seriesOrder)
+      ].includes(seriesOrder);
+      
+      if (orderConflict) {
+        return res.status(400).json({ error: `Volume number ${seriesOrder} is already used in this series` });
+      }
+      
+      const updated = await storage.updateImportedManuscript(manuscriptId, {
+        seriesId,
+        seriesOrder,
+        pseudonymId: series.pseudonymId,
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error linking manuscript to series:", error);
+      res.status(500).json({ error: "Failed to link manuscript to series" });
     }
   });
 
@@ -1549,7 +1659,10 @@ ${series.seriesGuide.substring(0, 50000)}`;
         return res.status(404).json({ error: "Manuscript not found" });
       }
 
-      const allowedFields = ["status", "processedChapters", "totalInputTokens", "totalOutputTokens", "totalThinkingTokens"];
+      const allowedFields = [
+        "status", "processedChapters", "totalInputTokens", "totalOutputTokens", 
+        "totalThinkingTokens", "seriesId", "seriesOrder", "pseudonymId", "totalWordCount"
+      ];
       const updateData: Record<string, any> = {};
       
       for (const field of allowedFields) {
