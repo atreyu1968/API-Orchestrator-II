@@ -1326,21 +1326,26 @@ export async function registerRoutes(
   });
 
   app.post("/api/series", async (req: Request, res: Response) => {
+    console.log("[Series] POST /api/series - body:", JSON.stringify(req.body));
     try {
       const parsed = createSeriesSchema.safeParse(req.body);
       if (!parsed.success) {
+        console.error("[Series] Validation failed:", JSON.stringify(parsed.error.flatten()));
         return res.status(400).json({ error: "Invalid series data", details: parsed.error.flatten() });
       }
+      console.log("[Series] Creating series with data:", JSON.stringify(parsed.data));
       const newSeries = await storage.createSeries({
         title: parsed.data.title,
         description: parsed.data.description || null,
         workType: parsed.data.workType,
         totalPlannedBooks: parsed.data.totalPlannedBooks,
       });
+      console.log("[Series] Series created successfully:", newSeries.id);
       res.status(201).json(newSeries);
-    } catch (error) {
-      console.error("Error creating series:", error);
-      res.status(500).json({ error: "Failed to create series" });
+    } catch (error: any) {
+      console.error("[Series] Error creating series:", error?.message || error);
+      console.error("[Series] Stack:", error?.stack);
+      res.status(500).json({ error: "Failed to create series", details: error?.message });
     }
   });
 

@@ -72,6 +72,10 @@ export default function SeriesPage() {
   const createSeriesMutation = useMutation({
     mutationFn: async (data: { title: string; workType: string; totalPlannedBooks: number }) => {
       const response = await apiRequest("POST", "/api/series", data);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.details || errorData.error || "Error desconocido");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -83,8 +87,9 @@ export default function SeriesPage() {
       setNewTotalBooks(3);
       toast({ title: "Serie creada", description: "La nueva serie ha sido añadida" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "No se pudo crear la serie", variant: "destructive" });
+    onError: (error: any) => {
+      console.error("[Series] Create error:", error);
+      toast({ title: "Error", description: error?.message || "No se pudo crear la serie", variant: "destructive" });
     },
   });
 
