@@ -27,14 +27,14 @@ const createSeriesSchema = z.object({
   title: z.string().min(1, "Title is required").max(200),
   description: z.string().max(2000).nullable().optional(),
   workType: z.enum(["series", "trilogy"]).default("trilogy"),
-  totalPlannedBooks: z.number().min(2).max(20).default(3),
+  totalPlannedBooks: z.number().min(1).max(100).default(3),
 });
 
 const updateSeriesSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   description: z.string().max(2000).nullable().optional(),
   workType: z.enum(["series", "trilogy"]).optional(),
-  totalPlannedBooks: z.number().min(2).max(20).optional(),
+  totalPlannedBooks: z.number().min(1).max(100).optional(),
   pseudonymId: z.number().nullable().optional(),
 });
 
