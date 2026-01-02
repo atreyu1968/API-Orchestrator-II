@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +19,7 @@ import {
   DollarSign,
   Trash2,
   Library,
+  X,
 } from "lucide-react";
 
 interface TranslationProgress {
@@ -100,18 +101,60 @@ function getLangName(code: string): string {
   return SUPPORTED_LANGUAGES.find(l => l.code === code)?.name || code.toUpperCase();
 }
 
+const TRANSLATION_STATE_KEY = "litagents_active_translation";
+
+interface ActiveTranslationState {
+  projectId: number;
+  projectTitle: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  startedAt: string;
+  currentChapter: number;
+  totalChapters: number;
+  chapterTitle: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+function saveTranslationState(state: ActiveTranslationState | null) {
+  if (state) {
+    localStorage.setItem(TRANSLATION_STATE_KEY, JSON.stringify(state));
+  } else {
+    localStorage.removeItem(TRANSLATION_STATE_KEY);
+  }
+}
+
+function loadTranslationState(): ActiveTranslationState | null {
+  try {
+    const saved = localStorage.getItem(TRANSLATION_STATE_KEY);
+    if (saved) {
+      const state = JSON.parse(saved) as ActiveTranslationState;
+      const startedAt = new Date(state.startedAt);
+      const minutesAgo = (Date.now() - startedAt.getTime()) / 1000 / 60;
+      if (minutesAgo < 30) {
+        return state;
+      }
+      localStorage.removeItem(TRANSLATION_STATE_KEY);
+    }
+  } catch {}
+  return null;
+}
+
 export default function ExportPage() {
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [sourceLanguage, setSourceLanguage] = useState("es");
   const [targetLanguage, setTargetLanguage] = useState("en");
+  const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
+  
+  const savedState = loadTranslationState();
   const [translationProgress, setTranslationProgress] = useState<TranslationProgress>({
-    isTranslating: false,
-    currentChapter: 0,
-    totalChapters: 0,
-    chapterTitle: "",
-    inputTokens: 0,
-    outputTokens: 0,
+    isTranslating: savedState !== null,
+    currentChapter: savedState?.currentChapter || 0,
+    totalChapters: savedState?.totalChapters || 0,
+    chapterTitle: savedState ? `Reconectando a "${savedState.projectTitle}"...` : "",
+    inputTokens: savedState?.inputTokens || 0,
+    outputTokens: savedState?.outputTokens || 0,
   });
 
   const { data: completedProjects = [], isLoading } = useQuery<CompletedProject[]>({
@@ -122,9 +165,24 @@ export default function ExportPage() {
     queryKey: ["/api/translations"],
   });
 
-  const startTranslation = useCallback((projectId: number, srcLang: string, tgtLang: string) => {
+  const startTranslation = useCallback((projectId: number, srcLang: string, tgtLang: string, projectTitle?: string) => {
+    const title = projectTitle || completedProjects.find(p => p.id === projectId)?.title || "Proyecto";
+    
     setTranslationProgress({
       isTranslating: true,
+      currentChapter: 0,
+      totalChapters: 0,
+      chapterTitle: "Iniciando...",
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    
+    saveTranslationState({
+      projectId,
+      projectTitle: title,
+      sourceLanguage: srcLang,
+      targetLanguage: tgtLang,
+      startedAt: new Date().toISOString(),
       currentChapter: 0,
       totalChapters: 0,
       chapterTitle: "Iniciando...",
@@ -135,26 +193,45 @@ export default function ExportPage() {
     const eventSource = new EventSource(
       `/api/projects/${projectId}/translate-stream?sourceLanguage=${srcLang}&targetLanguage=${tgtLang}`
     );
+    setEventSourceRef(eventSource);
 
     eventSource.addEventListener("start", (event) => {
       const data = JSON.parse(event.data);
-      setTranslationProgress(prev => ({
-        ...prev,
-        totalChapters: data.totalChapters,
-        chapterTitle: `Preparando ${data.totalChapters} capítulos...`,
-      }));
+      setTranslationProgress(prev => {
+        const newState = {
+          ...prev,
+          totalChapters: data.totalChapters,
+          chapterTitle: `Preparando ${data.totalChapters} capítulos...`,
+        };
+        saveTranslationState({
+          projectId, projectTitle: title, sourceLanguage: srcLang, targetLanguage: tgtLang,
+          startedAt: new Date().toISOString(),
+          currentChapter: newState.currentChapter, totalChapters: newState.totalChapters,
+          chapterTitle: newState.chapterTitle, inputTokens: newState.inputTokens, outputTokens: newState.outputTokens,
+        });
+        return newState;
+      });
     });
 
     eventSource.addEventListener("progress", (event) => {
       const data = JSON.parse(event.data);
-      setTranslationProgress(prev => ({
-        ...prev,
-        currentChapter: data.current,
-        totalChapters: data.total,
-        chapterTitle: data.chapterTitle,
-        inputTokens: data.inputTokens || prev.inputTokens,
-        outputTokens: data.outputTokens || prev.outputTokens,
-      }));
+      setTranslationProgress(prev => {
+        const newState = {
+          ...prev,
+          currentChapter: data.current,
+          totalChapters: data.total,
+          chapterTitle: data.chapterTitle,
+          inputTokens: data.inputTokens || prev.inputTokens,
+          outputTokens: data.outputTokens || prev.outputTokens,
+        };
+        saveTranslationState({
+          projectId, projectTitle: title, sourceLanguage: srcLang, targetLanguage: tgtLang,
+          startedAt: new Date().toISOString(),
+          currentChapter: newState.currentChapter, totalChapters: newState.totalChapters,
+          chapterTitle: newState.chapterTitle, inputTokens: newState.inputTokens, outputTokens: newState.outputTokens,
+        });
+        return newState;
+      });
     });
 
     eventSource.addEventListener("saving", () => {
@@ -167,6 +244,8 @@ export default function ExportPage() {
     eventSource.addEventListener("complete", (event) => {
       const data = JSON.parse(event.data);
       eventSource.close();
+      setEventSourceRef(null);
+      saveTranslationState(null);
       
       setTranslationProgress({
         isTranslating: false,
@@ -196,6 +275,9 @@ export default function ExportPage() {
       } catch {}
       
       eventSource.close();
+      setEventSourceRef(null);
+      saveTranslationState(null);
+      
       setTranslationProgress({
         isTranslating: false,
         currentChapter: 0,
@@ -214,6 +296,9 @@ export default function ExportPage() {
 
     eventSource.onerror = () => {
       eventSource.close();
+      setEventSourceRef(null);
+      saveTranslationState(null);
+      
       setTranslationProgress({
         isTranslating: false,
         currentChapter: 0,
@@ -229,7 +314,34 @@ export default function ExportPage() {
         variant: "destructive",
       });
     };
-  }, [toast]);
+  }, [toast, completedProjects]);
+
+  useEffect(() => {
+    const saved = loadTranslationState();
+    if (saved && !eventSourceRef) {
+      startTranslation(saved.projectId, saved.sourceLanguage, saved.targetLanguage, saved.projectTitle);
+    }
+  }, []);
+
+  const cancelTranslation = useCallback(() => {
+    if (eventSourceRef) {
+      eventSourceRef.close();
+      setEventSourceRef(null);
+    }
+    saveTranslationState(null);
+    setTranslationProgress({
+      isTranslating: false,
+      currentChapter: 0,
+      totalChapters: 0,
+      chapterTitle: "",
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    toast({
+      title: "Traducción cancelada",
+      description: "Puedes reiniciarla cuando quieras",
+    });
+  }, [eventSourceRef, toast]);
 
   const exportMutation = useMutation({
     mutationFn: async (projectId: number) => {
@@ -481,9 +593,19 @@ export default function ExportPage() {
                     <div className="space-y-3 p-3 bg-muted rounded-md">
                       <div className="flex items-center justify-between text-sm">
                         <span className="font-medium">Traduciendo...</span>
-                        <span className="text-muted-foreground">
-                          {translationProgress.currentChapter}/{translationProgress.totalChapters}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground">
+                            {translationProgress.currentChapter}/{translationProgress.totalChapters}
+                          </span>
+                          <Button 
+                            size="icon" 
+                            variant="ghost" 
+                            onClick={cancelTranslation}
+                            data-testid="button-cancel-translation"
+                          >
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
                       <Progress 
                         value={translationProgress.totalChapters > 0 
