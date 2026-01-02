@@ -93,6 +93,34 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/projects/completed", async (_req: Request, res: Response) => {
+    try {
+      const allProjects = await storage.getProjects();
+      const completedProjects = allProjects.filter(p => p.status === "completed");
+      
+      const projectsWithStats = await Promise.all(
+        completedProjects.map(async (project) => {
+          const chapters = await storage.getChaptersByProject(project.id);
+          const totalWords = chapters.reduce((acc, c) => acc + (c.wordCount || 0), 0);
+          return {
+            id: project.id,
+            title: project.title,
+            genre: project.genre,
+            chapterCount: chapters.length,
+            totalWords,
+            finalScore: project.finalScore,
+            createdAt: project.createdAt,
+          };
+        })
+      );
+      
+      res.json(projectsWithStats);
+    } catch (error) {
+      console.error("Error fetching completed projects:", error);
+      res.status(500).json({ error: "Failed to fetch completed projects" });
+    }
+  });
+
   app.get("/api/projects/:id", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -3238,35 +3266,6 @@ El capítulo debe incorporar el elemento indicado mientras mantiene la coherenci
     } catch (error) {
       console.error("Error translating project:", error);
       res.status(500).json({ error: "Failed to translate project" });
-    }
-  });
-
-  // Get list of completed projects available for export
-  app.get("/api/projects/completed", async (_req: Request, res: Response) => {
-    try {
-      const allProjects = await storage.getProjects();
-      const completedProjects = allProjects.filter(p => p.status === "completed");
-      
-      const projectsWithStats = await Promise.all(
-        completedProjects.map(async (project) => {
-          const chapters = await storage.getChaptersByProject(project.id);
-          const totalWords = chapters.reduce((acc, c) => acc + (c.wordCount || 0), 0);
-          return {
-            id: project.id,
-            title: project.title,
-            genre: project.genre,
-            chapterCount: chapters.length,
-            totalWords,
-            finalScore: project.finalScore,
-            createdAt: project.createdAt,
-          };
-        })
-      );
-      
-      res.json(projectsWithStats);
-    } catch (error) {
-      console.error("Error fetching completed projects:", error);
-      res.status(500).json({ error: "Failed to fetch completed projects" });
     }
   });
 
