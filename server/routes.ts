@@ -2674,11 +2674,28 @@ IMPORTANTE:
       const milestones = await storage.getMilestonesBySeries(seriesId);
       const threads = await storage.getPlotThreadsBySeries(seriesId);
 
-      const chaptersSummary = chapters
-        .filter((c: any) => c.content && c.content.length > 100)
-        .sort((a: any, b: any) => a.chapterNumber - b.chapterNumber)
-        .map((c: any) => `Capítulo ${c.chapterNumber}: ${c.title || ""}\n${c.content?.substring(0, 2000) || "Sin contenido"}...`)
-        .join("\n\n");
+      const sortedChapters = chapters.sort((a: any, b: any) => a.chapterNumber - b.chapterNumber);
+      const totalChapters = sortedChapters.length;
+      const chaptersWithContent = sortedChapters.filter((c: any) => c.content && c.content.length > 50);
+      
+      const chaptersSummary = sortedChapters.map((c: any) => {
+        const chapterLabel = c.chapterNumber === 0 ? "Prólogo" : 
+                            c.chapterNumber === -1 ? "Epílogo" : 
+                            `Capítulo ${c.chapterNumber}`;
+        const title = c.title ? `: ${c.title}` : "";
+        const wordCount = c.wordCount || (c.content?.split(/\s+/).length || 0);
+        
+        if (!c.content || c.content.length < 50) {
+          return `${chapterLabel}${title}\n[Sin contenido - ${c.status || "pending"}]`;
+        }
+        
+        const contentPreview = c.content.substring(0, 8000);
+        const isTruncated = c.content.length > 8000;
+        
+        return `${chapterLabel}${title} (${wordCount} palabras)\n${contentPreview}${isTruncated ? "\n[...contenido truncado para verificación...]" : ""}`;
+      }).join("\n\n---\n\n");
+      
+      console.log(`[Arc Verification] Building summary: ${totalChapters} chapters, ${chaptersWithContent.length} with content`);
 
       const { ArcValidatorAgent } = await import("./agents/arc-validator");
       const arcValidator = new ArcValidatorAgent();
