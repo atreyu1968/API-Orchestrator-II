@@ -89,6 +89,7 @@ export default function ExportPage() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [sourceLanguage, setSourceLanguage] = useState("es");
   const [targetLanguage, setTargetLanguage] = useState("en");
+  const [translationResult, setTranslationResult] = useState<TranslateResult | null>(null);
 
   const { data: completedProjects = [], isLoading } = useQuery<CompletedProject[]>({
     queryKey: ["/api/projects/completed"],
@@ -124,14 +125,13 @@ export default function ExportPage() {
     },
     onSuccess: (data) => {
       const langName = SUPPORTED_LANGUAGES.find(l => l.code === data.targetLanguage)?.name || data.targetLanguage;
-      const safeFilename = data.title.replace(/[^a-zA-Z0-9\u00C0-\u024F\s]/g, "").replace(/\s+/g, "_");
-      downloadMarkdown(`${safeFilename}_${data.targetLanguage.toUpperCase()}.md`, data.markdown);
-      
       const cost = calculateCost(data.tokensUsed.input, data.tokensUsed.output);
       
+      setTranslationResult(data);
+      
       toast({
-        title: "Traducci\u00f3n completada",
-        description: `${data.chaptersTranslated} cap\u00edtulos traducidos a ${langName}. Coste: $${cost.toFixed(4)}`,
+        title: "Traducción completada",
+        description: `${data.chaptersTranslated} capítulos traducidos a ${langName}. Coste: $${cost.toFixed(4)}`,
       });
     },
     onError: (error: Error) => {
@@ -352,6 +352,39 @@ export default function ExportPage() {
               )}
             </CardContent>
           </Card>
+
+          {translationResult && (
+            <Card className="border-green-500/30 bg-green-500/5">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-green-600 dark:text-green-400">
+                  <CheckCircle className="h-5 w-5" />
+                  Traducción Lista
+                </CardTitle>
+                <CardDescription>
+                  {translationResult.title} - {SUPPORTED_LANGUAGES.find(l => l.code === translationResult.targetLanguage)?.name}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="p-3 bg-muted rounded-md text-sm space-y-1">
+                  <p><span className="text-muted-foreground">Capítulos:</span> {translationResult.chaptersTranslated}</p>
+                  <p><span className="text-muted-foreground">Tokens entrada:</span> {formatNumber(translationResult.tokensUsed.input)}</p>
+                  <p><span className="text-muted-foreground">Tokens salida:</span> {formatNumber(translationResult.tokensUsed.output)}</p>
+                  <p><span className="text-muted-foreground">Coste:</span> ${calculateCost(translationResult.tokensUsed.input, translationResult.tokensUsed.output).toFixed(4)}</p>
+                </div>
+                <Button
+                  onClick={() => {
+                    const safeFilename = translationResult.title.replace(/[^a-zA-Z0-9\u00C0-\u024F\s]/g, "").replace(/\s+/g, "_");
+                    downloadMarkdown(`${safeFilename}_${translationResult.targetLanguage.toUpperCase()}.md`, translationResult.markdown);
+                  }}
+                  className="w-full"
+                  data-testid="button-download-translation"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Descargar Markdown Traducido
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>
