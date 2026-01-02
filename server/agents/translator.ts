@@ -78,25 +78,25 @@ NORMES EDITORIALS CATALÀ:
 };
 
 const SYSTEM_PROMPT = `
-Eres un TRADUCTOR LITERARIO PROFESIONAL de élite. Tu trabajo es traducir textos literarios de un idioma a otro manteniendo:
+You are an ELITE PROFESSIONAL LITERARY TRANSLATOR. Your ONLY job is to translate literary texts from one language to another.
 
-1. LA ESENCIA LITERARIA: Preserva el estilo, la voz narrativa y el tono del autor original.
-2. LA FLUIDEZ: La traducción debe sonar natural en el idioma destino, como si fuera escrita originalmente en ese idioma.
-3. EXPRESIONES IDIOMÁTICAS: Adapta las expresiones culturales al equivalente más apropiado en el idioma destino.
-4. NOMBRES PROPIOS: Mantén los nombres de personajes y lugares en su forma original, a menos que tengan una traducción establecida.
-5. FORMATO PROFESIONAL: El texto debe estar maquetado en Markdown limpio, listo para publicación.
+CRITICAL RULES:
+1. YOU MUST TRANSLATE - The output text MUST be in the TARGET LANGUAGE, NOT the source language.
+2. NEVER return the original text unchanged - that is a FAILURE.
+3. Preserve the literary style, narrative voice and tone of the original author.
+4. The translation must sound natural in the target language, as if it was originally written in that language.
+5. Adapt cultural expressions to the most appropriate equivalent in the target language.
+6. Keep proper names of characters and places in their original form, unless they have an established translation.
+7. NEVER omit or summarize content. The translation must be COMPLETE.
+8. PRESERVE paragraph structure and dialogues.
+9. APPLY correct typographical rules for the target language (quotation marks, dialogue dashes, etc.).
 
-REGLAS CRÍTICAS:
-- NUNCA omitas ni resumas contenido. La traducción debe ser COMPLETA.
-- PRESERVA la estructura de párrafos y diálogos.
-- APLICA las normas tipográficas correctas del idioma destino (comillas, guiones de diálogo, etc.).
-
-SALIDA REQUERIDA (JSON):
+REQUIRED OUTPUT (JSON):
 {
-  "translated_text": "El texto completo traducido en Markdown",
-  "source_language": "código ISO del idioma origen",
-  "target_language": "código ISO del idioma destino",
-  "notes": "Breves notas sobre decisiones de traducción importantes (expresiones adaptadas, etc.)"
+  "translated_text": "The complete translated text in Markdown format - THIS MUST BE IN THE TARGET LANGUAGE",
+  "source_language": "ISO code of source language",
+  "target_language": "ISO code of target language",
+  "notes": "Brief notes about important translation decisions"
 }
 `;
 
@@ -121,26 +121,30 @@ export class TranslatorAgent extends BaseAgent {
       : "";
 
     const prompt = `
-TAREA: Traducir el siguiente texto de ${sourceLangName.toUpperCase()} a ${targetLangName.toUpperCase()}.
+TASK: TRANSLATE the following text FROM ${sourceLangName.toUpperCase()} TO ${targetLangName.toUpperCase()}.
+
+CRITICAL: The output "translated_text" MUST BE WRITTEN ENTIRELY IN ${targetLangName.toUpperCase()}. 
+DO NOT return the text in ${sourceLangName} - that would be a FAILURE.
 
 ${targetRules}
 ${chapterInfo}
 
 ═══════════════════════════════════════════════════════════════════
-TEXTO A TRADUCIR:
+SOURCE TEXT (in ${sourceLangName} - TO BE TRANSLATED):
 ═══════════════════════════════════════════════════════════════════
 
 ${input.content}
 
 ═══════════════════════════════════════════════════════════════════
 
-INSTRUCCIONES:
-1. Traduce el texto completo de ${sourceLangName} a ${targetLangName}
-2. Mantén el estilo literario y la voz narrativa
-3. Aplica las normas tipográficas de ${targetLangName}
-4. Devuelve el resultado en formato JSON como se especifica
+INSTRUCTIONS:
+1. TRANSLATE the complete text from ${sourceLangName} to ${targetLangName}
+2. The "translated_text" field MUST contain text in ${targetLangName}, NOT in ${sourceLangName}
+3. Preserve the literary style and narrative voice
+4. Apply the typographical rules of ${targetLangName}
+5. Return the result as valid JSON only
 
-IMPORTANTE: Responde ÚNICAMENTE con JSON válido, sin texto adicional.
+RESPOND WITH JSON ONLY, no additional text.
 `;
 
     console.log(`[Translator] Starting translation from ${input.sourceLanguage} to ${input.targetLanguage}`);
