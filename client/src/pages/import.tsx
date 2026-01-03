@@ -92,8 +92,6 @@ function generateMarkdownExport(
   
   lines.push(`# ${manuscript.title}`);
   lines.push("");
-  lines.push("---");
-  lines.push("");
   
   for (const chapter of sortedChapters) {
     const content = chapter.editedContent || chapter.originalContent;
@@ -113,8 +111,6 @@ function generateMarkdownExport(
     lines.push(`## ${heading}`);
     lines.push("");
     lines.push(stripChapterHeaders(content));
-    lines.push("");
-    lines.push("---");
     lines.push("");
   }
   

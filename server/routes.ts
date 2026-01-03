@@ -3126,8 +3126,6 @@ El capítulo debe incorporar el elemento indicado mientras mantiene la coherenci
       const lines: string[] = [];
       lines.push(`# ${project.title}`);
       lines.push("");
-      lines.push("---");
-      lines.push("");
       
       for (const chapter of sortedChapters) {
         if (!chapter.content) continue;
@@ -3146,8 +3144,6 @@ El capítulo debe incorporar el elemento indicado mientras mantiene la coherenci
         lines.push(`## ${heading}`);
         lines.push("");
         lines.push(stripChapterHeaders(chapter.content));
-        lines.push("");
-        lines.push("---");
         lines.push("");
       }
       
@@ -3291,8 +3287,6 @@ El capítulo debe incorporar el elemento indicado mientras mantiene la coherenci
       const lines: string[] = [];
       lines.push(`# ${project.title}`);
       lines.push("");
-      lines.push("---");
-      lines.push("");
       
       for (const chapter of translatedChapters) {
         let heading: string;
@@ -3309,8 +3303,6 @@ El capítulo debe incorporar el elemento indicado mientras mantiene la coherenci
         lines.push(`## ${heading}`);
         lines.push("");
         lines.push(stripChapterHeaders(chapter.translatedContent));
-        lines.push("");
-        lines.push("---");
         lines.push("");
       }
       
