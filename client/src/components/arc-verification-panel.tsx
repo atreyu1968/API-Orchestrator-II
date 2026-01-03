@@ -345,7 +345,7 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
                       )}
                     </Badge>
                     <span className="flex-1 text-muted-foreground">{cf.text}</span>
-                    {cf.type === "structural" && cf.affectedChapters?.length > 0 && (
+                    {cf.type === "structural" ? (
                       <Button
                         size="sm"
                         variant="outline"
@@ -353,7 +353,7 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
                         disabled={structuralRewriteMutation.isPending || !selectedProjectId}
                         onClick={() => {
                           structuralRewriteMutation.mutate({
-                            chapterNumbers: cf.affectedChapters,
+                            chapterNumbers: cf.affectedChapters?.length > 0 ? cf.affectedChapters : [1],
                             instructions: cf.text
                           });
                         }}
@@ -365,18 +365,62 @@ export function ArcVerificationPanel({ seriesId, seriesTitle, totalVolumes }: Ar
                           "Reescribir"
                         )}
                       </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="shrink-0 h-6 text-xs"
+                        disabled={applyCorrectionssMutation.isPending || !selectedProjectId}
+                        onClick={() => {
+                          applyCorrectionssMutation.mutate([{
+                            chapterNumber: cf.affectedChapters?.[0] || 1,
+                            instruction: cf.text,
+                            milestoneId: null
+                          }]);
+                        }}
+                        data-testid={`button-cosmetic-${i}`}
+                      >
+                        {applyCorrectionssMutation.isPending ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          "Corregir"
+                        )}
+                      </Button>
                     )}
                   </div>
                 ))}
               </div>
             ) : lastVerificationResult.findings?.length > 0 && (
-              <div className="mt-2">
+              <div className="mt-3 space-y-2">
                 <span className="text-xs font-medium text-muted-foreground">Hallazgos:</span>
-                <ul className="text-xs text-muted-foreground list-disc pl-4">
-                  {lastVerificationResult.findings.slice(0, 5).map((f: string, i: number) => (
-                    <li key={i}>{f}</li>
-                  ))}
-                </ul>
+                {lastVerificationResult.findings.slice(0, 10).map((f: string, i: number) => (
+                  <div key={i} className="flex items-start gap-2 p-2 rounded bg-muted/50 text-xs">
+                    <Badge variant="secondary" className="shrink-0">
+                      <AlertTriangle className="h-3 w-3 mr-1" />Hallazgo
+                    </Badge>
+                    <span className="flex-1 text-muted-foreground">{f}</span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="shrink-0 h-6 text-xs"
+                      disabled={applyCorrectionssMutation.isPending || !selectedProjectId}
+                      onClick={() => {
+                        applyCorrectionssMutation.mutate([{
+                          chapterNumber: 1,
+                          instruction: f,
+                          milestoneId: null
+                        }]);
+                      }}
+                      data-testid={`button-finding-${i}`}
+                    >
+                      {applyCorrectionssMutation.isPending ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        "Corregir"
+                      )}
+                    </Button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
