@@ -696,6 +696,20 @@ export class DatabaseStorage implements IStorage {
   async deleteTranslation(id: number): Promise<void> {
     await db.delete(translations).where(eq(translations.id, id));
   }
+
+  async findExistingTranslation(projectId: number, targetLanguage: string): Promise<Translation | undefined> {
+    const [translation] = await db.select().from(translations)
+      .where(and(
+        eq(translations.projectId, projectId),
+        eq(translations.targetLanguage, targetLanguage)
+      ));
+    return translation;
+  }
+
+  async updateTranslation(id: number, data: Partial<InsertTranslation>): Promise<Translation | undefined> {
+    const [updated] = await db.update(translations).set(data).where(eq(translations.id, id)).returning();
+    return updated;
+  }
 }
 
 export const storage = new DatabaseStorage();

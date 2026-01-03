@@ -3398,20 +3398,40 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
       sendEvent("saving", { message: "Guardando traducción..." });
       
       try {
-        const savedTranslation = await storage.createTranslation({
-          projectId,
-          projectTitle: project.title,
-          sourceLanguage,
-          targetLanguage,
-          chaptersTranslated: translatedChapters.length,
-          totalWords,
-          markdown,
-          inputTokens: totalInputTokens,
-          outputTokens: totalOutputTokens,
-        });
+        // Check if translation already exists for this project+language
+        const existingTranslation = await storage.findExistingTranslation(projectId, targetLanguage);
+        
+        let savedTranslation;
+        if (existingTranslation) {
+          // Update existing translation instead of creating duplicate
+          savedTranslation = await storage.updateTranslation(existingTranslation.id, {
+            projectTitle: project.title,
+            sourceLanguage,
+            chaptersTranslated: translatedChapters.length,
+            totalWords,
+            markdown,
+            inputTokens: (existingTranslation.inputTokens || 0) + totalInputTokens,
+            outputTokens: (existingTranslation.outputTokens || 0) + totalOutputTokens,
+          });
+          console.log(`[Translation] Updated existing translation ID ${existingTranslation.id}`);
+        } else {
+          // Create new translation
+          savedTranslation = await storage.createTranslation({
+            projectId,
+            projectTitle: project.title,
+            sourceLanguage,
+            targetLanguage,
+            chaptersTranslated: translatedChapters.length,
+            totalWords,
+            markdown,
+            inputTokens: totalInputTokens,
+            outputTokens: totalOutputTokens,
+          });
+          console.log(`[Translation] Created new translation ID ${savedTranslation.id}`);
+        }
         
         sendEvent("complete", {
-          id: savedTranslation.id,
+          id: savedTranslation?.id,
           projectId,
           title: project.title,
           sourceLanguage,
@@ -3423,6 +3443,7 @@ Añade contenido narrativo explícito que cumpla este requisito, manteniendo tod
             input: totalInputTokens,
             output: totalOutputTokens,
           },
+          updated: !!existingTranslation,
         });
       } catch (saveError) {
         console.error("Error saving translation to DB:", saveError);
