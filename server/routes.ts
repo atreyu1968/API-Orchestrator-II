@@ -1368,17 +1368,30 @@ export async function registerRoutes(
         return res.status(499).json({ error: "Analysis cancelled" });
       }
       
-      const analyzerResult = await analyzer.analyze({
-        manuscriptTitle: manuscript.title,
-        seriesTitle: series.title,
-        volumeNumber: manuscript.seriesOrder || 1,
-        chapters: chapters.map(ch => ({
-          chapterNumber: ch.chapterNumber,
-          title: ch.title || undefined,
-          content: ch.editedContent || ch.originalContent,
-        })),
-        previousVolumesContext: previousContext || undefined,
-      });
+      console.log(`[ContinuityAnalysis] Starting analysis for manuscript ${manuscriptId} (${manuscript.title}) with ${chapters.length} chapters`);
+      
+      let analyzerResult;
+      try {
+        analyzerResult = await analyzer.analyze({
+          manuscriptTitle: manuscript.title,
+          seriesTitle: series.title,
+          volumeNumber: manuscript.seriesOrder || 1,
+          chapters: chapters.map(ch => ({
+            chapterNumber: ch.chapterNumber,
+            title: ch.title || undefined,
+            content: ch.editedContent || ch.originalContent,
+          })),
+          previousVolumesContext: previousContext || undefined,
+        });
+      } catch (analyzeError: any) {
+        activeManuscriptAnalysis.delete(manuscriptId);
+        const errMsg = String(analyzeError?.message || analyzeError || "Unknown error");
+        console.error(`[ContinuityAnalysis] Analysis failed for manuscript ${manuscriptId}:`, errMsg);
+        await storage.updateImportedManuscript(manuscriptId, {
+          continuityAnalysisStatus: "error",
+        });
+        return res.status(500).json({ error: `Error de análisis: ${errMsg.substring(0, 200)}` });
+      }
       
       activeManuscriptAnalysis.delete(manuscriptId);
       
