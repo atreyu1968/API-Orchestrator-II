@@ -207,6 +207,10 @@ export default function ExportPage() {
 
     eventSource.addEventListener("start", (event) => {
       const data = JSON.parse(event.data);
+      
+      // Force refresh to show the new "translating" record in the list
+      queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
+
       setTranslationProgress(prev => {
         const newState = {
           ...prev,
@@ -257,6 +261,7 @@ export default function ExportPage() {
       setEventSourceRef(null);
       saveTranslationState(null);
       
+      // Update local state to show it's done
       setTranslationProgress({
         isTranslating: false,
         currentChapter: 0,
@@ -266,9 +271,9 @@ export default function ExportPage() {
         outputTokens: 0,
       });
 
-      queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
-      // Invalidate specifically the current translations to catch the status change
-      queryClient.refetchQueries({ queryKey: ["/api/translations"] });
+      // Clear cache and refetch immediately
+      queryClient.resetQueries({ queryKey: ["/api/translations"] });
+      queryClient.refetchQueries({ queryKey: ["/api/translations"], exact: true });
 
       const safeFilename = data.title.replace(/[^a-zA-Z0-9\u00C0-\u024F\s]/g, "").replace(/\s+/g, "_");
       downloadMarkdown(`${safeFilename}_${tgtLang.toUpperCase()}.md`, data.markdown);
