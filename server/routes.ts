@@ -3704,9 +3704,27 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
+    // Keepalive heartbeat every 15 seconds to prevent connection timeout
+    const heartbeatInterval = setInterval(() => {
+      try {
+        res.write(`:heartbeat\n\n`);
+      } catch (e) {
+        clearInterval(heartbeatInterval);
+      }
+    }, 15000);
+
+    // Clean up function
+    const cleanup = () => {
+      clearInterval(heartbeatInterval);
+    };
+
+    // Clean up on connection close
+    req.on("close", cleanup);
+
     const project = await storage.getProject(projectId);
     if (!project) {
       sendEvent("error", { error: "Project not found" });
+      cleanup();
       res.end();
       return;
     }
@@ -3735,6 +3753,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     try {
       if (!targetLanguage) {
         sendEvent("error", { error: "targetLanguage is required" });
+        cleanup();
         res.end();
         return;
       }
@@ -3742,6 +3761,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const chapters = await storage.getChaptersByProject(projectId);
       if (chapters.length === 0) {
         sendEvent("error", { error: "No chapters found in project" });
+        cleanup();
         res.end();
         return;
       }
@@ -3978,10 +3998,12 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         });
       }
       
+      cleanup();
       res.end();
     } catch (error) {
       console.error("Error translating project:", error);
       sendEvent("error", { error: "Failed to translate project" });
+      cleanup();
       res.end();
     }
   });
