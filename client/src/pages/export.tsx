@@ -348,23 +348,26 @@ export default function ExportPage() {
     const startedAt = new Date(saved.startedAt);
     const secondsAgo = (Date.now() - startedAt.getTime()) / 1000;
     
-    // Safety check: Don't auto-restart if the user is already here and progress is not moving
-    // or if the session is too old.
+    // Safety check: Don't auto-restart if the session is too old
     if (secondsAgo < 120) {
-      // Logic to prevent "looping" translation starts:
-      // If we are currently showing a "completed" status for this exact project/target,
-      // we shouldn't restart.
-      const isAlreadyCompleted = savedTranslations.some(
-        t => t.projectId === saved.projectId && 
-             t.targetLanguage === saved.targetLanguage && 
-             t.status === "completed"
+      // NEVER restart if a translation already exists for this project (any status)
+      const translationExists = savedTranslations.some(
+        t => t.projectId === saved.projectId
       );
       
-      if (!isAlreadyCompleted) {
-        startTranslation(saved.projectId, saved.sourceLanguage, saved.targetLanguage, saved.projectTitle);
-      } else {
+      if (translationExists) {
+        // Clear the saved state - we should NOT auto-restart
         saveTranslationState(null);
+        setTranslationProgress({
+          isTranslating: false,
+          currentChapter: 0,
+          totalChapters: 0,
+          chapterTitle: "",
+          inputTokens: 0,
+          outputTokens: 0,
+        });
       }
+      // Do NOT auto-restart translations - user must click manually
     } else {
       saveTranslationState(null);
     }
@@ -457,6 +460,13 @@ export default function ExportPage() {
   });
 
   const selectedProject = completedProjects.find(p => p.id === selectedProjectId);
+
+  // Check if selected project already has a translation (any status)
+  const existingTranslation = selectedProjectId 
+    ? savedTranslations.find(t => t.projectId === selectedProjectId)
+    : null;
+  const hasExistingTranslation = !!existingTranslation;
+  const isTranslationInProgress = existingTranslation?.status === "translating";
 
   const filteredProjects = completedProjects.filter(p => 
     p.title.toLowerCase().includes(projectSearch.toLowerCase()) ||
@@ -695,24 +705,39 @@ export default function ExportPage() {
                     </div>
                   )}
 
-                  <Button
-                    onClick={() => startTranslation(selectedProject.id, sourceLanguage, targetLanguage)}
-                    disabled={translationProgress.isTranslating || sourceLanguage === targetLanguage}
-                    className="w-full"
-                    data-testid="button-translate-project"
-                  >
-                    {translationProgress.isTranslating ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Traduciendo {translationProgress.currentChapter}/{translationProgress.totalChapters}...
-                      </>
-                    ) : (
-                      <>
-                        <Languages className="h-4 w-4 mr-2" />
-                        Traducir a {getLangName(targetLanguage)}
-                      </>
-                    )}
-                  </Button>
+                  {hasExistingTranslation ? (
+                    <div className="p-3 bg-muted rounded-md text-sm text-center">
+                      {isTranslationInProgress ? (
+                        <p className="text-muted-foreground">
+                          <Loader2 className="h-4 w-4 inline mr-2 animate-spin" />
+                          Traducción en progreso...
+                        </p>
+                      ) : (
+                        <p className="text-muted-foreground">
+                          Ya existe una traducción de este proyecto. Elimínala del repositorio si deseas volver a traducir.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={() => startTranslation(selectedProject.id, sourceLanguage, targetLanguage)}
+                      disabled={translationProgress.isTranslating || sourceLanguage === targetLanguage}
+                      className="w-full"
+                      data-testid="button-translate-project"
+                    >
+                      {translationProgress.isTranslating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Traduciendo {translationProgress.currentChapter}/{translationProgress.totalChapters}...
+                        </>
+                      ) : (
+                        <>
+                          <Languages className="h-4 w-4 mr-2" />
+                          Traducir a {getLangName(targetLanguage)}
+                        </>
+                      )}
+                    </Button>
+                  )}
                 </div>
               ) : (
                 <div className="text-center py-6 text-muted-foreground">
