@@ -6,6 +6,7 @@ interface TranslatorInput {
   targetLanguage: string;
   chapterTitle?: string;
   chapterNumber?: number;
+  projectId?: number;
 }
 
 export interface TranslatorResult {
@@ -150,7 +151,7 @@ RESPOND WITH JSON ONLY, no additional text.
     console.log(`[Translator] Starting translation from ${input.sourceLanguage} to ${input.targetLanguage}`);
     console.log(`[Translator] Content length: ${input.content.length} chars`);
 
-    const response = await this.generateContent(prompt);
+    const response = await this.generateContent(prompt, input.projectId);
 
     if (response.error) {
       console.error("[Translator] AI generation error:", response.error);

@@ -3777,6 +3777,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           targetLanguage,
           chapterTitle: chapter.title || undefined,
           chapterNumber: chapter.chapterNumber,
+          projectId,
         });
         
         if (result.result) {
