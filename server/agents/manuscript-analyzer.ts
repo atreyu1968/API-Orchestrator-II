@@ -122,9 +122,19 @@ ${chaptersSummary}
 Analiza el manuscrito completo y extrae la información de continuidad en formato JSON. 
 Asegúrate de que el JSON sea válido y esté completo.`;
 
-    const response = await this.generateContent(prompt);
+    console.log(`[ManuscriptAnalyzer] Sending ${input.chapters.length} chapters for analysis (~${Math.round(prompt.length / 1000)}K chars)`);
+    
+    let response;
+    try {
+      response = await this.generateContent(prompt);
+    } catch (error: any) {
+      console.error("[ManuscriptAnalyzer] API call failed:", error?.message || error);
+      throw error;
+    }
 
     if (!response.content) {
+      console.error("[ManuscriptAnalyzer] Empty response from API - possible content filtering or timeout");
+      console.error("[ManuscriptAnalyzer] Token usage:", JSON.stringify(response.tokenUsage));
       return {
         result: null,
         tokenUsage: response.tokenUsage || { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 },
@@ -132,18 +142,24 @@ Asegúrate de que el JSON sea válido y esté completo.`;
       };
     }
 
+    console.log(`[ManuscriptAnalyzer] Got response of ${response.content.length} chars`);
+
     try {
       const jsonMatch = response.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]) as ManuscriptContinuitySnapshot;
+        console.log(`[ManuscriptAnalyzer] Successfully parsed: ${parsed.characterStates?.length || 0} chars, ${parsed.unresolvedThreads?.length || 0} threads`);
         return {
           result: parsed,
           tokenUsage: response.tokenUsage || { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 },
           thoughtSignature: response.thoughtSignature,
         };
+      } else {
+        console.error("[ManuscriptAnalyzer] No JSON found in response. First 500 chars:", response.content.substring(0, 500));
       }
     } catch (e) {
       console.error("[ManuscriptAnalyzer] Error parsing JSON:", e);
+      console.error("[ManuscriptAnalyzer] Raw response (first 1000 chars):", response.content.substring(0, 1000));
     }
 
     return {
