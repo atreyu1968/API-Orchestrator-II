@@ -3821,11 +3821,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
             translatedContent: result.result.translated_text,
             notes: result.result.notes,
           });
+          completedCount++; // Increment AFTER successful translation
         }
         
         totalInputTokens += (result as any).inputTokens || 0;
         totalOutputTokens += (result as any).outputTokens || 0;
-        completedCount++;
         
         sendEvent("progress", {
           current: completedCount,
@@ -3836,6 +3836,19 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           inputTokens: totalInputTokens,
           outputTokens: totalOutputTokens
         });
+
+        // Update the database record with partial progress so the UI sees it
+        if (translationRecordId) {
+          try {
+            await storage.updateTranslation(translationRecordId, {
+              chaptersTranslated: completedCount,
+              status: "translating"
+            });
+            console.log(`[Translation] Progress updated for record ID ${translationRecordId}: ${completedCount}/${totalChapters}`);
+          } catch (err) {
+            console.error("[Translation] Progress DB update failed:", err);
+          }
+        }
       }
       
       // Helper function to strip chapter title headers from content
@@ -3978,14 +3991,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       
       const now = new Date();
       const translations = await Promise.all(allTranslations.map(async t => {
-        // Only mark as error if it's REALLY old (1 hour) to be safe
-        // AND its updatedAt (if it had one) hasn't changed.
-        // For now, let's use a 60 minute threshold for automatic error marking.
-        if (t.status === "translating") {
+        // Fallback for missing status or obvious completion
+        if (!t.status) {
+          const updated = await storage.updateTranslation(t.id, { status: "completed" });
+          return updated || t;
+        }
+
+        if (t.status === "translating" || t.status === "pending") {
           const createdAt = new Date(t.createdAt);
           const diffMinutes = (now.getTime() - createdAt.getTime()) / 1000 / 60;
-          if (diffMinutes > 60) { 
-            console.log(`[Cleanup] Marking stale translation ID ${t.id} as error (60min timeout)`);
+          
+          if (diffMinutes > 15) {
+            console.log(`[Cleanup] Marking stale/hung translation ID ${t.id} as error`);
             const updated = await storage.updateTranslation(t.id, { status: "error" });
             return updated || t;
           }

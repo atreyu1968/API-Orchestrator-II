@@ -169,9 +169,9 @@ export default function ExportPage() {
   const { data: savedTranslations = [], isLoading: isLoadingTranslations } = useQuery<SavedTranslation[]>({
     queryKey: ["/api/translations"],
     refetchInterval: (query) => {
-      // Poll if any translation is currently in progress
+      // Poll more aggressively if any translation is currently in progress
       const hasInProgress = query.state.data?.some(t => t.status === "translating");
-      return hasInProgress ? 3000 : false;
+      return hasInProgress ? 2000 : 10000; // Poll every 2s if translating, else 10s
     }
   });
 
