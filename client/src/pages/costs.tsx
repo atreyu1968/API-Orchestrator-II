@@ -10,7 +10,8 @@ import {
   Bot,
   Info,
   Layers,
-  Zap
+  Zap,
+  BookOpen
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -21,6 +22,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
+interface ProjectSummary {
+  id: number;
+  title: string;
+  status: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalThinkingTokens: number;
+  estimatedCostUsd: number;
+  createdAt: string;
+}
 
 interface UsageSummary {
   totalInputTokens: number;
@@ -115,11 +127,24 @@ export default function CostsPage() {
     queryKey: ["/api/ai-usage/by-model"],
   });
 
-  const totalCost = Number(usageSummary?.totalCostUsd || 0);
-  const totalInputTokens = usageSummary?.totalInputTokens || 0;
-  const totalOutputTokens = usageSummary?.totalOutputTokens || 0;
-  const totalThinkingTokens = usageSummary?.totalThinkingTokens || 0;
-  const eventCount = usageSummary?.eventCount || 0;
+  const { data: projectsSummary, isLoading: loadingProjects } = useQuery<ProjectSummary[]>({
+    queryKey: ["/api/ai-usage/projects-summary"],
+  });
+
+  // Calculate totals from projects if event-based data is empty
+  const projectsTotalCost = projectsSummary?.reduce((sum, p) => sum + p.estimatedCostUsd, 0) || 0;
+  const projectsTotalInput = projectsSummary?.reduce((sum, p) => sum + p.totalInputTokens, 0) || 0;
+  const projectsTotalOutput = projectsSummary?.reduce((sum, p) => sum + p.totalOutputTokens, 0) || 0;
+  const projectsTotalThinking = projectsSummary?.reduce((sum, p) => sum + p.totalThinkingTokens, 0) || 0;
+
+  const eventBasedCost = Number(usageSummary?.totalCostUsd || 0);
+  const totalCost = eventBasedCost > 0 ? eventBasedCost : projectsTotalCost;
+  // Use event-based data if available, otherwise fall back to project data
+  const hasEventData = (usageSummary?.eventCount || 0) > 0;
+  const totalInputTokens = hasEventData ? (usageSummary?.totalInputTokens || 0) : projectsTotalInput;
+  const totalOutputTokens = hasEventData ? (usageSummary?.totalOutputTokens || 0) : projectsTotalOutput;
+  const totalThinkingTokens = hasEventData ? (usageSummary?.totalThinkingTokens || 0) : projectsTotalThinking;
+  const eventCount = hasEventData ? (usageSummary?.eventCount || 0) : (projectsSummary?.length || 0);
 
   return (
     <div className="p-6 space-y-6">
@@ -379,6 +404,90 @@ export default function CostsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BookOpen className="h-5 w-5" />
+            Costos por Proyecto
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingProjects ? (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          ) : !projectsSummary?.length ? (
+            <p className="text-muted-foreground text-center py-8">
+              No hay proyectos registrados
+            </p>
+          ) : (
+            <div className="max-h-[500px] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Proyecto</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="text-right">Input</TableHead>
+                    <TableHead className="text-right">Output</TableHead>
+                    <TableHead className="text-right">Thinking</TableHead>
+                    <TableHead className="text-right">Costo Est.</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {projectsSummary
+                    .filter(p => p.totalInputTokens > 0)
+                    .sort((a, b) => b.estimatedCostUsd - a.estimatedCostUsd)
+                    .map((project) => (
+                    <TableRow key={project.id} data-testid={`row-project-${project.id}`}>
+                      <TableCell className="font-medium max-w-[200px] truncate" title={project.title}>
+                        {project.title}
+                      </TableCell>
+                      <TableCell>
+                        <Badge 
+                          variant={project.status === "completed" ? "default" : "secondary"}
+                          className="text-xs"
+                        >
+                          {project.status === "completed" ? "Completado" : 
+                           project.status === "generating" ? "Generando" :
+                           project.status === "queued" ? "En cola" : project.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(project.totalInputTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(project.totalOutputTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                        {formatNumber(project.totalThinkingTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-semibold">
+                        ${project.estimatedCostUsd.toFixed(2)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-muted/50 font-bold">
+                    <TableCell colSpan={2}>TOTAL</TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatNumber(projectsTotalInput)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono">
+                      {formatNumber(projectsTotalOutput)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-muted-foreground">
+                      {formatNumber(projectsTotalThinking)}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-lg">
+                      ${projectsTotalCost.toFixed(2)}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="bg-muted/50">
         <CardContent className="pt-6">

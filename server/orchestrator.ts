@@ -188,7 +188,14 @@ export class Orchestrator {
     this.callbacks = callbacks;
   }
   
-  private async trackTokenUsage(projectId: number, tokenUsage?: TokenUsage): Promise<void> {
+  private async trackTokenUsage(
+    projectId: number, 
+    tokenUsage?: TokenUsage,
+    agentName?: string,
+    model?: string,
+    chapterNumber?: number,
+    operation?: string
+  ): Promise<void> {
     if (!tokenUsage) return;
     
     this.cumulativeTokens.inputTokens += tokenUsage.inputTokens;
@@ -200,6 +207,46 @@ export class Orchestrator {
       totalOutputTokens: this.cumulativeTokens.outputTokens,
       totalThinkingTokens: this.cumulativeTokens.thinkingTokens,
     });
+    
+    // Register detailed AI usage event for cost tracking
+    if (agentName && model) {
+      const costs = this.calculateTokenCosts(model, tokenUsage);
+      await storage.createAiUsageEvent({
+        projectId,
+        agentName,
+        model,
+        inputTokens: tokenUsage.inputTokens,
+        outputTokens: tokenUsage.outputTokens,
+        thinkingTokens: tokenUsage.thinkingTokens,
+        inputCostUsd: costs.inputCost.toFixed(6),
+        outputCostUsd: costs.outputCost.toFixed(6),
+        totalCostUsd: costs.totalCost.toFixed(6),
+        chapterNumber: chapterNumber || null,
+        operation: operation || null,
+      });
+    }
+  }
+  
+  private calculateTokenCosts(model: string, tokenUsage: TokenUsage): { inputCost: number; outputCost: number; totalCost: number } {
+    // Pricing per million tokens
+    const pricing: Record<string, { input: number; output: number; thinking: number }> = {
+      "gemini-3-pro-preview": { input: 1.25, output: 10.00, thinking: 3.00 },
+      "gemini-3-flash": { input: 0.50, output: 3.00, thinking: 1.50 },
+      "gemini-2.5-flash": { input: 0.30, output: 2.50, thinking: 1.00 },
+      "gemini-2.0-flash": { input: 0.15, output: 0.60, thinking: 0.30 },
+    };
+    
+    const modelPricing = pricing[model] || pricing["gemini-3-pro-preview"];
+    
+    const inputCost = (tokenUsage.inputTokens / 1_000_000) * modelPricing.input;
+    const outputCost = (tokenUsage.outputTokens / 1_000_000) * modelPricing.output;
+    const thinkingCost = (tokenUsage.thinkingTokens / 1_000_000) * modelPricing.thinking;
+    
+    return {
+      inputCost,
+      outputCost: outputCost + thinkingCost,
+      totalCost: inputCost + outputCost + thinkingCost,
+    };
   }
   
   private resetTokenTracking(): void {
@@ -421,7 +468,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             hasAuthorNote: project.hasAuthorNote,
           });
 
-          await this.trackTokenUsage(project.id, architectResult.tokenUsage);
+          await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-3-pro-preview", undefined, "world_bible");
 
           if (architectResult.error || architectResult.timedOut) {
             lastArchitectError = architectResult.error || "Timeout durante la generación del World Bible";
@@ -620,7 +667,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             continue;
           }
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage);
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "chapter_write");
 
           if (writerResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -644,7 +691,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             previousContinuityState: previousContinuityStateForEditor,
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage);
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -716,7 +763,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           guiaEstilo: styleGuideContent || undefined,
         });
 
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage);
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", sectionData.numero, "polish");
 
         if (polishResult.thoughtSignature) {
           await storage.createThoughtLog({
@@ -1100,7 +1147,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             continue;
           }
           
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage);
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "chapter_write");
 
           if (writerResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1124,7 +1171,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             previousContinuityState: previousContinuityStateForEditor,
           });
 
-          await this.trackTokenUsage(project.id, editorResult.tokenUsage);
+          await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "chapter_edit");
 
           if (editorResult.thoughtSignature) {
             await storage.createThoughtLog({
@@ -1174,7 +1221,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           guiaEstilo: styleGuideContent || undefined,
         });
 
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage);
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", sectionData.numero, "polish");
 
         if (polishResult.thoughtSignature) {
           await storage.createThoughtLog({
@@ -1553,7 +1600,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         issuesPreviosCorregidos,
       });
 
-      await this.trackTokenUsage(project.id, reviewResult.tokenUsage);
+      await this.trackTokenUsage(project.id, reviewResult.tokenUsage, "El Revisor Final", "gemini-3-pro-preview", undefined, "final_review");
 
       if (reviewResult.thoughtSignature) {
         await storage.createThoughtLog({
@@ -1743,7 +1790,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         });
 
         let chapterContent = writerResult.content;
-        await this.trackTokenUsage(project.id, writerResult.tokenUsage);
+        await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "qa_rewrite");
 
         this.callbacks.onAgentStatus("editor", "editing", `El Editor está revisando ${sectionLabel}...`);
 
@@ -1755,7 +1802,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
         });
 
-        await this.trackTokenUsage(project.id, editorResult.tokenUsage);
+        await this.trackTokenUsage(project.id, editorResult.tokenUsage, "El Editor", "gemini-3-pro-preview", sectionData.numero, "qa_edit");
 
         if (!editorResult.result?.aprobado) {
           const refinementInstructions = this.buildRefinementInstructions(editorResult.result);
@@ -1769,7 +1816,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             authorName,
           });
           chapterContent = rewriteResult.content;
-          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage);
+          await this.trackTokenUsage(project.id, rewriteResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "qa_rewrite");
         }
 
         this.callbacks.onAgentStatus("copyeditor", "polishing", `El Estilista está puliendo ${sectionLabel}...`);
@@ -1780,7 +1827,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           chapterTitle: sectionData.titulo,
           guiaEstilo: styleGuideContent || undefined,
         });
-        await this.trackTokenUsage(project.id, polishResult.tokenUsage);
+        await this.trackTokenUsage(project.id, polishResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", sectionData.numero, "qa_polish");
 
         const finalContent = polishResult.result?.texto_final || chapterContent;
         const wordCount = finalContent.split(/\s+/).length;
@@ -2110,7 +2157,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             isRewrite: regenerationAttempt > 1,
           });
 
-          await this.trackTokenUsage(project.id, writerResult.tokenUsage);
+          await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", chapter.chapterNumber, "chapter_regenerate");
 
           const { cleanContent } = this.ghostwriter.extractContinuityState(writerResult.content);
           const wordCount = cleanContent.split(/\s+/).filter((w: string) => w.length > 0).length;
@@ -2720,7 +2767,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       return { passed: true, issues: [], chaptersToRevise: [] };
     }
 
-    await this.trackTokenUsage(project.id, result.tokenUsage);
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Centinela", "gemini-3-pro-preview", undefined, "continuity_check");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -2780,7 +2827,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       guiaEstilo: styleGuideContent || undefined,
     });
 
-    await this.trackTokenUsage(project.id, result.tokenUsage);
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Auditor de Voz", "gemini-3-flash", undefined, "voice_audit");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -2839,7 +2886,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       worldBible: worldBibleData.world_bible,
     });
 
-    await this.trackTokenUsage(project.id, result.tokenUsage);
+    await this.trackTokenUsage(project.id, result.tokenUsage, "El Detector Semántico", "gemini-2.5-flash", undefined, "semantic_analysis");
 
     if (result.thoughtSignature) {
       await storage.createThoughtLog({
@@ -2922,7 +2969,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       refinementInstructions: `CORRECCIONES DE ${qaLabels[qaSource].toUpperCase()}:\n${correctionInstructions}`,
     });
 
-    await this.trackTokenUsage(project.id, writerResult.tokenUsage);
+    await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "qa_rewrite");
 
     if (writerResult.content) {
       const wordCount = writerResult.content.split(/\s+/).filter(w => w.length > 0).length;
@@ -2962,7 +3009,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       guiaEstilo: `${styleGuideContent || "Tone: literary, professional"}\n\nCORRECCIONES DEL AUDITOR DE VOZ:\n${voiceIssues}\n\nAjusta el tono y ritmo según las indicaciones manteniendo el contenido narrativo.`,
     });
 
-    await this.trackTokenUsage(project.id, copyEditResult.tokenUsage);
+    await this.trackTokenUsage(project.id, copyEditResult.tokenUsage, "El Estilista", "gemini-3-pro-preview", chapter.chapterNumber, "voice_polish");
 
     const polishedContent = copyEditResult.result?.texto_final;
     if (polishedContent) {
