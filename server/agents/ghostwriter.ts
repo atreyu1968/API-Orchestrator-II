@@ -398,8 +398,42 @@ export class GhostwriterAgent extends BaseAgent {
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     
-    ${chapterData.continuidad_entrada ? `ESTADO AL INICIAR: ${chapterData.continuidad_entrada}` : ""}
-    ${chapterData.continuidad_salida ? `ESTADO AL TERMINAR (para siguiente capítulo): ${chapterData.continuidad_salida}` : ""}
+    ${chapterData.continuidad_entrada ? `
+    ═══════════════════════════════════════════════════════════════════
+    ⛔ ESTADO OBLIGATORIO AL INICIAR (DEL ARQUITECTO) ⛔
+    ═══════════════════════════════════════════════════════════════════
+    ${chapterData.continuidad_entrada}
+    
+    VERIFICACIÓN OBLIGATORIA ANTES DE ESCRIBIR:
+    - ¿Dónde están físicamente los personajes al comenzar?
+    - ¿Qué heridas/limitaciones tienen? DEBEN afectar sus acciones.
+    - ¿Qué objetos poseen? No pueden usar lo que no tienen.
+    - ¿Qué hora/día es? Debe ser coherente con el capítulo anterior.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    
+    ${chapterData.continuidad_salida ? `
+    ═══════════════════════════════════════════════════════════════════
+    ESTADO OBLIGATORIO AL TERMINAR (PARA SIGUIENTE CAPÍTULO)
+    ═══════════════════════════════════════════════════════════════════
+    ${chapterData.continuidad_salida}
+    El capítulo DEBE dejar a los personajes en este estado exacto.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
+    
+    ═══════════════════════════════════════════════════════════════════
+    ⚠️ CHECKLIST DE CONTINUIDAD (VERIFICAR ANTES DE ESCRIBIR) ⚠️
+    ═══════════════════════════════════════════════════════════════════
+    1. UBICACIÓN: ¿El capítulo empieza donde terminó el anterior?
+    2. TIEMPO: ¿La cronología es coherente (no hay saltos sin explicar)?
+    3. PERSONAJES PRESENTES: ¿Solo aparecen los del "Elenco Presente"?
+    4. PERSONAJES MUERTOS: ¿Ningún personaje marcado como "dead" aparece activo?
+    5. HERIDAS: ¿Las lesiones del capítulo anterior siguen afectando?
+    6. OBJETOS: ¿Los personajes solo usan objetos que realmente poseen?
+    7. CONOCIMIENTO: ¿Nadie sabe información que no debería saber?
+    
+    ⛔ VIOLACIONES DE CONTINUIDAD = CAPÍTULO RECHAZADO ⛔
+    ═══════════════════════════════════════════════════════════════════
     
     ═══════════════════════════════════════════════════════════════════
     ESCRIBE EL CAPÍTULO COMPLETO
