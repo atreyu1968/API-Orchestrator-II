@@ -3211,6 +3211,154 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
     }
   });
 
+  // Series Thread Fixer - Analyze and auto-fix thread/milestone issues
+  app.post("/api/series/:id/analyze-threads", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { projectId, autoApply } = req.body;
+
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const series = await storage.getSeries(seriesId);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      const chapters = await storage.getChaptersByProject(projectId);
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      const milestones = await storage.getMilestonesBySeries(seriesId);
+      const threads = await storage.getPlotThreadsBySeries(seriesId);
+
+      const chaptersWithContent = chapters.filter((c: any) => c.content && c.content.length > 100);
+      
+      if (chaptersWithContent.length === 0) {
+        return res.status(400).json({ error: "No chapters with content to analyze" });
+      }
+
+      const { SeriesThreadFixerAgent } = await import("./agents/series-thread-fixer");
+      const threadFixer = new SeriesThreadFixerAgent();
+
+      console.log(`[ThreadFixer] Analyzing ${chaptersWithContent.length} chapters for project ${projectId}`);
+
+      const result = await threadFixer.execute({
+        projectTitle: project.title,
+        seriesTitle: series.title,
+        volumeNumber: project.seriesOrder || 1,
+        totalVolumes: series.totalPlannedBooks || 10,
+        chapters: chaptersWithContent.map((c: any) => ({
+          id: c.id,
+          chapterNumber: c.chapterNumber,
+          title: c.title || "",
+          content: c.content || "",
+        })),
+        milestones,
+        plotThreads: threads,
+        worldBible: worldBible || {},
+      });
+
+      if (!result.result) {
+        return res.status(500).json({ error: "Thread analysis failed" });
+      }
+
+      // If autoApply is true and recommendation is safe_to_autofix, apply fixes
+      let appliedFixes: any[] = [];
+      if (autoApply && result.result.autoFixRecommendation === "safe_to_autofix" && result.result.fixes.length > 0) {
+        const { CopyEditorAgent } = await import("./agents/copyeditor");
+        const copyEditor = new CopyEditorAgent();
+
+        for (const fix of result.result.fixes.filter(f => f.priority === "critical" || f.priority === "important")) {
+          const chapter = chaptersWithContent.find((c: any) => c.id === fix.chapterId);
+          if (!chapter) continue;
+
+          const correctionPrompt = `
+═══════════════════════════════════════════════════════════════════
+CORRECCIÓN AUTOMÁTICA DE HILO/HITO NARRATIVO
+═══════════════════════════════════════════════════════════════════
+
+TIPO DE CORRECCIÓN: ${fix.fixType}
+ELEMENTO: ${fix.threadOrMilestoneName}
+PRIORIDAD: ${fix.priority}
+PUNTO DE INSERCIÓN: ${fix.insertionPoint}
+
+RAZÓN: ${fix.rationale}
+
+${fix.insertionPoint === "replace" && fix.originalPassage ? `
+PASAJE ORIGINAL A REEMPLAZAR:
+"${fix.originalPassage}"
+` : ""}
+
+TEXTO SUGERIDO A INTEGRAR:
+${fix.suggestedRevision}
+
+INSTRUCCIONES:
+- Integra el texto sugerido de forma orgánica en el flujo narrativo
+- Mantén la voz y estilo del autor
+- Si es "replace", sustituye el pasaje original
+- Si es "beginning/middle/end", inserta en el punto apropiado
+- El resultado debe leerse como prosa fluida, no como un parche
+
+NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo aplica la corrección indicada.
+`;
+
+          try {
+            const editResult = await copyEditor.execute({
+              chapterNumber: chapter.chapterNumber,
+              chapterTitle: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+              chapterContent: chapter.content + "\n\n" + correctionPrompt,
+              guiaEstilo: `Género: ${project.genre}, Tono: ${project.tone}`,
+            });
+
+            if ((editResult as any).result?.texto_final) {
+              await storage.updateChapter(chapter.id, {
+                content: (editResult as any).result.texto_final,
+                status: "completed",
+              });
+
+              appliedFixes.push({
+                chapterId: fix.chapterId,
+                chapterNumber: fix.chapterNumber,
+                fixType: fix.fixType,
+                threadOrMilestoneName: fix.threadOrMilestoneName,
+                success: true,
+              });
+
+              console.log(`[ThreadFixer] Applied ${fix.fixType} for "${fix.threadOrMilestoneName}" in chapter ${fix.chapterNumber}`);
+            }
+          } catch (e) {
+            console.error(`[ThreadFixer] Failed to apply fix:`, e);
+            appliedFixes.push({
+              chapterId: fix.chapterId,
+              chapterNumber: fix.chapterNumber,
+              fixType: fix.fixType,
+              success: false,
+              error: String(e),
+            });
+          }
+        }
+      }
+
+      res.json({
+        analysis: result.result,
+        appliedFixes,
+        totalFixesApplied: appliedFixes.filter(f => f.success).length,
+        tokensUsed: {
+          input: (result as any).inputTokens || 0,
+          output: (result as any).outputTokens || 0,
+        },
+      });
+    } catch (error) {
+      console.error("Error analyzing threads:", error);
+      res.status(500).json({ error: "Failed to analyze threads" });
+    }
+  });
+
   // Data Migration Endpoints
   app.get("/api/data-export", async (req: Request, res: Response) => {
     try {

@@ -9,3 +9,4 @@ export { ContinuitySentinelAgent, type ContinuitySentinelResult, type Continuity
 export { VoiceRhythmAuditorAgent, type VoiceRhythmAuditorResult, type VoiceRhythmIssue } from "./voice-rhythm-auditor";
 export { SemanticRepetitionDetectorAgent, type SemanticRepetitionResult, type RepetitionCluster } from "./semantic-repetition-detector";
 export { ArcValidatorAgent, type ArcValidatorResult, type MilestoneVerification, type ThreadProgression } from "./arc-validator";
+export { SeriesThreadFixerAgent, type ThreadFixerResult, type ThreadFix } from "./series-thread-fixer";
