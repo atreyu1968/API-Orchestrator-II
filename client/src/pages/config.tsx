@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ConfigPanel, type ConfigFormData } from "@/components/config-panel";
@@ -6,42 +6,40 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, BookMarked } from "lucide-react";
+import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search } from "lucide-react";
 import { Link } from "wouter";
-import type { Project, ExtendedGuide, Series, ImportedManuscript } from "@shared/schema";
+import type { Project, ExtendedGuide } from "@shared/schema";
 
 export default function ConfigPage() {
   const { toast } = useToast();
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [editWorkType, setEditWorkType] = useState<string>("standalone");
-  const [editSeriesId, setEditSeriesId] = useState<number | null>(null);
-  const [editSeriesOrder, setEditSeriesOrder] = useState<number | null>(null);
   const [deleteProjectId, setDeleteProjectId] = useState<number | null>(null);
   const [deleteGuideId, setDeleteGuideId] = useState<number | null>(null);
+  const [projectSearch, setProjectSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  const { data: allSeries = [] } = useQuery<Series[]>({
-    queryKey: ["/api/series"],
-  });
-
   const { data: extendedGuides = [], isLoading: isLoadingGuides } = useQuery<ExtendedGuide[]>({
     queryKey: ["/api/extended-guides"],
   });
 
-  const { data: allManuscripts = [] } = useQuery<ImportedManuscript[]>({
-    queryKey: ["/api/imported-manuscripts"],
-  });
+  const filteredProjects = useMemo(() => {
+    if (!projectSearch.trim()) return projects;
+    const search = projectSearch.toLowerCase();
+    return projects.filter(p => 
+      p.title.toLowerCase().includes(search) ||
+      p.genre.toLowerCase().includes(search) ||
+      p.tone.toLowerCase().includes(search)
+    );
+  }, [projects, projectSearch]);
 
   const createProjectMutation = useMutation({
     mutationFn: async (data: ConfigFormData) => {
@@ -85,19 +83,8 @@ export default function ConfigPage() {
   });
 
   const updateProjectMutation = useMutation({
-    mutationFn: async ({ id, title, workType, seriesId, seriesOrder }: { 
-      id: number; 
-      title: string;
-      workType?: string;
-      seriesId?: number | null;
-      seriesOrder?: number | null;
-    }) => {
-      const response = await apiRequest("PATCH", `/api/projects/${id}`, { 
-        title, 
-        workType, 
-        seriesId, 
-        seriesOrder 
-      });
+    mutationFn: async ({ id, ...data }: { id: number } & ConfigFormData) => {
+      const response = await apiRequest("PATCH", `/api/projects/${id}`, data);
       return response.json();
     },
     onSuccess: (project) => {
@@ -241,7 +228,7 @@ export default function ConfigPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <BookOpen className="h-5 w-5" />
@@ -250,8 +237,20 @@ export default function ConfigPage() {
             <CardDescription>
               {projects.length} proyecto{projects.length !== 1 ? "s" : ""} creado{projects.length !== 1 ? "s" : ""}
             </CardDescription>
+            {projects.length > 0 && (
+              <div className="relative mt-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar proyectos..."
+                  value={projectSearch}
+                  onChange={(e) => setProjectSearch(e.target.value)}
+                  className="pl-9"
+                  data-testid="input-project-search"
+                />
+              </div>
+            )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1 min-h-0">
             {isLoading ? (
               <div className="flex items-center justify-center py-8">
                 <Clock className="h-8 w-8 text-muted-foreground/30 animate-pulse" />
@@ -266,62 +265,67 @@ export default function ConfigPage() {
                   Crea tu primer proyecto usando el formulario
                 </p>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {projects.map((project) => (
-                  <div 
-                    key={project.id}
-                    className="flex items-center justify-between gap-4 p-3 rounded-md bg-muted/50"
-                    data-testid={`project-item-${project.id}`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <h3 className="font-medium text-sm truncate">{project.title}</h3>
-                        <Badge className={`text-xs ${statusColors[project.status] || statusColors.idle}`}>
-                          {statusLabels[project.status] || project.status}
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-xs">{project.genre}</Badge>
-                        <Badge variant="outline" className="text-xs">{project.tone}</Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {project.chapterCount} capítulos
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => {
-                          setEditingProject(project);
-                          setEditTitle(project.title);
-                          setEditWorkType(project.workType || "standalone");
-                          setEditSeriesId(project.seriesId || null);
-                          setEditSeriesOrder(project.seriesOrder || null);
-                        }}
-                        data-testid={`button-edit-${project.id}`}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      <Link href="/manuscript">
-                        <Button variant="ghost" size="sm" data-testid={`button-view-${project.id}`}>
-                          Ver
-                        </Button>
-                      </Link>
-                      <Button 
-                        variant="ghost" 
-                        size="icon"
-                        onClick={() => handleDelete(project.id)}
-                        disabled={deleteProjectMutation.isPending}
-                        data-testid={`button-delete-${project.id}`}
-                      >
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+            ) : filteredProjects.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 text-center">
+                <Search className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                <p className="text-muted-foreground text-sm">
+                  No se encontraron proyectos
+                </p>
               </div>
+            ) : (
+              <ScrollArea className="h-[400px] pr-4">
+                <div className="space-y-3">
+                  {filteredProjects.map((project) => (
+                    <div 
+                      key={project.id}
+                      className="flex items-center justify-between gap-4 p-3 rounded-md bg-muted/50"
+                      data-testid={`project-item-${project.id}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <h3 className="font-medium text-sm truncate">{project.title}</h3>
+                          <Badge className={`text-xs ${statusColors[project.status] || statusColors.idle}`}>
+                            {statusLabels[project.status] || project.status}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Badge variant="outline" className="text-xs">{project.genre}</Badge>
+                          <Badge variant="outline" className="text-xs">{project.tone}</Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {project.chapterCount} capítulos
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {project.status === "idle" && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon"
+                            onClick={() => setEditingProject(project)}
+                            data-testid={`button-edit-${project.id}`}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                        )}
+                        <Link href="/manuscript">
+                          <Button variant="ghost" size="sm" data-testid={`button-view-${project.id}`}>
+                            Ver
+                          </Button>
+                        </Link>
+                        <Button 
+                          variant="ghost" 
+                          size="icon"
+                          onClick={() => handleDelete(project.id)}
+                          disabled={deleteProjectMutation.isPending}
+                          data-testid={`button-delete-${project.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </ScrollArea>
             )}
           </CardContent>
         </Card>
@@ -374,39 +378,41 @@ export default function ConfigPage() {
               </p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {extendedGuides.map((guide) => (
-                <div 
-                  key={guide.id}
-                  className="flex items-center justify-between gap-4 p-3 rounded-md bg-muted/50"
-                  data-testid={`guide-item-${guide.id}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <h3 className="font-medium text-sm truncate">{guide.title}</h3>
-                      <Badge variant="outline" className="text-xs">
-                        {(guide.wordCount || 0).toLocaleString()} palabras
-                      </Badge>
-                    </div>
-                    {guide.description && (
-                      <p className="text-xs text-muted-foreground truncate">{guide.description}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground/60 mt-1">
-                      {guide.originalFileName}
-                    </p>
-                  </div>
-                  <Button 
-                    variant="ghost" 
-                    size="icon"
-                    onClick={() => setDeleteGuideId(guide.id)}
-                    disabled={deleteGuideMutation.isPending}
-                    data-testid={`button-delete-guide-${guide.id}`}
+            <ScrollArea className="h-[300px] pr-4">
+              <div className="space-y-3">
+                {extendedGuides.map((guide) => (
+                  <div 
+                    key={guide.id}
+                    className="flex items-center justify-between gap-4 p-3 rounded-md bg-muted/50"
+                    data-testid={`guide-item-${guide.id}`}
                   >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              ))}
-            </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap mb-1">
+                        <h3 className="font-medium text-sm truncate">{guide.title}</h3>
+                        <Badge variant="outline" className="text-xs">
+                          {(guide.wordCount || 0).toLocaleString()} palabras
+                        </Badge>
+                      </div>
+                      {guide.description && (
+                        <p className="text-xs text-muted-foreground truncate">{guide.description}</p>
+                      )}
+                      <p className="text-xs text-muted-foreground/60 mt-1">
+                        {guide.originalFileName}
+                      </p>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => setDeleteGuideId(guide.id)}
+                      disabled={deleteGuideMutation.isPending}
+                      data-testid={`button-delete-guide-${guide.id}`}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
           )}
         </CardContent>
       </Card>
@@ -452,122 +458,37 @@ export default function ConfigPage() {
       </Card>
 
       <Dialog open={!!editingProject} onOpenChange={(open) => !open && setEditingProject(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar proyecto</DialogTitle>
           </DialogHeader>
-          <div className="py-4 space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-title">Título</Label>
-              <Input
-                id="edit-title"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                placeholder="Nombre del proyecto"
-                data-testid="input-edit-title"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Tipo de obra</Label>
-              <Select 
-                value={editWorkType} 
-                onValueChange={(value) => {
-                  setEditWorkType(value);
-                  if (value === "standalone") {
-                    setEditSeriesId(null);
-                    setEditSeriesOrder(null);
-                  }
-                }}
-              >
-                <SelectTrigger data-testid="select-edit-worktype">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="standalone">Novela independiente</SelectItem>
-                  <SelectItem value="series">Serie</SelectItem>
-                  <SelectItem value="trilogy">Trilogía</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {(editWorkType === "series" || editWorkType === "trilogy") && (
-              <>
-                <div className="space-y-2">
-                  <Label>Serie / Saga</Label>
-                  <Select 
-                    value={editSeriesId?.toString() || "none"} 
-                    onValueChange={(value) => {
-                      const newSeriesId = value === "none" ? null : parseInt(value);
-                      setEditSeriesId(newSeriesId);
-                      if (newSeriesId) {
-                        const seriesProjects = projects.filter(p => p.seriesId === newSeriesId && p.id !== editingProject?.id);
-                        const seriesManuscripts = allManuscripts.filter(m => m.seriesId === newSeriesId);
-                        const existingOrders = [
-                          ...seriesProjects.map(p => p.seriesOrder),
-                          ...seriesManuscripts.map(m => m.seriesOrder)
-                        ].filter((o): o is number => o !== null);
-                        const suggestedOrder = existingOrders.length > 0 ? Math.max(...existingOrders) + 1 : 1;
-                        setEditSeriesOrder(suggestedOrder);
-                      } else {
-                        setEditSeriesOrder(null);
-                      }
-                    }}
-                  >
-                    <SelectTrigger data-testid="select-edit-series">
-                      <SelectValue placeholder="Selecciona una serie" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Ninguna</SelectItem>
-                      {allSeries.map((s) => (
-                        <SelectItem key={s.id} value={s.id.toString()}>
-                          <div className="flex items-center gap-2">
-                            <BookMarked className="h-3 w-3" />
-                            <span>{s.title}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="edit-order">Orden en la serie</Label>
-                  <Input
-                    id="edit-order"
-                    type="number"
-                    min={1}
-                    value={editSeriesOrder || ""}
-                    onChange={(e) => setEditSeriesOrder(e.target.value ? parseInt(e.target.value) : null)}
-                    placeholder="Ej: 1, 2, 3..."
-                    data-testid="input-edit-order"
-                  />
-                </div>
-              </>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingProject(null)}>
-              Cancelar
-            </Button>
-            <Button 
-              onClick={() => {
-                if (editingProject && editTitle.trim()) {
-                  updateProjectMutation.mutate({ 
-                    id: editingProject.id, 
-                    title: editTitle.trim(),
-                    workType: editWorkType,
-                    seriesId: editSeriesId,
-                    seriesOrder: editSeriesOrder
-                  });
-                }
+          {editingProject && (
+            <ConfigPanel
+              key={editingProject.id}
+              onSubmit={(data) => {
+                updateProjectMutation.mutate({ id: editingProject.id, ...data });
               }}
-              disabled={updateProjectMutation.isPending || !editTitle.trim()}
-              data-testid="button-save-project"
-            >
-              Guardar
-            </Button>
-          </DialogFooter>
+              onReset={() => setEditingProject(null)}
+              isLoading={updateProjectMutation.isPending}
+              defaultValues={{
+                title: editingProject.title,
+                premise: editingProject.premise || "",
+                genre: editingProject.genre,
+                tone: editingProject.tone,
+                chapterCount: editingProject.chapterCount,
+                hasPrologue: editingProject.hasPrologue,
+                hasEpilogue: editingProject.hasEpilogue,
+                hasAuthorNote: editingProject.hasAuthorNote,
+                pseudonymId: editingProject.pseudonymId,
+                styleGuideId: editingProject.styleGuideId,
+                extendedGuideId: editingProject.extendedGuideId,
+                workType: editingProject.workType || "standalone",
+                seriesId: editingProject.seriesId,
+                seriesOrder: editingProject.seriesOrder,
+              }}
+              isEditing
+            />
+          )}
         </DialogContent>
       </Dialog>
 
