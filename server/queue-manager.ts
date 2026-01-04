@@ -108,9 +108,18 @@ export class QueueManager {
     this.currentProjectId = null;
     this.stopHeartbeatMonitor();
     
-    // Wait a bit and restart - but only if manually started
-    console.log(`[QueueManager] Project ${projectId} reset. Manual restart required.`);
-    // DO NOT auto-restart - user must manually start the queue
+    // AUTO-RESTART the queue after recovery
+    console.log(`[QueueManager] Project ${projectId} reset. AUTO-RESTARTING in 3 seconds...`);
+    
+    setTimeout(async () => {
+      try {
+        console.log(`[QueueManager] Auto-starting queue after heartbeat recovery`);
+        this.isRunning = false; // Reset to allow start()
+        await this.start();
+      } catch (e) {
+        console.error("[QueueManager] Failed to auto-restart after heartbeat recovery:", e);
+      }
+    }, 3000);
   }
 
   async initialize(): Promise<void> {
@@ -123,9 +132,9 @@ export class QueueManager {
     // Check for frozen projects first (based on activity logs, not memory)
     await this.checkForFrozenProjects();
 
-    // If the server crashed while running, clean up but DO NOT auto-restart
+    // If the server crashed while running, clean up and AUTO-RESTART
     if (state.status === "running" && state.currentProjectId) {
-      console.log("[QueueManager] Detected incomplete queue state from previous session");
+      console.log("[QueueManager] Detected incomplete queue state from previous session - will auto-restart");
       
       // Check if the project was actually completed
       const project = await storage.getProject(state.currentProjectId);
@@ -138,8 +147,8 @@ export class QueueManager {
             completedAt: new Date(),
           });
         }
-        await storage.updateQueueState({ currentProjectId: null, status: "paused" });
-        console.log("[QueueManager] Cleaned up completed project. Queue PAUSED - manual start required.");
+        await storage.updateQueueState({ currentProjectId: null, status: "running" });
+        console.log("[QueueManager] Cleaned up completed project. AUTO-RESTARTING queue...");
       } else {
         // Project was in progress - reset it to allow re-processing
         const queueItem = await storage.getQueueItemByProject(state.currentProjectId);
@@ -149,19 +158,44 @@ export class QueueManager {
             startedAt: null,
           });
         }
-        await storage.updateQueueState({ currentProjectId: null, status: "paused" });
-        console.log("[QueueManager] Reset incomplete project. Queue PAUSED - manual start required.");
+        await storage.updateQueueState({ currentProjectId: null, status: "running" });
+        console.log("[QueueManager] Reset incomplete project. AUTO-RESTARTING queue...");
+        
+        // Log the auto-recovery
+        if (project) {
+          await storage.createActivityLog({
+            projectId: state.currentProjectId,
+            level: "info",
+            message: `Sistema reiniciado - continuando generación automáticamente`,
+            agentRole: "system",
+          });
+        }
       }
       
-      // DO NOT auto-resume - require manual start
+      // AUTO-START after short delay
       this.isRunning = false;
-      this.isPaused = true;
+      this.isPaused = false;
+      setTimeout(async () => {
+        try {
+          console.log("[QueueManager] Auto-starting queue after server restart");
+          await this.start();
+        } catch (e) {
+          console.error("[QueueManager] Failed to auto-start after server restart:", e);
+        }
+      }, 5000);
     } else if (state.status === "running") {
-      // Queue was marked running but no current project - pause it
-      console.log("[QueueManager] Queue was running with no project. Setting to PAUSED.");
-      await storage.updateQueueState({ status: "paused" });
+      // Queue was marked running but no current project - continue processing
+      console.log("[QueueManager] Queue was running with no project. AUTO-RESTARTING to process queue...");
       this.isRunning = false;
-      this.isPaused = true;
+      this.isPaused = false;
+      setTimeout(async () => {
+        try {
+          console.log("[QueueManager] Auto-starting queue (was running with no project)");
+          await this.start();
+        } catch (e) {
+          console.error("[QueueManager] Failed to auto-start:", e);
+        }
+      }, 3000);
     } else if (state.status === "paused") {
       this.isPaused = true;
       console.log("[QueueManager] Queue is paused, waiting for manual resume");
@@ -232,8 +266,27 @@ export class QueueManager {
               });
             }
             
-            // DO NOT auto-restart - just log and pause
-            console.log(`[QueueManager] Frozen project "${project.title}" reset to paused. Manual restart required.`);
+            // AUTO-RESTART the queue after recovery
+            console.log(`[QueueManager] Frozen project "${project.title}" reset. AUTO-RESTARTING queue...`);
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              message: `Auto-recovery completado. Reiniciando generación automáticamente...`,
+              agentRole: "system",
+            });
+            
+            // Small delay then restart
+            setTimeout(async () => {
+              try {
+                if (!this.isRunning) {
+                  console.log(`[QueueManager] Auto-starting queue after frozen project recovery`);
+                  await this.start();
+                }
+              } catch (e) {
+                console.error("[QueueManager] Failed to auto-restart after recovery:", e);
+              }
+            }, 3000);
             
             break; // Handle one frozen project at a time
           }
