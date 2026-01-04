@@ -584,15 +584,42 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       const allSections = this.buildSectionsList(project, worldBibleData);
       const chapters: Chapter[] = [];
       
-      for (let i = 0; i < allSections.length; i++) {
-        const section = allSections[i];
-        const chapter = await storage.createChapter({
+      // CRITICAL: Re-check for existing chapters right before creation to prevent race conditions
+      const existingChaptersBeforeCreate = await storage.getChaptersByProject(project.id);
+      if (existingChaptersBeforeCreate.length > 0) {
+        console.log(`[Orchestrator] DUPLICATE PREVENTION: Found ${existingChaptersBeforeCreate.length} chapters created during architect phase. Using existing chapters.`);
+        await storage.createActivityLog({
           projectId: project.id,
-          chapterNumber: section.numero,
-          title: section.titulo,
-          status: "pending",
+          level: "warn",
+          message: `Detectados ${existingChaptersBeforeCreate.length} capítulos durante fase de arquitecto. Usando capítulos existentes para evitar duplicados.`,
+          agentRole: "orchestrator",
         });
-        chapters.push(chapter);
+        // Sort by chapter number and use existing chapters
+        const sortedExisting = existingChaptersBeforeCreate.sort((a, b) => a.chapterNumber - b.chapterNumber);
+        chapters.push(...sortedExisting);
+      } else {
+        // Create chapters only if none exist
+        for (let i = 0; i < allSections.length; i++) {
+          const section = allSections[i];
+          
+          // Double-check this specific chapter doesn't exist (belt-and-suspenders approach)
+          const existingForNumber = await storage.getChaptersByProject(project.id);
+          const alreadyExists = existingForNumber.find(c => c.chapterNumber === section.numero);
+          
+          if (alreadyExists) {
+            console.log(`[Orchestrator] DUPLICATE PREVENTION: Chapter ${section.numero} already exists (id=${alreadyExists.id}). Skipping creation.`);
+            chapters.push(alreadyExists);
+            continue;
+          }
+          
+          const chapter = await storage.createChapter({
+            projectId: project.id,
+            chapterNumber: section.numero,
+            title: section.titulo,
+            status: "pending",
+          });
+          chapters.push(chapter);
+        }
       }
 
       let previousContinuity = "";
