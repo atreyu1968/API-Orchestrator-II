@@ -334,11 +334,37 @@ export default function ExportPage() {
   }, [toast, completedProjects]);
 
   useEffect(() => {
+    // Only restart if we don't already have an active event source
+    if (eventSourceRef) return;
+
+    // Check if there's a reason to believe a translation is active
     const saved = loadTranslationState();
-    if (saved && !eventSourceRef) {
-      startTranslation(saved.projectId, saved.sourceLanguage, saved.targetLanguage, saved.projectTitle);
+    if (!saved) return;
+
+    const startedAt = new Date(saved.startedAt);
+    const secondsAgo = (Date.now() - startedAt.getTime()) / 1000;
+    
+    // Safety check: Don't auto-restart if the user is already here and progress is not moving
+    // or if the session is too old.
+    if (secondsAgo < 120) {
+      // Logic to prevent "looping" translation starts:
+      // If we are currently showing a "completed" status for this exact project/target,
+      // we shouldn't restart.
+      const isAlreadyCompleted = savedTranslations.some(
+        t => t.projectId === saved.projectId && 
+             t.targetLanguage === saved.targetLanguage && 
+             t.status === "completed"
+      );
+      
+      if (!isAlreadyCompleted) {
+        startTranslation(saved.projectId, saved.sourceLanguage, saved.targetLanguage, saved.projectTitle);
+      } else {
+        saveTranslationState(null);
+      }
+    } else {
+      saveTranslationState(null);
     }
-  }, []);
+  }, [savedTranslations]);
 
   const cancelTranslation = useCallback(() => {
     if (eventSourceRef) {
