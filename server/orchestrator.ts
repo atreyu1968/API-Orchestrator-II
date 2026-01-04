@@ -394,64 +394,135 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         ? `${project.premise || ""}${extendedGuideContent ? `\n\n--- GUÍA DE ESCRITURA EXTENDIDA ---\n${extendedGuideContent}` : ""}${seriesContextContent}`
         : (project.premise || "");
 
-      this.callbacks.onAgentStatus("architect", "thinking", "El Arquitecto está diseñando la estructura narrativa...");
-      
-      const architectResult = await this.architect.execute({
-        title: project.title,
-        premise: effectivePremise,
-        genre: project.genre,
-        tone: project.tone,
-        chapterCount: project.chapterCount,
-        hasPrologue: project.hasPrologue,
-        hasEpilogue: project.hasEpilogue,
-        hasAuthorNote: project.hasAuthorNote,
-      });
+      const MAX_ARCHITECT_RETRIES = 3;
+      let architectAttempt = 0;
+      let architectResult: any = null;
+      let worldBibleData: ParsedWorldBible | null = null;
+      let lastArchitectError = "";
 
-      await this.trackTokenUsage(project.id, architectResult.tokenUsage);
+      while (architectAttempt < MAX_ARCHITECT_RETRIES) {
+        architectAttempt++;
+        
+        this.callbacks.onAgentStatus("architect", "thinking", 
+          architectAttempt > 1 
+            ? `El Arquitecto está reintentando (intento ${architectAttempt}/${MAX_ARCHITECT_RETRIES})...` 
+            : "El Arquitecto está diseñando la estructura narrativa..."
+        );
+        
+        try {
+          architectResult = await this.architect.execute({
+            title: project.title,
+            premise: effectivePremise,
+            genre: project.genre,
+            tone: project.tone,
+            chapterCount: project.chapterCount,
+            hasPrologue: project.hasPrologue,
+            hasEpilogue: project.hasEpilogue,
+            hasAuthorNote: project.hasAuthorNote,
+          });
 
-      if (architectResult.error || architectResult.timedOut) {
-        const errorMsg = architectResult.error || "Timeout durante la generación del World Bible";
-        console.error(`[Orchestrator] Architect failed: ${errorMsg}`);
-        this.callbacks.onAgentStatus("architect", "error", errorMsg);
-        this.callbacks.onError(`Error del Arquitecto: ${errorMsg}`);
-        await storage.updateProject(project.id, { status: "failed" });
-        return;
+          await this.trackTokenUsage(project.id, architectResult.tokenUsage);
+
+          if (architectResult.error || architectResult.timedOut) {
+            lastArchitectError = architectResult.error || "Timeout durante la generación del World Bible";
+            console.error(`[Orchestrator] Architect attempt ${architectAttempt} failed: ${lastArchitectError}`);
+            
+            if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                message: `Arquitecto falló (intento ${architectAttempt}): ${lastArchitectError}. Reintentando...`,
+                agentRole: "architect",
+              });
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              continue;
+            }
+          } else if (!architectResult.content || architectResult.content.trim().length === 0) {
+            lastArchitectError = "El Arquitecto no generó contenido válido";
+            console.error(`[Orchestrator] Architect attempt ${architectAttempt} returned empty content`);
+            
+            if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                message: `Arquitecto devolvió contenido vacío (intento ${architectAttempt}). Reintentando...`,
+                agentRole: "architect",
+              });
+              await new Promise(resolve => setTimeout(resolve, 5000));
+              continue;
+            }
+          } else {
+            if (architectResult.thoughtSignature) {
+              await storage.createThoughtLog({
+                projectId: project.id,
+                agentName: "El Arquitecto",
+                agentRole: "architect",
+                thoughtContent: architectResult.thoughtSignature,
+              });
+            }
+
+            worldBibleData = this.parseArchitectOutput(architectResult.content);
+            
+            const hasCharacters = (worldBibleData.world_bible?.personajes?.length || 0) > 0;
+            const hasChapters = (worldBibleData.escaleta_capitulos?.length || 0) > 0;
+            
+            if (!hasCharacters || !hasChapters) {
+              lastArchitectError = `World Bible vacía o incompleta: ${hasCharacters ? '✓' : '✗'} personajes (${worldBibleData.world_bible?.personajes?.length || 0}), ${hasChapters ? '✓' : '✗'} capítulos (${worldBibleData.escaleta_capitulos?.length || 0})`;
+              console.error(`[Orchestrator] Architect attempt ${architectAttempt}: ${lastArchitectError}`);
+              console.error(`[Orchestrator] Architect raw content preview (first 2000 chars):\n${architectResult.content?.substring(0, 2000)}`);
+              
+              if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  message: `World Bible incompleta (intento ${architectAttempt}): ${lastArchitectError}. Reintentando...`,
+                  agentRole: "architect",
+                });
+                worldBibleData = null;
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                continue;
+              }
+            } else {
+              console.log(`[Orchestrator] World Bible parsed successfully on attempt ${architectAttempt}: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${worldBibleData.escaleta_capitulos?.length || 0} chapters`);
+              break;
+            }
+          }
+        } catch (error) {
+          lastArchitectError = String(error);
+          console.error(`[Orchestrator] Architect attempt ${architectAttempt} exception: ${lastArchitectError}`);
+          
+          if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `Arquitecto excepción (intento ${architectAttempt}): ${lastArchitectError}. Reintentando...`,
+              agentRole: "architect",
+            });
+            await new Promise(resolve => setTimeout(resolve, 5000));
+            continue;
+          }
+        }
+        
+        if (architectAttempt >= MAX_ARCHITECT_RETRIES) break;
       }
 
-      if (!architectResult.content || architectResult.content.trim().length === 0) {
-        const errorMsg = "El Arquitecto no generó contenido válido";
-        console.error(`[Orchestrator] Architect returned empty content`);
+      if (!worldBibleData || !worldBibleData.world_bible?.personajes?.length || !worldBibleData.escaleta_capitulos?.length) {
+        const errorMsg = `El Arquitecto falló después de ${MAX_ARCHITECT_RETRIES} intentos: ${lastArchitectError}. El proyecto se pausará para permitir reintento manual.`;
+        console.error(`[Orchestrator] CRITICAL: ${errorMsg}`);
         this.callbacks.onAgentStatus("architect", "error", errorMsg);
         this.callbacks.onError(errorMsg);
-        await storage.updateProject(project.id, { status: "failed" });
-        return;
-      }
-
-      if (architectResult.thoughtSignature) {
-        await storage.createThoughtLog({
+        
+        await storage.createActivityLog({
           projectId: project.id,
-          agentName: "El Arquitecto",
+          level: "error",
+          message: `Arquitecto falló tras ${MAX_ARCHITECT_RETRIES} intentos. Proyecto pausado para reintento manual.`,
           agentRole: "architect",
-          thoughtContent: architectResult.thoughtSignature,
+          metadata: { lastError: lastArchitectError },
         });
-      }
-
-      const worldBibleData = this.parseArchitectOutput(architectResult.content);
-      
-      const hasCharacters = (worldBibleData.world_bible?.personajes?.length || 0) > 0;
-      const hasChapters = (worldBibleData.escaleta_capitulos?.length || 0) > 0;
-      
-      if (!hasCharacters || !hasChapters) {
-        const errorMsg = `World Bible vacía o incompleta: ${hasCharacters ? '✓' : '✗'} personajes (${worldBibleData.world_bible?.personajes?.length || 0}), ${hasChapters ? '✓' : '✗'} capítulos (${worldBibleData.escaleta_capitulos?.length || 0}). El Arquitecto puede haber devuelto un formato inválido.`;
-        console.error(`[Orchestrator] CRITICAL: ${errorMsg}`);
-        console.error(`[Orchestrator] Architect raw content preview (first 3000 chars):\n${architectResult.content?.substring(0, 3000)}`);
-        this.callbacks.onAgentStatus("architect", "error", errorMsg);
-        this.callbacks.onError(`Error del Arquitecto: ${errorMsg}`);
-        await storage.updateProject(project.id, { status: "failed" });
+        
+        await storage.updateProject(project.id, { status: "paused" });
         return;
       }
-      
-      console.log(`[Orchestrator] World Bible parsed successfully: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${worldBibleData.escaleta_capitulos?.length || 0} chapters`);
       
       const worldBible = await storage.createWorldBible({
         projectId: project.id,
