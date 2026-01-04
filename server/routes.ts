@@ -1190,6 +1190,120 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/series/:id/upload-volume", upload.single('file'), async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const file = req.file;
+      
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+
+      const series = await storage.getSeries(seriesId);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      const result = await mammoth.extractRawText({ buffer: file.buffer });
+      const fullContent = result.value.trim();
+
+      if (!fullContent || fullContent.length < 1000) {
+        return res.status(400).json({ error: "El documento está vacío o tiene muy poco contenido" });
+      }
+
+      const existingProjects = await storage.getProjectsBySeries(seriesId);
+      const existingManuscripts = await storage.getImportedManuscriptsBySeries(seriesId);
+      const nextOrder = Math.max(0, 
+        ...existingProjects.map(p => p.seriesOrder || 0),
+        ...existingManuscripts.map(m => m.seriesOrder || 0)
+      ) + 1;
+
+      const chapterPattern = /(?:^|\n)(?:(?:CAPÍTULO|CAPITULO|CAP[ÍI]TULO|Capítulo|Capitulo|Capìtulo|Chapter|CHAPTER|CHAPITRE|Chapitre|CAPITOLO|Capitolo|KAPITEL|Kapitel|CAPÍTOL|Capítol)[.\s:]*(\d+|[IVXLCDM]+)[\s.:—–-]*([^\n]*))/gi;
+      
+      let lastIndex = 0;
+      const chapters: { number: number; title: string; content: string }[] = [];
+      let match;
+      const matches: { index: number; number: number; title: string }[] = [];
+      
+      while ((match = chapterPattern.exec(fullContent)) !== null) {
+        const num = parseInt(match[1]) || matches.length + 1;
+        const title = (match[2] || "").trim();
+        matches.push({ index: match.index, number: num, title });
+      }
+
+      for (let i = 0; i < matches.length; i++) {
+        const start = matches[i].index;
+        const end = i + 1 < matches.length ? matches[i + 1].index : fullContent.length;
+        const content = fullContent.substring(start, end).trim();
+        chapters.push({
+          number: matches[i].number,
+          title: matches[i].title,
+          content,
+        });
+      }
+
+      if (chapters.length === 0) {
+        const lines = fullContent.split('\n');
+        const chunkSize = Math.ceil(lines.length / 10);
+        for (let i = 0; i < 10 && i * chunkSize < lines.length; i++) {
+          chapters.push({
+            number: i + 1,
+            title: "",
+            content: lines.slice(i * chunkSize, (i + 1) * chunkSize).join('\n'),
+          });
+        }
+      }
+
+      const titleFromFile = file.originalname.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
+      
+      let manuscript = await storage.createImportedManuscript({
+        title: titleFromFile,
+        originalFileName: file.originalname,
+        detectedLanguage: "es",
+        totalChapters: chapters.length,
+        totalWordCount: fullContent.split(/\s+/).length,
+        pseudonymId: series.pseudonymId,
+        seriesId: seriesId,
+        seriesOrder: nextOrder,
+        continuityAnalysisStatus: "pending",
+      });
+      
+      const updatedManuscript = await storage.updateImportedManuscript(manuscript.id, {
+        status: "completed",
+        processedChapters: chapters.length,
+      });
+      if (updatedManuscript) {
+        manuscript = updatedManuscript;
+      }
+
+      for (const chapter of chapters) {
+        await storage.createImportedChapter({
+          manuscriptId: manuscript.id,
+          chapterNumber: chapter.number,
+          title: chapter.title || `Capítulo ${chapter.number}`,
+          originalContent: chapter.content,
+          editedContent: chapter.content,
+          status: "completed",
+          wordCount: chapter.content.split(/\s+/).length,
+        });
+      }
+
+      res.json({
+        message: "Volumen subido correctamente",
+        manuscript: {
+          id: manuscript.id,
+          title: manuscript.title,
+          seriesOrder: manuscript.seriesOrder,
+          totalChapters: chapters.length,
+          wordCount: fullContent.split(/\s+/).length,
+        },
+      });
+    } catch (error) {
+      console.error("Error uploading volume:", error);
+      res.status(500).json({ error: "Failed to upload volume" });
+    }
+  });
+
   app.post("/api/imported-manuscripts/:id/analyze-continuity", async (req: Request, res: Response) => {
     const manuscriptId = parseInt(req.params.id);
     

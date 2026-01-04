@@ -57,6 +57,10 @@ export default function SeriesPage() {
   const [linkingSeriesId, setLinkingSeriesId] = useState<number | null>(null);
   const [linkManuscriptId, setLinkManuscriptId] = useState<string>("");
   const [linkSeriesOrder, setLinkSeriesOrder] = useState<number>(1);
+  
+  const [uploadingVolumeSeriesId, setUploadingVolumeSeriesId] = useState<number | null>(null);
+  const uploadingVolumeSeriesIdRef = useRef<number | null>(null);
+  const volumeInputRef = useRef<HTMLInputElement>(null);
 
   const { data: registry = [], isLoading } = useQuery<SeriesWithDetails[]>({
     queryKey: ["/api/series/registry"],
@@ -231,6 +235,47 @@ export default function SeriesPage() {
     },
   });
 
+  const uploadVolumeMutation = useMutation({
+    mutationFn: async ({ seriesId, file }: { seriesId: number; file: File }) => {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await fetch(`/api/series/${seriesId}/upload-volume`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "Upload failed");
+      }
+      return response.json();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/imported-manuscripts"] });
+      toast({
+        title: "Volumen subido",
+        description: `"${result.manuscript?.title || 'Volumen'}" añadido como Vol. ${result.manuscript?.seriesOrder || '?'}`,
+      });
+      setUploadingVolumeSeriesId(null);
+      uploadingVolumeSeriesIdRef.current = null;
+      if (volumeInputRef.current) {
+        volumeInputRef.current.value = "";
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error?.message || "No se pudo subir el volumen",
+        variant: "destructive",
+      });
+      uploadingVolumeSeriesIdRef.current = null;
+      if (volumeInputRef.current) {
+        volumeInputRef.current.value = "";
+      }
+    },
+  });
+
   const [analyzingManuscriptId, setAnalyzingManuscriptId] = useState<number | null>(null);
 
   const analyzeContinuityMutation = useMutation({
@@ -372,6 +417,26 @@ export default function SeriesPage() {
     uploadSeriesGuideMutation.mutate({ seriesId, file });
   };
 
+  const handleVolumeUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const seriesId = uploadingVolumeSeriesIdRef.current;
+    if (!file || !seriesId) return;
+
+    if (!file.name.endsWith(".docx")) {
+      toast({
+        title: "Formato no soportado",
+        description: "Por favor sube un archivo .docx (Word)",
+        variant: "destructive",
+      });
+      if (volumeInputRef.current) {
+        volumeInputRef.current.value = "";
+      }
+      return;
+    }
+
+    uploadVolumeMutation.mutate({ seriesId, file });
+  };
+
   const statusLabels: Record<string, string> = {
     idle: "Pendiente",
     generating: "En curso",
@@ -401,6 +466,14 @@ export default function SeriesPage() {
         accept=".docx"
         className="hidden"
         data-testid="input-series-guide-upload"
+      />
+      <input
+        type="file"
+        ref={volumeInputRef}
+        onChange={handleVolumeUpload}
+        accept=".docx"
+        className="hidden"
+        data-testid="input-volume-upload"
       />
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -696,16 +769,36 @@ export default function SeriesPage() {
                       <BookOpen className="h-4 w-4 text-muted-foreground" />
                       <span className="text-sm font-medium">Volumenes</span>
                     </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openLinkModal(s.id)}
-                      disabled={availableManuscriptsForLinking.length === 0}
-                      data-testid={`button-link-manuscript-${s.id}`}
-                    >
-                      <Link2 className="h-4 w-4 mr-2" />
-                      Vincular Volumen Existente
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          uploadingVolumeSeriesIdRef.current = s.id;
+                          setUploadingVolumeSeriesId(s.id);
+                          volumeInputRef.current?.click();
+                        }}
+                        disabled={uploadVolumeMutation.isPending}
+                        data-testid={`button-upload-volume-${s.id}`}
+                      >
+                        {uploadVolumeMutation.isPending && uploadingVolumeSeriesId === s.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-2" />
+                        )}
+                        Subir Volumen
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => openLinkModal(s.id)}
+                        disabled={availableManuscriptsForLinking.length === 0}
+                        data-testid={`button-link-manuscript-${s.id}`}
+                      >
+                        <Link2 className="h-4 w-4 mr-2" />
+                        Vincular Existente
+                      </Button>
+                    </div>
                   </div>
                   
                   {(!s.volumes || s.volumes.length === 0) ? (
