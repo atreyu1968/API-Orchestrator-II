@@ -3511,13 +3511,13 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
         
         let heading: string;
         if (chapter.chapterNumber === 0) {
-          heading = chapter.title || "Prólogo";
+          heading = `Prólogo${chapter.title ? `: ${chapter.title}` : ''}`;
         } else if (chapter.chapterNumber === -1) {
-          heading = chapter.title || "Epílogo";
+          heading = `Epílogo${chapter.title ? `: ${chapter.title}` : ''}`;
         } else if (chapter.chapterNumber === -2) {
-          heading = chapter.title || "Nota del Autor";
+          heading = `Nota del Autor`;
         } else {
-          heading = chapter.title || `Capítulo ${chapter.chapterNumber}`;
+          heading = `Capítulo ${chapter.chapterNumber}${chapter.title ? `: ${chapter.title}` : ''}`;
         }
         
         lines.push(`## ${heading}`);
@@ -3667,16 +3667,28 @@ ${chapter.content?.substring(0, 15000) || "Sin contenido previo"}
       lines.push(`# ${project.title}`);
       lines.push("");
       
+      // Chapter labels by target language
+      const chapterLabels: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
+        es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
+        en: { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
+        fr: { prologue: "Prologue", epilogue: "Épilogue", authorNote: "Note de l'Auteur", chapter: "Chapitre" },
+        de: { prologue: "Prolog", epilogue: "Epilog", authorNote: "Anmerkung des Autors", chapter: "Kapitel" },
+        it: { prologue: "Prologo", epilogue: "Epilogo", authorNote: "Nota dell'Autore", chapter: "Capitolo" },
+        pt: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota do Autor", chapter: "Capítulo" },
+        ca: { prologue: "Pròleg", epilogue: "Epíleg", authorNote: "Nota de l'Autor", chapter: "Capítol" },
+      };
+      const labels = chapterLabels[targetLanguage] || chapterLabels.en;
+      
       for (const chapter of translatedChapters) {
         let heading: string;
         if (chapter.chapterNumber === 0) {
-          heading = "Prologue";
+          heading = `${labels.prologue}${chapter.title ? `: ${chapter.title}` : ''}`;
         } else if (chapter.chapterNumber === -1) {
-          heading = "Epilogue";
+          heading = `${labels.epilogue}${chapter.title ? `: ${chapter.title}` : ''}`;
         } else if (chapter.chapterNumber === -2) {
-          heading = "Author's Note";
+          heading = labels.authorNote;
         } else {
-          heading = `Chapter ${chapter.chapterNumber}`;
+          heading = `${labels.chapter} ${chapter.chapterNumber}${chapter.title ? `: ${chapter.title}` : ''}`;
         }
         
         lines.push(`## ${heading}`);
