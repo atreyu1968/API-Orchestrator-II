@@ -749,7 +749,7 @@ export class DatabaseStorage implements IStorage {
       totalInputTokens: sql<number>`COALESCE(SUM(${aiUsageEvents.inputTokens}), 0)`,
       totalOutputTokens: sql<number>`COALESCE(SUM(${aiUsageEvents.outputTokens}), 0)`,
       totalThinkingTokens: sql<number>`COALESCE(SUM(${aiUsageEvents.thinkingTokens}), 0)`,
-      totalCostUsd: sql<number>`COALESCE(SUM(CAST(${aiUsageEvents.totalCostUsd} AS DECIMAL)), 0)`,
+      totalCostUsd: sql<number>`COALESCE(SUM(CAST(${aiUsageEvents.totalCostUsd} AS numeric)), 0)`,
       eventCount: sql<number>`COUNT(*)`,
     }).from(aiUsageEvents);
     
@@ -773,11 +773,11 @@ export class DatabaseStorage implements IStorage {
       agentName: aiUsageEvents.agentName,
       totalInputTokens: sql<number>`COALESCE(SUM(${aiUsageEvents.inputTokens}), 0)`,
       totalOutputTokens: sql<number>`COALESCE(SUM(${aiUsageEvents.outputTokens}), 0)`,
-      totalCostUsd: sql<number>`COALESCE(SUM(CAST(${aiUsageEvents.totalCostUsd} AS DECIMAL)), 0)`,
+      totalCostUsd: sql<number>`COALESCE(SUM(CAST(${aiUsageEvents.totalCostUsd} AS numeric)), 0)`,
       eventCount: sql<number>`COUNT(*)`,
     }).from(aiUsageEvents)
       .groupBy(aiUsageEvents.agentName)
-      .orderBy(sql`SUM(CAST(${aiUsageEvents.totalCostUsd} AS DECIMAL)) DESC`);
+      .orderBy(sql`SUM(CAST(${aiUsageEvents.totalCostUsd} AS numeric)) DESC`);
   }
 
   async getAiUsageByDay(): Promise<Array<{
@@ -791,7 +791,7 @@ export class DatabaseStorage implements IStorage {
       date: sql<string>`DATE(${aiUsageEvents.createdAt})`,
       totalInputTokens: sql<number>`COALESCE(SUM(${aiUsageEvents.inputTokens}), 0)`,
       totalOutputTokens: sql<number>`COALESCE(SUM(${aiUsageEvents.outputTokens}), 0)`,
-      totalCostUsd: sql<number>`COALESCE(SUM(CAST(${aiUsageEvents.totalCostUsd} AS DECIMAL)), 0)`,
+      totalCostUsd: sql<number>`COALESCE(SUM(CAST(${aiUsageEvents.totalCostUsd} AS numeric)), 0)`,
       eventCount: sql<number>`COUNT(*)`,
     }).from(aiUsageEvents)
       .groupBy(sql`DATE(${aiUsageEvents.createdAt})`)

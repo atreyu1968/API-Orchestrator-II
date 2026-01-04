@@ -178,9 +178,9 @@ export default function CostsPage() {
               <Skeleton className="h-8 w-24" />
             ) : (
               <>
-                <div className="text-2xl font-bold">{formatNumber(totalOutputTokens + totalThinkingTokens)}</div>
+                <div className="text-2xl font-bold">{formatNumber(totalOutputTokens)}</div>
                 <p className="text-xs text-muted-foreground">
-                  ~{formatCurrency(((totalOutputTokens + totalThinkingTokens) / 1_000_000) * 10)} a $10/M
+                  + {formatNumber(totalThinkingTokens)} thinking
                 </p>
               </>
             )}
@@ -250,7 +250,7 @@ export default function CostsPage() {
                             {formatNumber(project.totalInputTokens)}
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm">
-                            {formatNumber(project.totalOutputTokens + project.totalThinkingTokens)}
+                            {formatNumber(project.totalOutputTokens)}
                           </TableCell>
                           <TableCell className="text-right font-mono text-sm font-semibold">
                             {formatCurrency(project.estimatedCostUsd)}
