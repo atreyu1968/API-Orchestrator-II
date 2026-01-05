@@ -2,8 +2,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Clock, Users, BookOpen, Shield, Heart, Skull } from "lucide-react";
+import { Clock, Users, BookOpen, Shield, Heart, Skull, GitBranch, Activity } from "lucide-react";
 import type { WorldBible, Character, TimelineEvent, WorldRule, PlotOutline } from "@shared/schema";
+
+interface PlotDecision {
+  decision: string;
+  capitulo_establecido: number;
+  capitulos_afectados: number[];
+  consistencia_actual: "consistente" | "inconsistente";
+  problema?: string;
+}
+
+interface PersistentInjury {
+  personaje: string;
+  tipo_lesion: string;
+  capitulo_ocurre: number;
+  efecto_esperado: string;
+  capitulos_verificados: number[];
+  consistencia: "mantenida" | "ignorada";
+  problema?: string;
+}
 
 interface WorldBibleDisplayProps {
   worldBible: WorldBible | null;
@@ -155,6 +173,119 @@ function WorldRulesTab({ rules }: { rules: WorldRule[] }) {
               ))}
             </div>
           </div>
+        ))}
+      </div>
+    </ScrollArea>
+  );
+}
+
+function PlotDecisionsTab({ decisions }: { decisions: PlotDecision[] }) {
+  if (!decisions || decisions.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <GitBranch className="h-12 w-12 text-muted-foreground/30 mb-4" />
+        <p className="text-muted-foreground text-sm">Sin decisiones de trama registradas</p>
+        <p className="text-muted-foreground/60 text-xs mt-1">
+          El Revisor Final detectará decisiones críticas durante la revisión
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="h-[400px]">
+      <div className="space-y-3 pr-4">
+        {decisions.map((decision, index) => (
+          <Card 
+            key={index} 
+            className={decision.consistencia_actual === "inconsistente" ? "border-destructive/50" : ""}
+            data-testid={`plot-decision-${index}`}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-sm font-medium">{decision.decision}</CardTitle>
+                <Badge 
+                  variant={decision.consistencia_actual === "consistente" ? "secondary" : "destructive"}
+                  className="text-xs"
+                >
+                  {decision.consistencia_actual === "consistente" ? "Consistente" : "Inconsistente"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-xs">
+                  Establecido: Cap. {decision.capitulo_establecido}
+                </Badge>
+                <span className="text-xs text-muted-foreground">
+                  Afecta: {decision.capitulos_afectados.map(c => `Cap. ${c}`).join(", ")}
+                </span>
+              </div>
+              {decision.problema && (
+                <p className="text-xs text-destructive mt-2">{decision.problema}</p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    </ScrollArea>
+  );
+}
+
+function PersistentInjuriesTab({ injuries }: { injuries: PersistentInjury[] }) {
+  if (!injuries || injuries.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Activity className="h-12 w-12 text-muted-foreground/30 mb-4" />
+        <p className="text-muted-foreground text-sm">Sin lesiones persistentes registradas</p>
+        <p className="text-muted-foreground/60 text-xs mt-1">
+          El Revisor Final detectará lesiones que requieren seguimiento
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="h-[400px]">
+      <div className="space-y-3 pr-4">
+        {injuries.map((injury, index) => (
+          <Card 
+            key={index} 
+            className={injury.consistencia === "ignorada" ? "border-destructive/50" : ""}
+            data-testid={`persistent-injury-${index}`}
+          >
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Skull className="h-4 w-4" />
+                  {injury.personaje}
+                </CardTitle>
+                <Badge 
+                  variant={injury.consistencia === "mantenida" ? "secondary" : "destructive"}
+                  className="text-xs"
+                >
+                  {injury.consistencia === "mantenida" ? "Mantenida" : "Ignorada"}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <p className="text-sm">{injury.tipo_lesion}</p>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="outline" className="text-xs">
+                  Ocurre: Cap. {injury.capitulo_ocurre}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium">Efecto esperado:</span> {injury.efecto_esperado}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                <span className="font-medium">Verificado en:</span> {injury.capitulos_verificados.map(c => `Cap. ${c}`).join(", ")}
+              </p>
+              {injury.problema && (
+                <p className="text-xs text-destructive mt-2">{injury.problema}</p>
+              )}
+            </CardContent>
+          </Card>
         ))}
       </div>
     </ScrollArea>
@@ -315,10 +446,15 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
   const characters = (worldBible.characters || []) as Character[];
   const worldRules = (worldBible.worldRules || []) as WorldRule[];
   const plotOutline = (worldBible.plotOutline || null) as PlotOutline | null;
+  const plotDecisions = (worldBible.plotDecisions || []) as PlotDecision[];
+  const persistentInjuries = (worldBible.persistentInjuries || []) as PersistentInjury[];
+
+  const hasDecisions = plotDecisions.length > 0;
+  const hasInjuries = persistentInjuries.length > 0;
 
   return (
     <Tabs defaultValue="plot" className="w-full" data-testid="world-bible-tabs">
-      <TabsList className="w-full justify-start mb-4">
+      <TabsList className="w-full justify-start mb-4 flex-wrap gap-1">
         <TabsTrigger value="plot" className="gap-1.5">
           <BookOpen className="h-4 w-4" />
           Trama
@@ -334,6 +470,20 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
         <TabsTrigger value="rules" className="gap-1.5">
           <Shield className="h-4 w-4" />
           Reglas
+        </TabsTrigger>
+        <TabsTrigger value="decisions" className="gap-1.5">
+          <GitBranch className="h-4 w-4" />
+          Decisiones
+          {hasDecisions && (
+            <Badge variant="secondary" className="ml-1 text-xs">{plotDecisions.length}</Badge>
+          )}
+        </TabsTrigger>
+        <TabsTrigger value="injuries" className="gap-1.5">
+          <Activity className="h-4 w-4" />
+          Lesiones
+          {hasInjuries && (
+            <Badge variant="secondary" className="ml-1 text-xs">{persistentInjuries.length}</Badge>
+          )}
         </TabsTrigger>
       </TabsList>
       
@@ -351,6 +501,14 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
       
       <TabsContent value="rules">
         <WorldRulesTab rules={worldRules} />
+      </TabsContent>
+
+      <TabsContent value="decisions">
+        <PlotDecisionsTab decisions={plotDecisions} />
+      </TabsContent>
+
+      <TabsContent value="injuries">
+        <PersistentInjuriesTab injuries={persistentInjuries} />
       </TabsContent>
     </Tabs>
   );
