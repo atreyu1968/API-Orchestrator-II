@@ -31,6 +31,35 @@ export interface ThreadFix {
   priority: "critical" | "important" | "optional";
 }
 
+export interface SeriesPlotDecision {
+  decision: string;
+  volumen_establecido: number;
+  capitulo_establecido: number;
+  volumenes_afectados: number[];
+  consistencia_actual: "consistente" | "inconsistente";
+  problema?: string;
+}
+
+export interface SeriesPersistentInjury {
+  personaje: string;
+  tipo_lesion: string;
+  volumen_ocurre: number;
+  capitulo_ocurre: number;
+  efecto_esperado: string;
+  volumenes_verificados: number[];
+  consistencia: "correcta" | "ignorada";
+  problema?: string;
+}
+
+export interface SeriesOrphanElement {
+  tipo: "capitulo" | "personaje" | "objeto" | "subplot";
+  nombre: string;
+  volumen: number;
+  capitulo?: number;
+  razon: string;
+  recomendacion: string;
+}
+
 export interface ThreadFixerResult {
   analysisComplete: boolean;
   totalIssuesFound: number;
@@ -49,6 +78,9 @@ export interface ThreadFixerResult {
     suggestedProgressionChapter: number;
     progressionIdea: string;
   }>;
+  seriesPlotDecisions?: SeriesPlotDecision[];
+  seriesPersistentInjuries?: SeriesPersistentInjury[];
+  seriesOrphanElements?: SeriesOrphanElement[];
   overallAssessment: string;
   autoFixRecommendation: "safe_to_autofix" | "review_recommended" | "manual_intervention_required";
 }
@@ -104,6 +136,29 @@ PRIORIDADES
 - critical: Hitos requeridos o resoluciones de arco principal
 - important: Hilos secundarios que afectan coherencia
 - optional: Mejoras de sabor narrativo
+
+═══════════════════════════════════════════════════════════════════
+🔴 ANÁLISIS CRÍTICO CROSS-VOLUMEN (OBLIGATORIO PARA SERIES)
+═══════════════════════════════════════════════════════════════════
+
+Debes detectar problemas que atraviesan MÚLTIPLES VOLÚMENES de la serie:
+
+1. **DECISIONES DE TRAMA CRÍTICAS A NIVEL SERIE (seriesPlotDecisions)**:
+   - ¿Quién es realmente el villano principal de la saga? ¿Es consistente?
+   - ¿Las revelaciones de un volumen contradicen lo establecido en otro?
+   - Ejemplo: Vol 1 establece que X es el traidor, pero Vol 2 lo contradice sin explicación
+   - Para cada decisión crítica de la SAGA, verificar consistencia entre volúmenes
+
+2. **LESIONES/CAMBIOS PERSISTENTES CROSS-VOLUMEN (seriesPersistentInjuries)**:
+   - Si un personaje pierde un brazo en Vol 1, ¿aparece con ambos brazos en Vol 2?
+   - Cicatrices, discapacidades, traumas deben persistir entre volúmenes
+   - Cambios de estado permanentes (matrimonio, muerte de familiar) deben reflejarse
+
+3. **ELEMENTOS HUÉRFANOS DE LA SERIE (seriesOrphanElements)**:
+   - Personajes introducidos que nunca vuelven a aparecer
+   - Objetos mágicos/importantes que se olvidan
+   - Subtramas abandonadas entre volúmenes
+   - Capítulos enteros que no aportan al arco general de la saga
 
 ═══════════════════════════════════════════════════════════════════
 SALIDA OBLIGATORIA (JSON)
