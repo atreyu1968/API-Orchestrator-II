@@ -12,7 +12,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2 } from "lucide-react";
+import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download } from "lucide-react";
+import { SERIES_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { ArcVerificationPanel } from "@/components/arc-verification-panel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Pseudonym, Project, Series, ImportedManuscript } from "@shared/schema";
@@ -491,10 +492,20 @@ export default function SeriesPage() {
             Gestiona tus series y trilogias con sus volumenes asignados
           </p>
         </div>
-        <Button onClick={() => setIsCreating(true)} data-testid="button-create-series">
-          <Plus className="h-4 w-4 mr-2" />
-          Nueva Serie
-        </Button>
+        <div className="flex gap-2 flex-wrap">
+          <Button 
+            variant="outline" 
+            onClick={() => downloadTemplate(SERIES_WRITING_GUIDE_TEMPLATE, "guia-escritura-serie.txt")} 
+            data-testid="button-download-series-guide"
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Guía de Escritura
+          </Button>
+          <Button onClick={() => setIsCreating(true)} data-testid="button-create-series">
+            <Plus className="h-4 w-4 mr-2" />
+            Nueva Serie
+          </Button>
+        </div>
       </div>
 
       {isCreating && (

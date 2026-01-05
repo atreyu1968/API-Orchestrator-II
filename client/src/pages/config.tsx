@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search } from "lucide-react";
+import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download } from "lucide-react";
+import { BOOK_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { Link } from "wouter";
 import type { Project, ExtendedGuide } from "@shared/schema";
 
@@ -212,10 +213,21 @@ export default function ConfigPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Nuevo Proyecto
-            </CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Nuevo Proyecto
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => downloadTemplate(BOOK_WRITING_GUIDE_TEMPLATE, "guia-escritura-libro.txt")}
+                data-testid="button-download-book-guide"
+              >
+                <Download className="h-4 w-4 mr-1" />
+                Guía de Escritura
+              </Button>
+            </div>
             <CardDescription>
               Configura los parámetros para un nuevo manuscrito
             </CardDescription>
