@@ -386,12 +386,26 @@ export class ArchitectAgent extends BaseAgent {
     ${input.hasAuthorNote ? "NOTA: Incluye reflexiones para una NOTA DEL AUTOR al final." : ""}
     
     ═══════════════════════════════════════════════════════════════════
-    REQUISITO CRÍTICO: ESCALETA COMPLETA DE ${input.chapterCount} CAPÍTULOS
+    ⛔⛔⛔ REQUISITO ABSOLUTO E INNEGOCIABLE: EXACTAMENTE ${input.chapterCount} CAPÍTULOS ⛔⛔⛔
     ═══════════════════════════════════════════════════════════════════
-    DEBES generar una entrada COMPLETA en "escaleta_capitulos" para CADA UNO de los ${input.chapterCount} capítulos.
-    NO es aceptable generar solo los primeros 10 capítulos. TODOS los ${input.chapterCount} capítulos deben tener:
+    
+    EL NÚMERO DE CAPÍTULOS NO ES TU DECISIÓN. El autor ha solicitado ${input.chapterCount} capítulos.
+    NO puedes decidir que la historia "funciona mejor" con menos capítulos.
+    NO puedes "resumir" o "condensar" la trama.
+    
+    DEBES generar EXACTAMENTE ${input.chapterCount} entradas en "escaleta_capitulos", numeradas del 1 al ${input.chapterCount}.
+    ${input.hasPrologue ? "ADEMÁS: Prólogo como capítulo número 0." : ""}
+    ${input.hasEpilogue ? "ADEMÁS: Epílogo como capítulo número -1." : ""}
+    
+    Si la historia te parece "terminada" antes del capítulo ${input.chapterCount}:
+    - Expande subtramas existentes
+    - Añade complicaciones y obstáculos
+    - Desarrolla más los arcos de personajes secundarios
+    - Introduce nuevos conflictos que enriquezcan la trama
+    
+    CADA capítulo debe tener:
     - ⛔ TÍTULO OBLIGATORIO: Campo "titulo" con valor literario (2-6 palabras), NUNCA vacío
-    - Beats detallados
+    - Beats detallados (mínimo 3-5 por capítulo)
     - Información nueva
     - Conflicto central
     - Continuidad de entrada/salida
@@ -399,9 +413,8 @@ export class ArchitectAgent extends BaseAgent {
     🏷️ RECORDATORIO TÍTULOS: Si algún capítulo tiene "titulo": "" o "titulo": null, el sistema FALLARÁ.
     Cada título debe ser evocador: "El Sabor del Oro", "Cenizas y Promesas", NO "Capítulo 1".
     
-    La escaleta debe contener EXACTAMENTE ${input.chapterCount} elementos, uno por cada capítulo.
-    ${input.hasPrologue ? "Además, incluye el Prólogo como capítulo número 0." : ""}
-    ${input.hasEpilogue ? "Además, incluye el Epílogo como capítulo número -1." : ""}
+    ⚠️ VERIFICACIÓN FINAL: Antes de responder, CUENTA las entradas en escaleta_capitulos.
+    Si no hay EXACTAMENTE ${input.chapterCount} capítulos (del 1 al ${input.chapterCount}), tu respuesta es INVÁLIDA.
     
     Genera el plan completo de la novela siguiendo tus protocolos de arquitectura.
     Responde ÚNICAMENTE con el JSON estructurado según las instrucciones.
