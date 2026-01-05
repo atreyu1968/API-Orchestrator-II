@@ -511,10 +511,17 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             worldBibleData = this.parseArchitectOutput(architectResult.content);
             
             const hasCharacters = (worldBibleData.world_bible?.personajes?.length || 0) > 0;
-            const hasChapters = (worldBibleData.escaleta_capitulos?.length || 0) > 0;
+            const escaletaLength = worldBibleData.escaleta_capitulos?.length || 0;
+            const hasChapters = escaletaLength > 0;
+            
+            const expectedChapters = project.chapterCount + 
+              (project.hasPrologue ? 1 : 0) + 
+              (project.hasEpilogue ? 1 : 0) + 
+              (project.hasAuthorNote ? 1 : 0);
+            const hasEnoughChapters = escaletaLength >= expectedChapters;
             
             if (!hasCharacters || !hasChapters) {
-              lastArchitectError = `World Bible vacía o incompleta: ${hasCharacters ? '✓' : '✗'} personajes (${worldBibleData.world_bible?.personajes?.length || 0}), ${hasChapters ? '✓' : '✗'} capítulos (${worldBibleData.escaleta_capitulos?.length || 0})`;
+              lastArchitectError = `World Bible vacía o incompleta: ${hasCharacters ? '✓' : '✗'} personajes (${worldBibleData.world_bible?.personajes?.length || 0}), ${hasChapters ? '✓' : '✗'} capítulos (${escaletaLength})`;
               console.error(`[Orchestrator] Architect attempt ${architectAttempt}: ${lastArchitectError}`);
               console.error(`[Orchestrator] Architect raw content preview (first 2000 chars):\n${architectResult.content?.substring(0, 2000)}`);
               
@@ -529,8 +536,23 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 await new Promise(resolve => setTimeout(resolve, 5000));
                 continue;
               }
+            } else if (!hasEnoughChapters) {
+              lastArchitectError = `Escaleta incompleta: generados ${escaletaLength} capítulos, esperados ${expectedChapters} (${project.chapterCount} capítulos + extras)`;
+              console.error(`[Orchestrator] Architect attempt ${architectAttempt}: ${lastArchitectError}`);
+              
+              if (architectAttempt < MAX_ARCHITECT_RETRIES) {
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "warn",
+                  message: `Escaleta truncada (intento ${architectAttempt}): ${escaletaLength}/${expectedChapters} capítulos. Reintentando con más tokens...`,
+                  agentRole: "architect",
+                });
+                worldBibleData = null;
+                await new Promise(resolve => setTimeout(resolve, 5000));
+                continue;
+              }
             } else {
-              console.log(`[Orchestrator] World Bible parsed successfully on attempt ${architectAttempt}: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${worldBibleData.escaleta_capitulos?.length || 0} chapters`);
+              console.log(`[Orchestrator] World Bible parsed successfully on attempt ${architectAttempt}: ${worldBibleData.world_bible?.personajes?.length || 0} characters, ${escaletaLength}/${expectedChapters} chapters`);
               break;
             }
           }
