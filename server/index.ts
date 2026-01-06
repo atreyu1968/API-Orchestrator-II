@@ -3,7 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { queueManager } from "./queue-manager";
-import { autoResumeReeditProjects } from "./reedit-auto-resume";
+import { autoResumeReeditProjects, startWatchdog } from "./reedit-auto-resume";
 
 const app = express();
 const httpServer = createServer(app);
@@ -110,6 +110,10 @@ app.use((req, res, next) => {
         setTimeout(async () => {
           log("Checking for reedit projects to auto-resume...", "reedit");
           await autoResumeReeditProjects();
+          
+          // Start the watchdog to detect frozen processes
+          startWatchdog();
+          log("Reedit watchdog started", "reedit");
         }, 3000); // Wait 3 seconds for server to fully initialize
       } catch (error) {
         log(`Reedit auto-resume error: ${error}`, "reedit");

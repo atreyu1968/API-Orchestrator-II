@@ -3,8 +3,75 @@ import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 
 const activeReeditOrchestrators = new Map<number, ReeditOrchestrator>();
 
+// Watchdog interval (check every 2 minutes)
+const WATCHDOG_INTERVAL_MS = 2 * 60 * 1000;
+// Projects without heartbeat for more than 8 minutes are considered frozen
+const FROZEN_THRESHOLD_MS = 8 * 60 * 1000;
+
+let watchdogInterval: NodeJS.Timeout | null = null;
+
 export function getActiveReeditOrchestrators() {
   return activeReeditOrchestrators;
+}
+
+export async function watchdogCheck(): Promise<void> {
+  try {
+    const projects = await storage.getAllReeditProjects();
+    const processingProjects = projects.filter(p => p.status === "processing");
+    
+    if (processingProjects.length === 0) return;
+    
+    const now = new Date();
+    
+    for (const project of processingProjects) {
+      const heartbeatAt = project.heartbeatAt ? new Date(project.heartbeatAt) : null;
+      
+      // If no heartbeat ever set, check createdAt
+      const lastActivity = heartbeatAt || (project.createdAt ? new Date(project.createdAt) : null);
+      
+      if (!lastActivity) continue;
+      
+      const timeSinceActivity = now.getTime() - lastActivity.getTime();
+      
+      if (timeSinceActivity > FROZEN_THRESHOLD_MS) {
+        console.log(`[ReeditWatchdog] Project ${project.id} frozen - no heartbeat for ${Math.round(timeSinceActivity / 60000)} minutes`);
+        
+        // Remove from active orchestrators (it's probably stuck)
+        activeReeditOrchestrators.delete(project.id);
+        
+        // Mark as error so user can resume
+        await storage.updateReeditProject(project.id, {
+          status: "error",
+          errorMessage: `Proceso congelado detectado (sin actividad por ${Math.round(timeSinceActivity / 60000)} minutos). Puede reanudar el proceso.`,
+        });
+        
+        console.log(`[ReeditWatchdog] Project ${project.id} marked as error for recovery`);
+      }
+    }
+  } catch (error) {
+    console.error("[ReeditWatchdog] Error during watchdog check:", error);
+  }
+}
+
+export function startWatchdog(): void {
+  if (watchdogInterval) {
+    console.log("[ReeditWatchdog] Watchdog already running");
+    return;
+  }
+  
+  console.log("[ReeditWatchdog] Starting watchdog (checking every 2 minutes for frozen processes)");
+  watchdogInterval = setInterval(watchdogCheck, WATCHDOG_INTERVAL_MS);
+  
+  // Run initial check
+  watchdogCheck();
+}
+
+export function stopWatchdog(): void {
+  if (watchdogInterval) {
+    clearInterval(watchdogInterval);
+    watchdogInterval = null;
+    console.log("[ReeditWatchdog] Watchdog stopped");
+  }
 }
 
 export async function autoResumeReeditProjects(): Promise<void> {

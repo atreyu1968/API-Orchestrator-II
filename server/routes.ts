@@ -4833,11 +4833,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   app.post("/api/reedit-projects/:id/cancel", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
-      activeReeditOrchestrators.delete(projectId);
+      
+      // Set cancelRequested flag - the orchestrator will check this and gracefully exit
+      await storage.updateReeditProject(projectId, { 
+        cancelRequested: true,
+        errorMessage: "Cancelación solicitada por el usuario" 
+      });
 
-      await storage.updateReeditProject(projectId, { status: "error", errorMessage: "Cancelled by user" });
+      // If there's an active orchestrator, it will pick up the cancellation flag
+      // We also remove it from the active map to allow a new resume
+      if (activeReeditOrchestrators.has(projectId)) {
+        console.log(`[ReeditCancel] Setting cancellation flag for project ${projectId}`);
+        activeReeditOrchestrators.delete(projectId);
+      }
 
-      res.json({ success: true, message: "Reedit cancelled" });
+      res.json({ success: true, message: "Cancelación solicitada. El proceso se detendrá pronto." });
     } catch (error) {
       console.error("Error cancelling reedit:", error);
       res.status(500).json({ error: "Failed to cancel reedit" });
