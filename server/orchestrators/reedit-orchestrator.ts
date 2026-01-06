@@ -923,7 +923,12 @@ export class ReeditOrchestrator {
   }
 
   private async updateHeartbeat(projectId: number, lastCompletedChapter?: number) {
-    const updates: any = { heartbeatAt: new Date() };
+    const updates: any = { 
+      heartbeatAt: new Date(),
+      totalInputTokens: this.totalInputTokens,
+      totalOutputTokens: this.totalOutputTokens,
+      totalThinkingTokens: this.totalThinkingTokens,
+    };
     if (lastCompletedChapter !== undefined) {
       updates.lastCompletedChapter = lastCompletedChapter;
     }
@@ -1152,6 +1157,12 @@ export class ReeditOrchestrator {
     if (!project) {
       throw new Error(`Reedit project ${projectId} not found`);
     }
+
+    // Load existing token counts from database to continue accumulating
+    this.totalInputTokens = project.totalInputTokens || 0;
+    this.totalOutputTokens = project.totalOutputTokens || 0;
+    this.totalThinkingTokens = project.totalThinkingTokens || 0;
+    console.log(`[ReeditOrchestrator] Loaded existing tokens: ${this.totalInputTokens} input, ${this.totalOutputTokens} output, ${this.totalThinkingTokens} thinking`);
 
     try {
       await storage.updateReeditProject(projectId, { status: "processing" });
@@ -1761,6 +1772,9 @@ export class ReeditOrchestrator {
       await storage.updateReeditProject(projectId, {
         status: "error",
         errorMessage: error instanceof Error ? error.message : "Unknown error",
+        totalInputTokens: this.totalInputTokens,
+        totalOutputTokens: this.totalOutputTokens,
+        totalThinkingTokens: this.totalThinkingTokens,
       });
       throw error;
     }
