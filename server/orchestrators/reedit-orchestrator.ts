@@ -1144,6 +1144,10 @@ export class ReeditOrchestrator {
   private totalInputTokens: number = 0;
   private totalOutputTokens: number = 0;
   private totalThinkingTokens: number = 0;
+  
+  private maxFinalReviewCycles = 10;
+  private minAcceptableScore = 9;
+  private requiredConsecutiveHighScores = 2;
 
   constructor() {
     this.editorAgent = new ReeditEditorAgent();
@@ -2389,22 +2393,101 @@ export class ReeditOrchestrator {
         console.log(`[ReeditOrchestrator] Skipping QA corrections (already completed)`);
       }
 
-      // === STAGE 7: FINAL REVIEW ===
+      // === STAGE 7: FINAL REVIEW (with 9+ twice consecutive logic) ===
       await storage.updateReeditProject(projectId, { currentStage: "reviewing" });
 
-      this.emitProgress({
-        projectId,
-        stage: "reviewing",
-        currentChapter: validChapters.length,
-        totalChapters: validChapters.length,
-        message: "Ejecutando revisión final...",
-      });
+      let revisionCycle = 0;
+      let consecutiveHighScores = 0;
+      const previousScores: number[] = [];
+      let finalResult: any = null;
+      let bestsellerScore = 0;
 
-      const updatedChapters = await storage.getReeditChaptersByProject(projectId);
-      const completedChapters = updatedChapters.filter(c => c.editedContent);
-      const totalWords = completedChapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+      while (revisionCycle < this.maxFinalReviewCycles) {
+        const consecutiveInfo = consecutiveHighScores > 0 
+          ? ` [${consecutiveHighScores}/${this.requiredConsecutiveHighScores} puntuaciones 9+ consecutivas]`
+          : "";
 
-      // Mark all chapters as completed
+        this.emitProgress({
+          projectId,
+          stage: "reviewing",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: `Ejecutando revisión final... (Ciclo ${revisionCycle + 1}/${this.maxFinalReviewCycles})${consecutiveInfo}`,
+        });
+
+        const updatedChapters = await storage.getReeditChaptersByProject(projectId);
+        const completedChapters = updatedChapters.filter(c => c.editedContent);
+        const totalWords = completedChapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+
+        finalResult = await this.finalReviewerAgent.reviewManuscript(
+          chapterSummaries,
+          completedChapters.length,
+          totalWords
+        );
+        this.trackTokens(finalResult);
+        await this.updateHeartbeat(projectId);
+
+        bestsellerScore = finalResult.bestsellerScore || 7;
+        previousScores.push(bestsellerScore);
+
+        console.log(`[ReeditOrchestrator] Final review cycle ${revisionCycle + 1}: score ${bestsellerScore}/10`);
+
+        if (bestsellerScore >= this.minAcceptableScore) {
+          consecutiveHighScores++;
+        } else {
+          consecutiveHighScores = 0;
+        }
+
+        if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {
+          const recentScores = previousScores.slice(-this.requiredConsecutiveHighScores).join(", ");
+          console.log(`[ReeditOrchestrator] APROBADO: Puntuaciones consecutivas ${recentScores}/10`);
+          
+          this.emitProgress({
+            projectId,
+            stage: "reviewing",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: `Manuscrito APROBADO. Puntuaciones consecutivas: ${recentScores}/10. Calidad bestseller confirmada.`,
+          });
+          break;
+        }
+
+        if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores) {
+          this.emitProgress({
+            projectId,
+            stage: "reviewing",
+            currentChapter: validChapters.length,
+            totalChapters: validChapters.length,
+            message: `Puntuación ${bestsellerScore}/10. Necesita ${this.requiredConsecutiveHighScores - consecutiveHighScores} evaluación(es) más con 9+ para confirmar.`,
+          });
+          revisionCycle++;
+          continue;
+        }
+
+        if (revisionCycle === this.maxFinalReviewCycles - 1) {
+          const avgScore = previousScores.length > 0
+            ? (previousScores.reduce((a, b) => a + b, 0) / previousScores.length).toFixed(1)
+            : bestsellerScore;
+          
+          if (bestsellerScore >= this.minAcceptableScore) {
+            console.log(`[ReeditOrchestrator] Límite de ciclos alcanzado. Puntuación final: ${bestsellerScore}/10. APROBADO.`);
+          } else {
+            console.log(`[ReeditOrchestrator] Límite de ciclos alcanzado. Puntuación final: ${bestsellerScore}/10 (promedio: ${avgScore}). Completando con reservas.`);
+          }
+          break;
+        }
+
+        this.emitProgress({
+          projectId,
+          stage: "reviewing",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: `Puntuación ${bestsellerScore}/10 insuficiente. Objetivo: ${this.minAcceptableScore}+ (${this.requiredConsecutiveHighScores}x consecutivas). Re-evaluando...`,
+        });
+
+        revisionCycle++;
+      }
+
       for (const chapter of validChapters) {
         await storage.updateReeditChapter(chapter.id, {
           status: "completed",
@@ -2412,23 +2495,17 @@ export class ReeditOrchestrator {
         });
       }
 
-      const finalResult = await this.finalReviewerAgent.reviewManuscript(
-        chapterSummaries,
-        completedChapters.length,
-        totalWords
-      );
-      this.trackTokens(finalResult);
-
-      const bestsellerScore = finalResult.bestsellerScore || 7;
-
       await storage.createReeditAuditReport({
         projectId,
         auditType: "final_review",
         chapterRange: "all",
         score: Math.round(bestsellerScore),
         findings: finalResult,
-        recommendations: finalResult.recommendations || [],
+        recommendations: finalResult?.recommendations || [],
       });
+
+      const updatedChapters = await storage.getReeditChaptersByProject(projectId);
+      const totalWords = updatedChapters.filter(c => c.editedContent).reduce((sum, c) => sum + (c.wordCount || 0), 0);
 
       await storage.updateReeditProject(projectId, {
         currentStage: "completed",
@@ -2443,12 +2520,16 @@ export class ReeditOrchestrator {
       
       console.log(`[ReeditOrchestrator] Token usage: ${this.totalInputTokens} input, ${this.totalOutputTokens} output, ${this.totalThinkingTokens} thinking`);
 
+      const finalMessage = consecutiveHighScores >= this.requiredConsecutiveHighScores
+        ? `Reedición completa. Puntuación bestseller: ${bestsellerScore}/10 (confirmado ${this.requiredConsecutiveHighScores}x consecutivas)`
+        : `Reedición completa. Puntuación bestseller: ${bestsellerScore}/10`;
+
       this.emitProgress({
         projectId,
         stage: "completed",
         currentChapter: validChapters.length,
         totalChapters: validChapters.length,
-        message: `Reedición completa. Puntuación bestseller: ${bestsellerScore}/10`,
+        message: finalMessage,
       });
 
     } catch (error) {
