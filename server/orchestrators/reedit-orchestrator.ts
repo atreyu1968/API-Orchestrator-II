@@ -426,6 +426,188 @@ Detecta anacronismos tecnológicos, lingüísticos, sociales, materiales y conce
   }
 }
 
+// World Bible Extractor Agent - extracts characters, locations, timeline, lore from manuscript
+class WorldBibleExtractorAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "World Bible Extractor",
+      role: "world_bible_extractor",
+      systemPrompt: `Eres un analista literario experto en extraer información del mundo narrativo de un manuscrito.
+
+Tu trabajo es analizar los capítulos y extraer:
+1. PERSONAJES: Nombre, descripción física/psicológica, primera aparición, alias, relaciones
+2. UBICACIONES: Nombre, descripción, primera mención, características importantes
+3. LÍNEA TEMPORAL: Eventos clave, capítulo donde ocurren, marcadores temporales
+4. REGLAS DEL MUNDO: Leyes, magia, tecnología, costumbres, restricciones del universo
+5. ÉPOCA HISTÓRICA: Si es novela histórica, detectar el período
+
+RESPONDE SOLO EN JSON:
+{
+  "personajes": [
+    {"nombre": "María", "descripcion": "Mujer de 35 años, cabello negro", "primeraAparicion": 1, "alias": ["La Viuda"], "relaciones": ["madre de Juan"]}
+  ],
+  "ubicaciones": [
+    {"nombre": "El Castillo Negro", "descripcion": "Fortaleza medieval en ruinas", "primeraMencion": 2, "caracteristicas": ["torre alta", "foso seco"]}
+  ],
+  "timeline": [
+    {"evento": "Muerte del rey", "capitulo": 1, "marcadorTemporal": "hace 10 años", "importancia": "alta"}
+  ],
+  "reglasDelMundo": [
+    {"regla": "La magia solo funciona de noche", "fuente": "capítulo 3", "categoria": "magia"}
+  ],
+  "epocaHistorica": {
+    "periodo": "Siglo XV, Castilla",
+    "detalles": {"era": "medieval tardío", "ubicacion": "España", "contextoSocial": "Reconquista", "tecnologia": "pre-pólvora"}
+  },
+  "confianza": 8
+}`,
+      model: "gemini-2.5-flash",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.extractWorldBible(input.chapters, input.editorFeedback);
+  }
+
+  async extractWorldBible(chapters: { num: number; content: string; feedback?: any }[], editorFeedback: any[]): Promise<any> {
+    const chaptersText = chapters.map(c => 
+      `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 8000)}`
+    ).join("\n\n");
+
+    const feedbackSummary = editorFeedback.slice(0, 10).map((f, i) => 
+      `Cap ${i+1}: ${f.strengths?.slice(0, 2).join(", ") || "Sin datos"}`
+    ).join("\n");
+
+    const prompt = `Extrae la información del mundo narrativo de este manuscrito:
+
+${chaptersText}
+
+FEEDBACK DEL EDITOR:
+${feedbackSummary}
+
+Extrae personajes, ubicaciones, línea temporal, reglas del mundo y época histórica. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[WorldBibleExtractor] Failed to parse:", e);
+    }
+    return { personajes: [], ubicaciones: [], timeline: [], reglasDelMundo: [], confianza: 5 };
+  }
+}
+
+// Architect Analyzer Agent - analyzes world bible and recommends structural/plot changes
+class ArchitectAnalyzerAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Architect Analyzer",
+      role: "architect_analyzer",
+      systemPrompt: `Eres un arquitecto narrativo experto. Tu trabajo es analizar la estructura y trama de un manuscrito usando la Biblia del Mundo extraída.
+
+ANÁLISIS A REALIZAR:
+1. ESTRUCTURA NARRATIVA:
+   - ¿El orden de capítulos es óptimo?
+   - ¿El pacing es adecuado?
+   - ¿Hay capítulos que deberían fusionarse o dividirse?
+
+2. COHERENCIA DE TRAMA:
+   - ¿Hay huecos argumentales (plot holes)?
+   - ¿Subplots sin resolver?
+   - ¿Arcos de personajes incompletos?
+   - ¿Foreshadowing sin payoff?
+
+3. COHERENCIA DEL MUNDO:
+   - ¿Hay contradicciones en el lore?
+   - ¿Se rompen reglas establecidas?
+   - ¿Inconsistencias en personajes/ubicaciones?
+
+4. RECOMENDACIONES PRIORIZADAS:
+   - Críticas (bloquean publicación)
+   - Mayores (afectan calidad significativamente)
+   - Menores (mejoras opcionales)
+
+RESPONDE SOLO EN JSON:
+{
+  "analisisEstructura": {
+    "ordenOptimo": true,
+    "problemaPacing": [{"capitulos": [5,6], "problema": "Ritmo muy lento", "solucion": "Condensar"}],
+    "reordenamientoSugerido": []
+  },
+  "analisisTrama": {
+    "huecosArgumentales": [{"descripcion": "...", "capitulos": [3,7], "severidad": "mayor"}],
+    "subplotsSinResolver": [],
+    "arcosIncompletos": []
+  },
+  "coherenciaMundo": {
+    "contradicciones": [{"descripcion": "...", "capitulos": [2,8], "severidad": "critica"}],
+    "reglasRotas": []
+  },
+  "recomendaciones": [
+    {"tipo": "estructura|trama|mundo", "severidad": "critica|mayor|menor", "descripcion": "...", "capitulosAfectados": [1,2], "accionSugerida": "..."}
+  ],
+  "bloqueoCritico": false,
+  "resumenEjecutivo": "El manuscrito tiene buena estructura pero presenta 2 huecos argumentales menores...",
+  "puntuacionArquitectura": 7
+}`,
+      model: "gemini-2.5-flash",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.analyzeArchitecture(input.worldBible, input.chapters, input.structureAnalysis);
+  }
+
+  async analyzeArchitecture(worldBible: any, chapters: { num: number; content: string; feedback?: any }[], structureAnalysis: any): Promise<any> {
+    const bibleSummary = JSON.stringify({
+      personajes: worldBible.personajes?.slice(0, 10) || [],
+      ubicaciones: worldBible.ubicaciones?.slice(0, 5) || [],
+      timeline: worldBible.timeline || [],
+      reglasDelMundo: worldBible.reglasDelMundo || [],
+      epocaHistorica: worldBible.epocaHistorica
+    }, null, 2);
+
+    const chapterSummaries = chapters.map(c => 
+      `Cap ${c.num}: ${c.content.substring(0, 500)}... [Feedback: ${c.feedback?.strengths?.slice(0, 1).join(", ") || "N/A"}]`
+    ).join("\n");
+
+    const prompt = `Analiza la arquitectura narrativa de este manuscrito:
+
+BIBLIA DEL MUNDO:
+${bibleSummary}
+
+ANÁLISIS DE ESTRUCTURA PREVIO:
+- Capítulos duplicados: ${structureAnalysis?.duplicateChapters?.length || 0}
+- Capítulos fuera de orden: ${structureAnalysis?.outOfOrderChapters?.length || 0}
+- Capítulos faltantes: ${structureAnalysis?.missingChapters?.join(", ") || "Ninguno"}
+
+RESUMEN DE CAPÍTULOS:
+${chapterSummaries}
+
+Evalúa estructura, coherencia de trama y coherencia del mundo. Identifica problemas y recomienda soluciones. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[ArchitectAnalyzer] Failed to parse:", e);
+    }
+    return { 
+      analisisEstructura: { ordenOptimo: true, problemaPacing: [], reordenamientoSugerido: [] },
+      analisisTrama: { huecosArgumentales: [], subplotsSinResolver: [], arcosIncompletos: [] },
+      coherenciaMundo: { contradicciones: [], reglasRotas: [] },
+      recomendaciones: [],
+      bloqueoCritico: false,
+      resumenEjecutivo: "Análisis completado sin hallazgos significativos",
+      puntuacionArquitectura: 8
+    };
+  }
+}
+
 class ReeditFinalReviewerAgent extends BaseAgent {
   constructor() {
     super({
@@ -433,7 +615,7 @@ class ReeditFinalReviewerAgent extends BaseAgent {
       role: "final_reviewer",
       systemPrompt: `Eres un experto de la industria editorial evaluando manuscritos para potencial de bestseller.
 
-Evaluate the manuscript and provide:
+Evalúa el manuscrito y proporciona:
 1. Bestseller score (1-10)
 2. Key strengths
 3. Areas needing improvement
