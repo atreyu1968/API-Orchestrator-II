@@ -231,10 +231,22 @@ function FinalReviewDisplay({ result }: { result: any }) {
     return <Badge variant="outline">{verdict}</Badge>;
   };
 
+  const getMarketPotentialBadge = (potential: string) => {
+    const p = potential?.toLowerCase() || '';
+    if (p === 'high' || p === 'alto') {
+      return <Badge className="bg-green-600">Potencial Alto</Badge>;
+    } else if (p === 'medium' || p === 'medio') {
+      return <Badge className="bg-yellow-600">Potencial Medio</Badge>;
+    }
+    return <Badge variant="outline">{potential}</Badge>;
+  };
+
+  const hasAlternativeFormat = result.strengths || result.weaknesses || result.bestsellerScore;
+
   return (
     <div className="space-y-6">
       {result.veredicto && (
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <p className="text-sm text-muted-foreground mb-1">Veredicto</p>
             {getVerdictBadge(result.veredicto)}
@@ -248,10 +260,60 @@ function FinalReviewDisplay({ result }: { result: any }) {
         </div>
       )}
 
+      {hasAlternativeFormat && !result.veredicto && (
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          {result.bestsellerScore && (
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Puntuación Bestseller</p>
+              <ScoreDisplay score={result.bestsellerScore} />
+            </div>
+          )}
+          {result.marketPotential && (
+            <div>
+              <p className="text-sm text-muted-foreground mb-1">Potencial de Mercado</p>
+              {getMarketPotentialBadge(result.marketPotential)}
+            </div>
+          )}
+        </div>
+      )}
+
       {result.resumen_general && (
         <div>
           <h4 className="font-semibold mb-2">Resumen General</h4>
           <p className="text-sm leading-relaxed bg-muted p-3 rounded-md">{result.resumen_general}</p>
+        </div>
+      )}
+
+      {result.strengths && result.strengths.length > 0 && (
+        <div>
+          <h4 className="font-semibold mb-2 text-green-600 dark:text-green-400">Fortalezas</h4>
+          <ul className="text-sm list-disc list-inside space-y-1">
+            {result.strengths.map((s: string, i: number) => (
+              <li key={i}>{s}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {result.weaknesses && result.weaknesses.length > 0 && (
+        <div>
+          <h4 className="font-semibold mb-2 text-orange-600 dark:text-orange-400">Áreas de Mejora</h4>
+          <ul className="text-sm list-disc list-inside space-y-1">
+            {result.weaknesses.map((w: string, i: number) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {result.recommendations && Array.isArray(result.recommendations) && result.recommendations.length > 0 && !result.justificacion_puntuacion && (
+        <div>
+          <h4 className="font-semibold mb-2">Recomendaciones</h4>
+          <ul className="text-sm list-disc list-inside space-y-1">
+            {result.recommendations.map((r: string, i: number) => (
+              <li key={i}>{r}</li>
+            ))}
+          </ul>
         </div>
       )}
 
