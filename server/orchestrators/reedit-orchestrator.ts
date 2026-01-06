@@ -682,6 +682,106 @@ Evalúa estructura, coherencia de trama y coherencia del mundo. Identifica probl
   }
 }
 
+class StructuralFixerAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Structural Fixer",
+      role: "structural_fixer",
+      systemPrompt: `Eres un experto corrector estructural de novelas. Tu trabajo es CORREGIR AUTOMÁTICAMENTE los problemas detectados por el Arquitecto Analizador.
+
+TIPOS DE PROBLEMAS QUE CORRIGES:
+1. HUECOS ARGUMENTALES (plot holes): Añades escenas, diálogos o párrafos que cierran los huecos lógicos
+2. SUBPLOTS SIN RESOLVER: Añades resolución o cierre a las tramas secundarias abandonadas
+3. ARCOS INCOMPLETOS: Completas la transformación de personajes con momentos clave faltantes
+4. CONTRADICCIONES: Modificas el texto para eliminar inconsistencias
+5. FORESHADOWING SIN PAYOFF: Añades el payoff o eliminas/modificas el foreshadowing huérfano
+6. PROBLEMAS DE PACING: Condensas secciones lentas o expandes momentos que necesitan más desarrollo
+
+REGLAS CRÍTICAS:
+- MANTÉN el estilo y voz del autor original
+- NO añadas contenido innecesario - solo lo mínimo para resolver el problema
+- PRESERVA la extensión aproximada del capítulo (±10%)
+- Las correcciones deben integrarse de forma NATURAL en el texto existente
+- NUNCA cambies nombres de personajes, ubicaciones o eventos establecidos
+- Respeta la Biblia del Mundo proporcionada
+
+RESPONDE SOLO EN JSON:
+{
+  "capituloCorregido": "El texto COMPLETO del capítulo con las correcciones integradas",
+  "correccionesRealizadas": [
+    {
+      "problema": "Descripción del problema que se corrigió",
+      "solucion": "Descripción de cómo se corrigió",
+      "fragmentoAntes": "Fragmento original (50-100 palabras)",
+      "fragmentoDespues": "Fragmento corregido (50-100 palabras)"
+    }
+  ],
+  "resumenCambios": "Resumen ejecutivo de los cambios realizados",
+  "confianzaCorreccion": 8
+}`,
+      model: "gemini-2.5-flash",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.fixChapter(input.chapterContent, input.chapterNumber, input.problems, input.worldBible, input.language);
+  }
+
+  async fixChapter(
+    chapterContent: string, 
+    chapterNumber: number, 
+    problems: Array<{ descripcion: string; severidad: string; accionSugerida?: string; tipo?: string }>,
+    worldBible: any,
+    language: string
+  ): Promise<any> {
+    const worldBibleSummary = JSON.stringify({
+      personajes: worldBible?.personajes?.slice(0, 15)?.map((p: any) => ({ nombre: p.nombre, rol: p.rol })) || [],
+      ubicaciones: worldBible?.ubicaciones?.slice(0, 10)?.map((u: any) => u.nombre) || [],
+      epocaHistorica: worldBible?.epocaHistorica?.periodo || "No determinada"
+    });
+
+    const problemsList = problems.map((p, i) => 
+      `${i + 1}. [${p.severidad?.toUpperCase()}] ${p.descripcion}${p.accionSugerida ? ` -> Sugerencia: ${p.accionSugerida}` : ""}`
+    ).join("\n");
+
+    const prompt = `CORRIGE los siguientes problemas en el Capítulo ${chapterNumber}:
+
+IDIOMA: ${language}
+
+PROBLEMAS A CORREGIR:
+${problemsList}
+
+BIBLIA DEL MUNDO (para coherencia):
+${worldBibleSummary}
+
+CAPÍTULO ORIGINAL:
+${chapterContent}
+
+Reescribe el capítulo COMPLETO integrando las correcciones de forma natural. Mantén el estilo del autor. RESPONDE EN JSON.`;
+
+    console.log(`[StructuralFixer] Fixing chapter ${chapterNumber} with ${problems.length} problems`);
+    
+    const response = await this.generateContent(prompt);
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        console.log(`[StructuralFixer] Chapter ${chapterNumber} fixed with ${result.correccionesRealizadas?.length || 0} corrections`);
+        return result;
+      }
+    } catch (e) {
+      console.error("[StructuralFixer] Failed to parse:", e);
+    }
+    return { 
+      capituloCorregido: chapterContent, 
+      correccionesRealizadas: [],
+      resumenCambios: "No se pudieron aplicar correcciones",
+      confianzaCorreccion: 0
+    };
+  }
+}
+
 class ReeditFinalReviewerAgent extends BaseAgent {
   constructor() {
     super({
@@ -744,6 +844,7 @@ export class ReeditOrchestrator {
   private finalReviewerAgent: ReeditFinalReviewerAgent;
   private worldBibleExtractor: WorldBibleExtractorAgent;
   private architectAnalyzer: ArchitectAnalyzerAgent;
+  private structuralFixer: StructuralFixerAgent;
   private continuitySentinel: ContinuitySentinelAgent;
   private voiceRhythmAuditor: VoiceRhythmAuditorAgent;
   private semanticRepetitionDetector: SemanticRepetitionDetectorAgent;
@@ -760,6 +861,7 @@ export class ReeditOrchestrator {
     this.finalReviewerAgent = new ReeditFinalReviewerAgent();
     this.worldBibleExtractor = new WorldBibleExtractorAgent();
     this.architectAnalyzer = new ArchitectAnalyzerAgent();
+    this.structuralFixer = new StructuralFixerAgent();
     this.continuitySentinel = new ContinuitySentinelAgent();
     this.voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
     this.semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
@@ -803,6 +905,97 @@ export class ReeditOrchestrator {
       return true;
     }
     return false;
+  }
+
+  private collectArchitectProblems(architectResult: any): any[] {
+    const problems: any[] = [];
+    
+    // Collect from analisisTrama
+    if (architectResult.analisisTrama) {
+      const { huecosArgumentales, subplotsSinResolver, arcosIncompletos } = architectResult.analisisTrama;
+      
+      if (huecosArgumentales) {
+        for (const hole of huecosArgumentales) {
+          problems.push({
+            tipo: "hueco_argumental",
+            severidad: hole.severidad || "mayor",
+            descripcion: hole.descripcion,
+            capitulosAfectados: hole.capitulos || [],
+            accionSugerida: "Añadir escena o diálogo que cierre el hueco lógico",
+          });
+        }
+      }
+      
+      if (subplotsSinResolver) {
+        for (const subplot of subplotsSinResolver) {
+          problems.push({
+            tipo: "subplot_sin_resolver",
+            severidad: "mayor",
+            descripcion: subplot.descripcion || subplot,
+            capitulosAfectados: subplot.capitulos || [],
+            accionSugerida: "Añadir resolución para la subtrama",
+          });
+        }
+      }
+      
+      if (arcosIncompletos) {
+        for (const arco of arcosIncompletos) {
+          problems.push({
+            tipo: "arco_incompleto",
+            severidad: "mayor",
+            descripcion: arco.descripcion || arco,
+            capitulosAfectados: arco.capitulos || [],
+            accionSugerida: "Completar la transformación del personaje",
+          });
+        }
+      }
+    }
+    
+    // Collect from coherenciaMundo
+    if (architectResult.coherenciaMundo) {
+      const { contradicciones, reglasRotas } = architectResult.coherenciaMundo;
+      
+      if (contradicciones) {
+        for (const contradiccion of contradicciones) {
+          problems.push({
+            tipo: "contradiccion",
+            severidad: contradiccion.severidad || "critica",
+            descripcion: contradiccion.descripcion,
+            capitulosAfectados: contradiccion.capitulos || [],
+            accionSugerida: "Corregir la inconsistencia para mantener coherencia",
+          });
+        }
+      }
+      
+      if (reglasRotas) {
+        for (const regla of reglasRotas) {
+          problems.push({
+            tipo: "regla_rota",
+            severidad: "mayor",
+            descripcion: regla.descripcion || regla,
+            capitulosAfectados: regla.capitulos || [],
+            accionSugerida: "Ajustar el texto para respetar las reglas del mundo",
+          });
+        }
+      }
+    }
+    
+    // Collect from recomendaciones
+    if (architectResult.recomendaciones) {
+      for (const rec of architectResult.recomendaciones) {
+        if (rec.severidad === "critica" || rec.severidad === "mayor") {
+          problems.push({
+            tipo: rec.tipo || "recomendacion",
+            severidad: rec.severidad,
+            descripcion: rec.descripcion,
+            capitulosAfectados: rec.capitulosAfectados || [],
+            accionSugerida: rec.accionSugerida,
+          });
+        }
+      }
+    }
+    
+    return problems;
   }
 
   setProgressCallback(callback: ProgressCallback) {
@@ -1153,6 +1346,105 @@ export class ReeditOrchestrator {
       // Check for critical blocks
       if (architectResult.bloqueoCritico) {
         console.log(`[ReeditOrchestrator] Critical block detected, continuing with warnings`);
+      }
+
+      // === STAGE 4.5: STRUCTURAL FIXING (automatic correction of architect-detected issues) ===
+      const allProblems = this.collectArchitectProblems(architectResult);
+      
+      if (allProblems.length > 0) {
+        console.log(`[ReeditOrchestrator] Found ${allProblems.length} structural problems to fix`);
+        
+        this.emitProgress({
+          projectId,
+          stage: "structural_fixing",
+          currentChapter: 0,
+          totalChapters: allProblems.length,
+          message: `Corrigiendo ${allProblems.length} problemas estructurales detectados...`,
+        });
+        
+        await storage.updateReeditProject(projectId, { currentStage: "structural_fixing" });
+        
+        // Group problems by affected chapters
+        const problemsByChapter = new Map<number, any[]>();
+        for (const problem of allProblems) {
+          const chapters = problem.capitulosAfectados || problem.capitulos || [];
+          for (const chapNum of chapters) {
+            if (!problemsByChapter.has(chapNum)) {
+              problemsByChapter.set(chapNum, []);
+            }
+            problemsByChapter.get(chapNum)!.push(problem);
+          }
+        }
+        
+        let fixedCount = 0;
+        const chaptersToReprocess: number[] = [];
+        const chapterEntries = Array.from(problemsByChapter.entries());
+        
+        for (const [chapNum, chapterProblems] of chapterEntries) {
+          if (await this.checkCancellation(projectId)) {
+            console.log(`[ReeditOrchestrator] Processing cancelled during structural fixing`);
+            return;
+          }
+          
+          const chapter = validChapters.find(c => c.chapterNumber === chapNum);
+          if (!chapter) {
+            console.log(`[ReeditOrchestrator] Chapter ${chapNum} not found for structural fix`);
+            continue;
+          }
+          
+          this.emitProgress({
+            projectId,
+            stage: "structural_fixing",
+            currentChapter: fixedCount + 1,
+            totalChapters: problemsByChapter.size,
+            message: `Corrigiendo capítulo ${chapNum} (${chapterProblems.length} problemas)...`,
+          });
+          
+          const fixResult = await this.structuralFixer.fixChapter(
+            chapter.originalContent,
+            chapNum,
+            chapterProblems,
+            worldBibleResult,
+            detectedLang
+          );
+          
+          if (fixResult.capituloCorregido && fixResult.correccionesRealizadas?.length > 0) {
+            // Update the chapter with the fixed content
+            await storage.updateReeditChapter(chapter.id, {
+              originalContent: fixResult.capituloCorregido,
+              processingStage: "editing", // Reset to editing so CopyEditor processes it again
+            });
+            
+            chaptersToReprocess.push(chapNum);
+            console.log(`[ReeditOrchestrator] Chapter ${chapNum} fixed with ${fixResult.correccionesRealizadas.length} corrections`);
+          }
+          
+          fixedCount++;
+          await this.updateHeartbeat(projectId);
+        }
+        
+        // Save structural fixing report
+        await storage.createReeditAuditReport({
+          projectId,
+          auditType: "structural_fix",
+          chapterRange: "all",
+          score: 8,
+          findings: {
+            totalProblems: allProblems.length,
+            chaptersFixed: chaptersToReprocess.length,
+            problems: allProblems,
+          },
+          recommendations: [],
+        });
+        
+        console.log(`[ReeditOrchestrator] Structural fixing complete: ${chaptersToReprocess.length} chapters updated`);
+        
+        // Reload chapters to get updated content
+        const updatedChapters = await storage.getReeditChaptersByProject(projectId);
+        validChapters.length = 0;
+        validChapters.push(...updatedChapters.filter(c => c.originalContent));
+      } else {
+        console.log(`[ReeditOrchestrator] No structural problems to fix`);
       }
 
       // Check cancellation before CopyEditor stage
