@@ -578,8 +578,7 @@ export default function ReeditPage() {
                   Sin proyectos aún. Sube un manuscrito para comenzar.
                 </p>
               ) : (
-                <ScrollArea className="h-[300px]">
-                  <div className="space-y-2">
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
                     {projects.map((project) => (
                       <div
                         key={project.id}
@@ -619,8 +618,7 @@ export default function ReeditPage() {
                         )}
                       </div>
                     ))}
-                  </div>
-                </ScrollArea>
+                </div>
               )}
             </CardContent>
           </Card>
