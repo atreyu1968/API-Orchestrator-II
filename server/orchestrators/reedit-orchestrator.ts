@@ -781,7 +781,11 @@ ${chapterContent}
 
 Reescribe el capítulo COMPLETO integrando las correcciones de forma natural. Mantén el estilo del autor. RESPONDE EN JSON.`;
 
-    console.log(`[StructuralFixer] Fixing chapter ${chapterNumber} with ${problems.length} problems`);
+    console.log(`[StructuralFixer] Fixing chapter ${chapterNumber} with ${problems.length} problems:`);
+    problems.forEach((p, i) => {
+      console.log(`  ${i + 1}. [${(p.severidad || 'media').toUpperCase()}] ${p.tipo || 'general'}: ${p.descripcion}`);
+      if (p.accionSugerida) console.log(`     -> Sugerencia: ${p.accionSugerida}`);
+    });
     
     const response = await this.generateContent(prompt);
     let result: any = { 
@@ -794,7 +798,16 @@ Reescribe el capítulo COMPLETO integrando las correcciones de forma natural. Ma
       const jsonMatch = response.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         result = JSON.parse(jsonMatch[0]);
-        console.log(`[StructuralFixer] Chapter ${chapterNumber} fixed with ${result.correccionesRealizadas?.length || 0} corrections`);
+        console.log(`[StructuralFixer] Chapter ${chapterNumber} fixed with ${result.correccionesRealizadas?.length || 0} corrections:`);
+        if (result.correccionesRealizadas?.length > 0) {
+          result.correccionesRealizadas.forEach((c: any, i: number) => {
+            const desc = typeof c === 'string' ? c : (c.descripcion || c.cambio || JSON.stringify(c));
+            console.log(`  ✓ ${i + 1}. ${desc.substring(0, 150)}${desc.length > 150 ? '...' : ''}`);
+          });
+        }
+        if (result.resumenCambios) {
+          console.log(`  Resumen: ${result.resumenCambios.substring(0, 200)}${result.resumenCambios.length > 200 ? '...' : ''}`);
+        }
       }
     } catch (e) {
       console.error("[StructuralFixer] Failed to parse:", e);
