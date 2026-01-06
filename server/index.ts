@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { queueManager } from "./queue-manager";
+import { autoResumeReeditProjects } from "./reedit-auto-resume";
 
 const app = express();
 const httpServer = createServer(app);
@@ -102,6 +103,16 @@ app.use((req, res, next) => {
         log("Queue manager initialized", "queue");
       } catch (error) {
         log(`Queue manager initialization error: ${error}`, "queue");
+      }
+      
+      // Auto-resume reedit projects that were in processing state
+      try {
+        setTimeout(async () => {
+          log("Checking for reedit projects to auto-resume...", "reedit");
+          await autoResumeReeditProjects();
+        }, 3000); // Wait 3 seconds for server to fully initialize
+      } catch (error) {
+        log(`Reedit auto-resume error: ${error}`, "reedit");
       }
     },
   );
