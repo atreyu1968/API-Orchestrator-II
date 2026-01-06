@@ -4791,6 +4791,52 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  app.get("/api/reedit-projects/:id/export-md", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      if (chapters.length === 0) {
+        return res.status(400).json({ error: "No chapters to export" });
+      }
+
+      const sortedChapters = [...chapters].sort((a, b) => a.chapterNumber - b.chapterNumber);
+      
+      let markdown = `# ${project.title}\n\n`;
+      
+      for (const chapter of sortedChapters) {
+        const content = chapter.editedContent || chapter.originalContent;
+        if (!content) continue;
+
+        let chapterTitle = chapter.title || `Capítulo ${chapter.chapterNumber}`;
+        if (chapter.chapterNumber === 0) {
+          chapterTitle = chapter.title || "Prólogo";
+        } else if (chapter.chapterNumber === 998) {
+          chapterTitle = chapter.title || "Epílogo";
+        } else if (chapter.chapterNumber === 999) {
+          chapterTitle = chapter.title || "Nota del Autor";
+        }
+
+        markdown += `## ${chapterTitle}\n\n`;
+        markdown += content.trim() + "\n\n---\n\n";
+      }
+      
+      const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim();
+      const filename = `${safeTitle}_editado.md`;
+
+      res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(filename)}"`);
+      res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+      res.send(markdown);
+    } catch (error) {
+      console.error("Error exporting reedit manuscript as MD:", error);
+      res.status(500).json({ error: "Failed to export manuscript" });
+    }
+  });
+
   app.get("/api/reedit-projects/:id/export", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);

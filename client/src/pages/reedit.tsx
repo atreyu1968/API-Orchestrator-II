@@ -108,19 +108,28 @@ function StructureAnalysisDisplay({ analysis }: { analysis: any }) {
   const hasIssues = analysis.hasIssues;
   const duplicates = analysis.duplicateChapters || [];
   const outOfOrder = analysis.outOfOrderChapters || [];
+  const missingChapters = analysis.missingChapters || [];
   const recommendations = analysis.recommendations || [];
+  const totalChapters = analysis.totalChapters;
+  const regularChapters = analysis.regularChapters;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         {hasIssues ? (
           <Badge variant="destructive">Con Problemas</Badge>
         ) : (
           <Badge className="bg-green-600">Sin Problemas</Badge>
         )}
+        {totalChapters !== undefined && (
+          <Badge variant="secondary">{totalChapters} capítulos totales</Badge>
+        )}
+        {regularChapters !== undefined && (
+          <Badge variant="outline">{regularChapters} capítulos regulares</Badge>
+        )}
       </div>
 
-      {analysis.hasPrologue !== undefined && (
+      {(analysis.hasPrologue !== undefined || analysis.hasEpilogue !== undefined) && (
         <div className="flex flex-wrap gap-2">
           {analysis.hasPrologue && <Badge variant="outline">Tiene Prólogo</Badge>}
           {analysis.hasEpilogue && <Badge variant="outline">Tiene Epílogo</Badge>}
@@ -128,15 +137,35 @@ function StructureAnalysisDisplay({ analysis }: { analysis: any }) {
         </div>
       )}
 
+      {missingChapters.length > 0 && (
+        <div>
+          <p className="text-sm font-medium text-red-600 dark:text-red-400 mb-1">
+            Capítulos Faltantes ({missingChapters.length})
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {missingChapters.slice(0, 20).map((num: number, i: number) => (
+              <Badge key={i} variant="destructive" className="text-xs">
+                {num}
+              </Badge>
+            ))}
+            {missingChapters.length > 20 && (
+              <Badge variant="secondary" className="text-xs">
+                ...y {missingChapters.length - 20} más
+              </Badge>
+            )}
+          </div>
+        </div>
+      )}
+
       {duplicates.length > 0 && (
         <div>
           <p className="text-sm font-medium text-orange-600 dark:text-orange-400 mb-1">
-            Capítulos Duplicados
+            Capítulos Duplicados ({duplicates.length})
           </p>
           <div className="flex flex-wrap gap-2">
             {duplicates.map((dup: any, i: number) => (
               <Badge key={i} variant="secondary">
-                Cap. {dup.chapter || dup}
+                Cap. {dup.chapterNumber || dup.chapter || dup}
               </Badge>
             ))}
           </div>
@@ -146,30 +175,31 @@ function StructureAnalysisDisplay({ analysis }: { analysis: any }) {
       {outOfOrder.length > 0 && (
         <div>
           <p className="text-sm font-medium text-yellow-600 dark:text-yellow-400 mb-1">
-            Capítulos Fuera de Orden
+            Capítulos Fuera de Orden ({outOfOrder.length})
           </p>
           <div className="flex flex-wrap gap-2">
             {outOfOrder.map((ch: any, i: number) => (
               <Badge key={i} variant="secondary">
-                Cap. {ch.chapter || ch}
+                Cap. {ch.chapterNumber || ch.chapter || ch}
               </Badge>
             ))}
           </div>
         </div>
       )}
 
+      {!hasIssues && missingChapters.length === 0 && duplicates.length === 0 && outOfOrder.length === 0 && (
+        <p className="text-sm text-muted-foreground">
+          La estructura del manuscrito es correcta. No se detectaron problemas.
+        </p>
+      )}
+
       {recommendations.length > 0 && (
-        <div>
+        <div className="mt-4 pt-4 border-t">
           <p className="text-sm font-medium mb-2">Recomendaciones</p>
           <ul className="text-sm space-y-1 list-disc list-inside">
-            {recommendations.slice(0, 5).map((rec: string, i: number) => (
+            {recommendations.map((rec: string, i: number) => (
               <li key={i} className="text-muted-foreground">{rec}</li>
             ))}
-            {recommendations.length > 5 && (
-              <li className="text-muted-foreground italic">
-                ...y {recommendations.length - 5} más
-              </li>
-            )}
           </ul>
         </div>
       )}
@@ -782,16 +812,26 @@ export default function ReeditPage() {
                         </CardHeader>
                         <CardContent>
                           <FinalReviewDisplay result={selectedProjectData.finalReviewResult} />
-                          <div className="mt-4 flex justify-end">
+                          <div className="mt-4 flex justify-end gap-2 flex-wrap">
                             <Button 
                               variant="outline" 
-                              data-testid="button-download-reedit"
+                              data-testid="button-download-reedit-docx"
                               onClick={() => {
                                 window.open(`/api/reedit-projects/${selectedProjectData.id}/export`, '_blank');
                               }}
                             >
                               <Download className="h-4 w-4 mr-2" />
-                              Exportar Manuscrito Editado
+                              Exportar Word (.docx)
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              data-testid="button-download-reedit-md"
+                              onClick={() => {
+                                window.open(`/api/reedit-projects/${selectedProjectData.id}/export-md`, '_blank');
+                              }}
+                            >
+                              <Download className="h-4 w-4 mr-2" />
+                              Exportar Markdown (.md)
                             </Button>
                           </div>
                         </CardContent>

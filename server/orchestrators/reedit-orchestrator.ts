@@ -254,16 +254,32 @@ export class ReeditOrchestrator {
       recommendations: [],
     };
 
-    const chapterNumbers = chapters.map(c => c.chapterNumber).sort((a, b) => a - b);
-    const maxChapter = Math.max(...chapterNumbers);
+    // Separate special chapters from regular chapters
+    // 0 = Prologue, 998 = Epilogue, 999 = Author's Note
+    const specialChapterNumbers = [0, 998, 999];
+    const regularChapters = chapters.filter(c => !specialChapterNumbers.includes(c.chapterNumber));
+    const regularChapterNumbers = regularChapters.map(c => c.chapterNumber).sort((a, b) => a - b);
     
-    for (let i = 1; i <= maxChapter; i++) {
-      const count = chapterNumbers.filter(n => n === i).length;
+    // Add metadata about special chapters
+    const hasPrologue = chapters.some(c => c.chapterNumber === 0);
+    const hasEpilogue = chapters.some(c => c.chapterNumber === 998);
+    const hasAuthorNote = chapters.some(c => c.chapterNumber === 999);
+    (analysis as any).hasPrologue = hasPrologue;
+    (analysis as any).hasEpilogue = hasEpilogue;
+    (analysis as any).hasAuthorNote = hasAuthorNote;
+    (analysis as any).totalChapters = chapters.length;
+    (analysis as any).regularChapters = regularChapters.length;
+    
+    // Only check for missing chapters among regular chapters (1 to max regular chapter)
+    const maxRegularChapter = regularChapterNumbers.length > 0 ? Math.max(...regularChapterNumbers) : 0;
+    
+    for (let i = 1; i <= maxRegularChapter; i++) {
+      const count = regularChapterNumbers.filter(n => n === i).length;
       if (count === 0) {
         analysis.missingChapters.push(i);
         analysis.hasIssues = true;
       } else if (count > 1) {
-        const duplicates = chapters.filter(c => c.chapterNumber === i);
+        const duplicates = regularChapters.filter(c => c.chapterNumber === i);
         for (let j = 1; j < duplicates.length; j++) {
           const similarity = this.calculateSimilarity(
             duplicates[0].originalContent,
