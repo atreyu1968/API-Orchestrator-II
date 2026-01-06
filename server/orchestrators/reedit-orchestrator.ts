@@ -471,31 +471,94 @@ RESPONDE SOLO EN JSON:
   }
 
   async extractWorldBible(chapters: { num: number; content: string; feedback?: any }[], editorFeedback: any[]): Promise<any> {
-    const chaptersText = chapters.map(c => 
-      `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 8000)}`
-    ).join("\n\n");
+    const BATCH_SIZE = 10;
+    const allPersonajes: any[] = [];
+    const allUbicaciones: any[] = [];
+    const allTimeline: any[] = [];
+    const allReglas: any[] = [];
+    let epocaHistorica: any = null;
+    let totalConfidence = 0;
+    let batchCount = 0;
 
-    const feedbackSummary = editorFeedback.slice(0, 10).map((f, i) => 
-      `Cap ${i+1}: ${f.strengths?.slice(0, 2).join(", ") || "Sin datos"}`
-    ).join("\n");
+    console.log(`[WorldBibleExtractor] Processing ${chapters.length} chapters in batches of ${BATCH_SIZE}`);
 
-    const prompt = `Extrae la información del mundo narrativo de este manuscrito:
+    for (let i = 0; i < chapters.length; i += BATCH_SIZE) {
+      const batch = chapters.slice(i, i + BATCH_SIZE);
+      const batchStart = batch[0]?.num || i + 1;
+      const batchEnd = batch[batch.length - 1]?.num || i + batch.length;
+      
+      console.log(`[WorldBibleExtractor] Processing batch: chapters ${batchStart}-${batchEnd}`);
+
+      const chaptersText = batch.map(c => 
+        `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 6000)}`
+      ).join("\n\n");
+
+      const prompt = `Extrae la información del mundo narrativo de estos capítulos (${batchStart} a ${batchEnd}):
 
 ${chaptersText}
 
-FEEDBACK DEL EDITOR:
-${feedbackSummary}
+Extrae personajes, ubicaciones, línea temporal, reglas del mundo y época histórica que aparezcan en ESTOS capítulos específicamente.
+Incluye el número de capítulo donde aparece cada elemento.
 
-Extrae personajes, ubicaciones, línea temporal, reglas del mundo y época histórica. RESPONDE EN JSON.`;
+RESPONDE SOLO EN JSON:
+{
+  "personajes": [{"nombre": "...", "descripcion": "...", "primeraAparicion": X, "alias": [], "relaciones": []}],
+  "ubicaciones": [{"nombre": "...", "descripcion": "...", "primeraMencion": X, "caracteristicas": []}],
+  "timeline": [{"evento": "...", "capitulo": X, "marcadorTemporal": "...", "importancia": "alta|media|baja"}],
+  "reglasDelMundo": [{"regla": "...", "fuente": "capítulo X", "categoria": "..."}],
+  "epocaHistorica": {"periodo": "...", "detalles": {}},
+  "confianza": 8
+}`;
 
-    const response = await this.generateContent(prompt);
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) return JSON.parse(jsonMatch[0]);
-    } catch (e) {
-      console.error("[WorldBibleExtractor] Failed to parse:", e);
+      try {
+        const response = await this.generateContent(prompt);
+        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const result = JSON.parse(jsonMatch[0]);
+          
+          if (result.personajes) allPersonajes.push(...result.personajes);
+          if (result.ubicaciones) allUbicaciones.push(...result.ubicaciones);
+          if (result.timeline) allTimeline.push(...result.timeline);
+          if (result.reglasDelMundo) allReglas.push(...result.reglasDelMundo);
+          if (result.epocaHistorica && !epocaHistorica) epocaHistorica = result.epocaHistorica;
+          totalConfidence += result.confianza || 7;
+          batchCount++;
+        }
+      } catch (e) {
+        console.error(`[WorldBibleExtractor] Failed to parse batch ${batchStart}-${batchEnd}:`, e);
+      }
     }
-    return { personajes: [], ubicaciones: [], timeline: [], reglasDelMundo: [], confianza: 5 };
+
+    const mergedPersonajes = this.deduplicateByName(allPersonajes, "nombre");
+    const mergedUbicaciones = this.deduplicateByName(allUbicaciones, "nombre");
+    const avgConfidence = batchCount > 0 ? Math.round(totalConfidence / batchCount) : 5;
+
+    console.log(`[WorldBibleExtractor] Extraction complete: ${mergedPersonajes.length} characters, ${mergedUbicaciones.length} locations, ${allTimeline.length} timeline events`);
+
+    return {
+      personajes: mergedPersonajes,
+      ubicaciones: mergedUbicaciones,
+      timeline: allTimeline,
+      reglasDelMundo: this.deduplicateByName(allReglas, "regla"),
+      epocaHistorica: epocaHistorica || { periodo: "No determinada", detalles: {} },
+      confianza: avgConfidence,
+    };
+  }
+
+  private deduplicateByName(items: any[], key: string): any[] {
+    const seen = new Map<string, any>();
+    for (const item of items) {
+      const name = (item[key] || "").toLowerCase().trim();
+      if (!seen.has(name)) {
+        seen.set(name, item);
+      } else {
+        const existing = seen.get(name);
+        if (item.descripcion && item.descripcion.length > (existing.descripcion || "").length) {
+          seen.set(name, { ...existing, ...item });
+        }
+      }
+    }
+    return Array.from(seen.values());
   }
 }
 
@@ -675,6 +738,10 @@ export class ReeditOrchestrator {
   private semanticRepetitionDetector: SemanticRepetitionDetectorAgent;
   private anachronismDetector: AnachronismDetectorAgent;
   private progressCallback: ProgressCallback | null = null;
+  
+  private totalInputTokens: number = 0;
+  private totalOutputTokens: number = 0;
+  private totalThinkingTokens: number = 0;
 
   constructor() {
     this.editorAgent = new ReeditEditorAgent();
@@ -686,6 +753,23 @@ export class ReeditOrchestrator {
     this.voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
     this.semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
     this.anachronismDetector = new AnachronismDetectorAgent();
+  }
+  
+  private trackTokens(response: any) {
+    if (response?.tokenUsage) {
+      this.totalInputTokens += response.tokenUsage.inputTokens || 0;
+      this.totalOutputTokens += response.tokenUsage.outputTokens || 0;
+      this.totalThinkingTokens += response.tokenUsage.thinkingTokens || 0;
+    }
+  }
+  
+  private async saveTokenUsage(projectId: number) {
+    await storage.updateReeditProject(projectId, {
+      totalInputTokens: this.totalInputTokens,
+      totalOutputTokens: this.totalOutputTokens,
+      totalThinkingTokens: this.totalThinkingTokens,
+    });
+    console.log(`[ReeditOrchestrator] Token usage saved: ${this.totalInputTokens} input, ${this.totalOutputTokens} output, ${this.totalThinkingTokens} thinking`);
   }
 
   setProgressCallback(callback: ProgressCallback) {
@@ -1228,7 +1312,12 @@ export class ReeditOrchestrator {
         bestsellerScore,
         finalReviewResult: finalResult,
         totalWordCount: totalWords,
+        totalInputTokens: this.totalInputTokens,
+        totalOutputTokens: this.totalOutputTokens,
+        totalThinkingTokens: this.totalThinkingTokens,
       });
+      
+      console.log(`[ReeditOrchestrator] Token usage: ${this.totalInputTokens} input, ${this.totalOutputTokens} output, ${this.totalThinkingTokens} thinking`);
 
       this.emitProgress({
         projectId,

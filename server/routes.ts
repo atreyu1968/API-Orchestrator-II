@@ -4801,7 +4801,6 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "Project is already being processed" });
       }
 
-      // Clear error state and set status to processing before resuming
       await storage.updateReeditProject(projectId, { 
         status: "processing", 
         errorMessage: null 
@@ -4818,8 +4817,11 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       });
 
       console.log(`[ReeditResume] Calling processProject for project ${projectId}`);
-      orchestrator.processProject(projectId).finally(() => {
+      orchestrator.processProject(projectId).then(() => {
         console.log(`[ReeditResume] processProject completed for project ${projectId}`);
+      }).catch((err: any) => {
+        console.error(`[ReeditResume] processProject error:`, err);
+      }).finally(() => {
         activeReeditOrchestrators.delete(projectId);
       });
     } catch (error) {
