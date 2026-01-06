@@ -470,7 +470,11 @@ RESPONDE SOLO EN JSON:
     return this.extractWorldBible(input.chapters, input.editorFeedback);
   }
 
-  async extractWorldBible(chapters: { num: number; content: string; feedback?: any }[], editorFeedback: any[]): Promise<any> {
+  async extractWorldBible(
+    chapters: { num: number; content: string; feedback?: any }[], 
+    editorFeedback: any[],
+    onProgress?: (batchIndex: number, totalBatches: number, message: string) => void
+  ): Promise<any> {
     const BATCH_SIZE = 10;
     const allPersonajes: any[] = [];
     const allUbicaciones: any[] = [];
@@ -479,15 +483,22 @@ RESPONDE SOLO EN JSON:
     let epocaHistorica: any = null;
     let totalConfidence = 0;
     let batchCount = 0;
+    
+    const totalBatches = Math.ceil(chapters.length / BATCH_SIZE);
 
-    console.log(`[WorldBibleExtractor] Processing ${chapters.length} chapters in batches of ${BATCH_SIZE}`);
+    console.log(`[WorldBibleExtractor] Processing ${chapters.length} chapters in ${totalBatches} batches of ${BATCH_SIZE}`);
 
     for (let i = 0; i < chapters.length; i += BATCH_SIZE) {
       const batch = chapters.slice(i, i + BATCH_SIZE);
       const batchStart = batch[0]?.num || i + 1;
       const batchEnd = batch[batch.length - 1]?.num || i + batch.length;
+      const currentBatch = Math.floor(i / BATCH_SIZE) + 1;
       
-      console.log(`[WorldBibleExtractor] Processing batch: chapters ${batchStart}-${batchEnd}`);
+      console.log(`[WorldBibleExtractor] Processing batch ${currentBatch}/${totalBatches}: chapters ${batchStart}-${batchEnd}`);
+      
+      if (onProgress) {
+        onProgress(currentBatch, totalBatches, `Extrayendo Biblia del Mundo: capítulos ${batchStart}-${batchEnd} (lote ${currentBatch}/${totalBatches})...`);
+      }
 
       const chaptersText = batch.map(c => 
         `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 6000)}`
@@ -1025,16 +1036,29 @@ export class ReeditOrchestrator {
         this.emitProgress({
           projectId,
           stage: "world_bible",
-          currentChapter: validChapters.length,
+          currentChapter: 0,
           totalChapters: validChapters.length,
-          message: "Extrayendo Biblia del Mundo (personajes, ubicaciones, timeline)...",
+          message: "Iniciando extracción de Biblia del Mundo...",
         });
 
         await storage.updateReeditProject(projectId, { currentStage: "world_bible" });
 
         worldBibleResult = await this.worldBibleExtractor.extractWorldBible(
           chaptersForBible,
-          editorFeedbacks
+          editorFeedbacks,
+          async (batchIndex, totalBatches, message) => {
+            const chaptersProcessed = Math.min(batchIndex * 10, validChapters.length);
+            this.emitProgress({
+              projectId,
+              stage: "world_bible",
+              currentChapter: chaptersProcessed,
+              totalChapters: validChapters.length,
+              message,
+            });
+            await storage.updateReeditProject(projectId, {
+              processedChapters: chaptersProcessed,
+            });
+          }
         );
 
         // Save world bible to database
