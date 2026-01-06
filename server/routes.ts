@@ -4599,7 +4599,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "No file uploaded" });
       }
 
-      const { title, language = "en" } = req.body;
+      const { title, language = "es" } = req.body;
       if (!title) {
         return res.status(400).json({ error: "Title is required" });
       }
@@ -4619,20 +4619,90 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         totalWordCount: wordCount,
       });
 
-      await storage.createReeditChapter({
-        projectId: project.id,
-        chapterNumber: 0,
-        title: "Full Manuscript",
-        originalContent: fullText,
-        status: "pending",
-      });
+      const chapterPattern = /^(Prólogo|Prologue|Prolog|Prologo|Epílogo|Epilogue|Epilog|Epilogo|Capítulo\s+\d+|Chapter\s+\d+|Chapitre\s+\d+|Kapitel\s+\d+|Capitolo\s+\d+|Capítol\s+\d+)(?:\s*[:\-–—.]?\s*(.*))?$/gim;
+      
+      const chapters: { number: number; title: string; content: string }[] = [];
+      const lines = fullText.split('\n');
+      let currentChapter: { number: number; title: string; lines: string[] } | null = null;
+      let chapterIndex = 0;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        const match = line.match(/^(Prólogo|Prologue|Prolog|Prologo|Epílogo|Epilogue|Epilog|Epilogo|Capítulo\s+\d+|Chapter\s+\d+|Chapitre\s+\d+|Kapitel\s+\d+|Capitolo\s+\d+|Capítol\s+\d+)(?:\s*[:\-–—.]?\s*(.*))?$/i);
+        
+        if (match) {
+          if (currentChapter) {
+            chapters.push({
+              number: currentChapter.number,
+              title: currentChapter.title,
+              content: currentChapter.lines.join('\n').trim()
+            });
+          }
+          
+          const chapterType = match[1].toLowerCase();
+          let chapterNum: number;
+          
+          if (chapterType.includes('prólogo') || chapterType.includes('prologue') || chapterType.includes('prolog') || chapterType.includes('prologo')) {
+            chapterNum = 0;
+          } else if (chapterType.includes('epílogo') || chapterType.includes('epilogue') || chapterType.includes('epilog') || chapterType.includes('epilogo')) {
+            chapterNum = 999;
+          } else {
+            const numMatch = match[1].match(/\d+/);
+            chapterNum = numMatch ? parseInt(numMatch[0]) : ++chapterIndex;
+          }
+          
+          const subtitle = match[2]?.trim() || '';
+          const chapterTitle = subtitle ? `${match[1]}${subtitle ? ': ' + subtitle : ''}` : match[1];
+          
+          currentChapter = {
+            number: chapterNum,
+            title: chapterTitle,
+            lines: []
+          };
+        } else if (currentChapter) {
+          currentChapter.lines.push(lines[i]);
+        }
+      }
+      
+      if (currentChapter && currentChapter.lines.length > 0) {
+        chapters.push({
+          number: currentChapter.number,
+          title: currentChapter.title,
+          content: currentChapter.lines.join('\n').trim()
+        });
+      }
+      
+      if (chapters.length === 0) {
+        await storage.createReeditChapter({
+          projectId: project.id,
+          chapterNumber: 0,
+          title: "Full Manuscript",
+          originalContent: fullText,
+          status: "pending",
+        });
+        console.log(`[Reedit] No chapters detected, treating as single manuscript`);
+      } else {
+        for (const chapter of chapters) {
+          await storage.createReeditChapter({
+            projectId: project.id,
+            chapterNumber: chapter.number,
+            title: chapter.title,
+            originalContent: chapter.content,
+            status: "pending",
+          });
+        }
+        console.log(`[Reedit] Detected ${chapters.length} chapters in manuscript`);
+      }
+
+      await storage.updateReeditProject(project.id, { totalChapters: chapters.length || 1 });
 
       res.json({
         success: true,
         projectId: project.id,
         title: project.title,
         wordCount,
-        message: "Manuscript uploaded successfully. Ready for reedit processing.",
+        chaptersDetected: chapters.length || 1,
+        message: `Manuscript uploaded successfully. ${chapters.length || 1} chapter(s) detected.`,
       });
     } catch (error) {
       console.error("Error creating reedit project:", error);
