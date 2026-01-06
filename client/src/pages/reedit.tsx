@@ -83,8 +83,11 @@ function getStageBadge(stage: string) {
   const stageLabels: Record<string, string> = {
     uploaded: "Subido",
     analyzing: "Analizando Estructura",
-    editing: "Editando con IA",
-    auditing: "Auditoría QA",
+    editing: "Revisión Editorial",
+    world_bible: "Extrayendo Biblia del Mundo",
+    architect: "Análisis Arquitectónico",
+    copyediting: "Corrección de Estilo",
+    qa: "Auditoría QA",
     reviewing: "Revisión Final",
     completed: "Completado",
   };
@@ -424,6 +427,166 @@ function FinalReviewDisplay({ result }: { result: any }) {
   );
 }
 
+function WorldBibleDisplay({ worldBible }: { worldBible: any }) {
+  if (!worldBible) return null;
+
+  const characters = worldBible.characters || [];
+  const locations = worldBible.locations || [];
+  const timeline = worldBible.timeline || [];
+  const loreRules = worldBible.loreRules || [];
+
+  return (
+    <div className="space-y-6" data-testid="display-world-bible">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        {worldBible.confidence !== undefined && worldBible.confidence !== null && (
+          <Badge variant="secondary">Confianza: {worldBible.confidence}/10</Badge>
+        )}
+        {worldBible.historicalPeriod && (
+          <Badge className="bg-amber-600">Época: {worldBible.historicalPeriod}</Badge>
+        )}
+      </div>
+
+      {characters.length > 0 && (
+        <div>
+          <h4 className="font-semibold mb-2">Personajes ({characters.length})</h4>
+          <div className="space-y-2">
+            {characters.slice(0, 10).map((char: any, i: number) => (
+              <div key={i} className="p-3 border rounded-md">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-medium">{char.nombre || char.name}</span>
+                  <Badge variant="outline" className="text-xs">Cap. {char.primeraAparicion || char.firstAppearance || "?"}</Badge>
+                  {(char.alias || char.aliases)?.length > 0 && (
+                    <Badge variant="secondary" className="text-xs">{(char.alias || char.aliases)[0]}</Badge>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground mt-1">{char.descripcion || char.description}</p>
+                {(char.relaciones || char.relationships)?.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Relaciones: {(char.relaciones || char.relationships).slice(0, 3).join(", ")}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {locations.length > 0 && (
+        <div>
+          <h4 className="font-semibold mb-2">Ubicaciones ({locations.length})</h4>
+          <div className="flex flex-wrap gap-2">
+            {locations.map((loc: any, i: number) => (
+              <Badge key={i} variant="outline" className="text-sm py-1">
+                {loc.nombre || loc.name} (Cap. {loc.primeraMencion || loc.firstMention || "?"})
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {timeline.length > 0 && (
+        <div>
+          <h4 className="font-semibold mb-2">Línea Temporal ({timeline.length} eventos)</h4>
+          <div className="space-y-1">
+            {timeline.slice(0, 8).map((event: any, i: number) => (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <Badge variant="outline" className="text-xs">Cap. {event.capitulo || event.chapter}</Badge>
+                <span>{event.evento || event.event}</span>
+                {event.marcadorTemporal && (
+                  <span className="text-muted-foreground text-xs">({event.marcadorTemporal})</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loreRules.length > 0 && (
+        <div>
+          <h4 className="font-semibold mb-2">Reglas del Mundo ({loreRules.length})</h4>
+          <ul className="text-sm space-y-1 list-disc list-inside">
+            {loreRules.slice(0, 6).map((rule: any, i: number) => (
+              <li key={i}>{rule.regla || rule.rule} <span className="text-muted-foreground text-xs">({rule.categoria || rule.category || "general"})</span></li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AuditReportsDisplay({ reports }: { reports: any[] }) {
+  if (!reports || reports.length === 0) {
+    return <p className="text-muted-foreground text-center py-4">No hay informes de auditoría disponibles</p>;
+  }
+
+  const getAuditTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      architect: "Análisis Arquitectónico",
+      continuity: "Centinela de Continuidad",
+      voice_rhythm: "Auditor de Voz y Ritmo",
+      semantic_repetition: "Detector de Repetición Semántica",
+      anachronism: "Detector de Anacronismos",
+      final_review: "Revisión Final",
+    };
+    return labels[type] || type;
+  };
+
+  const getAuditTypeBadgeColor = (type: string) => {
+    const colors: Record<string, string> = {
+      architect: "bg-purple-600",
+      continuity: "bg-blue-600",
+      voice_rhythm: "bg-teal-600",
+      semantic_repetition: "bg-orange-600",
+      anachronism: "bg-amber-600",
+      final_review: "bg-green-600",
+    };
+    return colors[type] || "bg-gray-600";
+  };
+
+  return (
+    <div className="space-y-4" data-testid="display-audit-reports">
+      {reports.map((report, idx) => (
+        <Card key={idx} data-testid={`card-audit-report-${report.id || idx}`}>
+          <CardHeader className="py-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Badge className={getAuditTypeBadgeColor(report.auditType)}>
+                  {getAuditTypeLabel(report.auditType)}
+                </Badge>
+                {report.chapterRange && report.chapterRange !== "all" && (
+                  <Badge variant="outline">Caps. {report.chapterRange}</Badge>
+                )}
+              </div>
+              {report.score !== undefined && report.score !== null && (
+                <ScoreDisplay score={report.score} />
+              )}
+            </div>
+          </CardHeader>
+          <CardContent className="py-2">
+            {report.findings?.resumenEjecutivo && (
+              <p className="text-sm mb-2">{report.findings.resumenEjecutivo}</p>
+            )}
+            {report.findings?.resumen && (
+              <p className="text-sm mb-2">{report.findings.resumen}</p>
+            )}
+            {report.recommendations && Array.isArray(report.recommendations) && report.recommendations.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-muted-foreground mb-1">Recomendaciones:</p>
+                <ul className="text-sm list-disc list-inside space-y-1">
+                  {report.recommendations.slice(0, 3).map((rec: string, i: number) => (
+                    <li key={i} className="text-muted-foreground">{rec}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function ReeditPage() {
   const { toast } = useToast();
   const [selectedProject, setSelectedProject] = useState<number | null>(null);
@@ -443,8 +606,13 @@ export default function ReeditPage() {
     refetchInterval: 3000,
   });
 
-  const { data: auditReport } = useQuery<ReeditAuditReport>({
-    queryKey: ["/api/reedit-projects", selectedProject, "audit-report"],
+  const { data: worldBible } = useQuery<any>({
+    queryKey: ["/api/reedit-projects", selectedProject, "world-bible"],
+    enabled: !!selectedProject,
+  });
+
+  const { data: auditReports = [] } = useQuery<any[]>({
+    queryKey: ["/api/reedit-projects", selectedProject, "audit-reports"],
     enabled: !!selectedProject,
   });
 
@@ -742,10 +910,12 @@ export default function ReeditPage() {
               </CardHeader>
               <CardContent>
                 <Tabs defaultValue="progress">
-                  <TabsList>
-                    <TabsTrigger value="progress" data-testid="tab-reedit-progress">Progreso</TabsTrigger>
-                    <TabsTrigger value="chapters" data-testid="tab-reedit-chapters">Capítulos</TabsTrigger>
-                    <TabsTrigger value="report" data-testid="tab-reedit-report">Informe Final</TabsTrigger>
+                  <TabsList className="flex-wrap h-auto">
+                    <TabsTrigger value="progress" data-testid="tab-trigger-progress">Progreso</TabsTrigger>
+                    <TabsTrigger value="chapters" data-testid="tab-trigger-chapters">Capítulos</TabsTrigger>
+                    <TabsTrigger value="worldbible" data-testid="tab-trigger-worldbible">Biblia del Mundo</TabsTrigger>
+                    <TabsTrigger value="audits" data-testid="tab-trigger-audits">Auditorías QA</TabsTrigger>
+                    <TabsTrigger value="report" data-testid="tab-trigger-report">Informe Final</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="progress" className="space-y-4">
@@ -860,6 +1030,42 @@ export default function ReeditPage() {
                               )}
                             </div>
                           ))}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </TabsContent>
+
+                  <TabsContent value="worldbible">
+                    <ScrollArea className="h-[400px] mt-4">
+                      {worldBible ? (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-base">Biblia del Mundo Narrativo</CardTitle>
+                            <CardDescription>
+                              Personajes, ubicaciones, línea temporal y reglas extraídas del manuscrito
+                            </CardDescription>
+                          </CardHeader>
+                          <CardContent>
+                            <WorldBibleDisplay worldBible={worldBible} />
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <div className="text-center text-muted-foreground py-12">
+                          <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>La Biblia del Mundo se generará durante el procesamiento</p>
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </TabsContent>
+
+                  <TabsContent value="audits">
+                    <ScrollArea className="h-[400px] mt-4">
+                      {auditReports.length > 0 ? (
+                        <AuditReportsDisplay reports={auditReports} />
+                      ) : (
+                        <div className="text-center text-muted-foreground py-12">
+                          <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                          <p>Los informes de auditoría se generarán durante el procesamiento</p>
                         </div>
                       )}
                     </ScrollArea>

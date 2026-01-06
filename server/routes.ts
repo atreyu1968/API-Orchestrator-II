@@ -4593,6 +4593,28 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  app.get("/api/reedit-projects/:id/audit-reports", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const reports = await storage.getReeditAuditReportsByProject(projectId);
+      res.json(reports || []);
+    } catch (error) {
+      console.error("Error fetching audit reports:", error);
+      res.status(500).json({ error: "Failed to fetch audit reports" });
+    }
+  });
+
+  app.get("/api/reedit-projects/:id/world-bible", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const worldBible = await storage.getReeditWorldBibleByProject(projectId);
+      res.json(worldBible || null);
+    } catch (error) {
+      console.error("Error fetching world bible:", error);
+      res.status(500).json({ error: "Failed to fetch world bible" });
+    }
+  });
+
   app.post("/api/reedit-projects", upload.single("manuscript"), async (req: Request, res: Response) => {
     try {
       if (!req.file) {
