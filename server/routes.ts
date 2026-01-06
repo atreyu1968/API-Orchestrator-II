@@ -4801,6 +4801,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "Project is already being processed" });
       }
 
+      // Clear error state and set status to processing before resuming
+      await storage.updateReeditProject(projectId, { 
+        status: "processing", 
+        errorMessage: null 
+      });
+      console.log(`[ReeditResume] Cleared error state for project ${projectId}, starting orchestrator...`);
+
       const orchestrator = new ReeditOrchestrator();
       activeReeditOrchestrators.set(projectId, orchestrator);
 
@@ -4810,7 +4817,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         projectId,
       });
 
+      console.log(`[ReeditResume] Calling processProject for project ${projectId}`);
       orchestrator.processProject(projectId).finally(() => {
+        console.log(`[ReeditResume] processProject completed for project ${projectId}`);
         activeReeditOrchestrators.delete(projectId);
       });
     } catch (error) {

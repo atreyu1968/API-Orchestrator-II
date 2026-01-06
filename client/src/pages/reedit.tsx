@@ -574,8 +574,10 @@ function AuditReportsDisplay({ reports }: { reports: any[] }) {
               <div className="mt-2">
                 <p className="text-xs text-muted-foreground mb-1">Recomendaciones:</p>
                 <ul className="text-sm list-disc list-inside space-y-1">
-                  {report.recommendations.slice(0, 3).map((rec: string, i: number) => (
-                    <li key={i} className="text-muted-foreground">{rec}</li>
+                  {report.recommendations.slice(0, 3).map((rec: any, i: number) => (
+                    <li key={i} className="text-muted-foreground">
+                      {typeof rec === 'string' ? rec : (rec.descripcion || rec.description || JSON.stringify(rec))}
+                    </li>
                   ))}
                 </ul>
               </div>

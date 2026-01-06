@@ -916,7 +916,9 @@ export class DatabaseStorage implements IStorage {
 
   async getReeditWorldBibleByProject(projectId: number): Promise<ReeditWorldBible | undefined> {
     const [bible] = await db.select().from(reeditWorldBibles)
-      .where(eq(reeditWorldBibles.projectId, projectId));
+      .where(eq(reeditWorldBibles.projectId, projectId))
+      .orderBy(desc(reeditWorldBibles.id))
+      .limit(1);
     return bible;
   }
 

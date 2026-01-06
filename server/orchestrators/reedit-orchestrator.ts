@@ -913,65 +913,95 @@ export class ReeditOrchestrator {
       }
 
       // === STAGE 3: WORLD BIBLE EXTRACTION ===
-      this.emitProgress({
-        projectId,
-        stage: "world_bible",
-        currentChapter: validChapters.length,
-        totalChapters: validChapters.length,
-        message: "Extrayendo Biblia del Mundo (personajes, ubicaciones, timeline)...",
-      });
-
-      await storage.updateReeditProject(projectId, { currentStage: "world_bible" });
-
       const chaptersForBible = validChapters.map((c, i) => ({
         num: c.chapterNumber,
         content: c.originalContent,
         feedback: editorFeedbacks[i]
       }));
 
-      const worldBibleResult = await this.worldBibleExtractor.extractWorldBible(
-        chaptersForBible,
-        editorFeedbacks
-      );
+      // Check if World Bible already exists (resume support)
+      const existingWorldBible = await storage.getReeditWorldBibleByProject(projectId);
+      let worldBibleResult: any;
 
-      // Save world bible to database
-      await storage.createReeditWorldBible({
-        projectId,
-        characters: worldBibleResult.personajes || [],
-        locations: worldBibleResult.ubicaciones || [],
-        timeline: worldBibleResult.timeline || [],
-        loreRules: worldBibleResult.reglasDelMundo || [],
-        historicalPeriod: worldBibleResult.epocaHistorica?.periodo || null,
-        historicalDetails: worldBibleResult.epocaHistorica?.detalles || null,
-        extractedFromChapters: validChapters.length,
-        confidence: worldBibleResult.confianza || 7,
-      });
+      if (existingWorldBible && existingWorldBible.characters && existingWorldBible.characters.length > 0) {
+        console.log(`[ReeditOrchestrator] Skipping World Bible extraction (already exists with ${existingWorldBible.characters.length} characters)`);
+        worldBibleResult = {
+          personajes: existingWorldBible.characters,
+          ubicaciones: existingWorldBible.locations,
+          timeline: existingWorldBible.timeline,
+          reglasDelMundo: existingWorldBible.loreRules,
+          epocaHistorica: {
+            periodo: existingWorldBible.historicalPeriod,
+            detalles: existingWorldBible.historicalDetails,
+          },
+          confianza: existingWorldBible.confidence,
+        };
+      } else {
+        this.emitProgress({
+          projectId,
+          stage: "world_bible",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: "Extrayendo Biblia del Mundo (personajes, ubicaciones, timeline)...",
+        });
+
+        await storage.updateReeditProject(projectId, { currentStage: "world_bible" });
+
+        worldBibleResult = await this.worldBibleExtractor.extractWorldBible(
+          chaptersForBible,
+          editorFeedbacks
+        );
+
+        // Save world bible to database
+        await storage.createReeditWorldBible({
+          projectId,
+          characters: worldBibleResult.personajes || [],
+          locations: worldBibleResult.ubicaciones || [],
+          timeline: worldBibleResult.timeline || [],
+          loreRules: worldBibleResult.reglasDelMundo || [],
+          historicalPeriod: worldBibleResult.epocaHistorica?.periodo || null,
+          historicalDetails: worldBibleResult.epocaHistorica?.detalles || null,
+          extractedFromChapters: validChapters.length,
+          confidence: worldBibleResult.confianza || 7,
+        });
+      }
 
       // === STAGE 4: ARCHITECT ANALYSIS ===
-      this.emitProgress({
-        projectId,
-        stage: "architect",
-        currentChapter: validChapters.length,
-        totalChapters: validChapters.length,
-        message: "Arquitecto analizando estructura y trama...",
-      });
+      // Check if Architect analysis already exists (resume support)
+      const existingArchitectReport = await storage.getReeditAuditReportsByProject(projectId);
+      const hasArchitectReport = existingArchitectReport.some(r => r.auditType === "architect");
+      let architectResult: any;
 
-      await storage.updateReeditProject(projectId, { currentStage: "architect" });
+      if (hasArchitectReport) {
+        console.log(`[ReeditOrchestrator] Skipping Architect analysis (already exists)`);
+        const existingReport = existingArchitectReport.find(r => r.auditType === "architect");
+        architectResult = existingReport?.findings || {};
+      } else {
+        this.emitProgress({
+          projectId,
+          stage: "architect",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: "Arquitecto analizando estructura y trama...",
+        });
 
-      const architectResult = await this.architectAnalyzer.analyzeArchitecture(
-        worldBibleResult,
-        chaptersForBible,
-        structureAnalysis
-      );
+        await storage.updateReeditProject(projectId, { currentStage: "architect" });
 
-      await storage.createReeditAuditReport({
-        projectId,
-        auditType: "architect",
-        chapterRange: "all",
-        score: architectResult.puntuacionArquitectura || 7,
-        findings: architectResult,
-        recommendations: architectResult.recomendaciones || [],
-      });
+        architectResult = await this.architectAnalyzer.analyzeArchitecture(
+          worldBibleResult,
+          chaptersForBible,
+          structureAnalysis
+        );
+
+        await storage.createReeditAuditReport({
+          projectId,
+          auditType: "architect",
+          chapterRange: "all",
+          score: architectResult.puntuacionArquitectura || 7,
+          findings: architectResult,
+          recommendations: architectResult.recomendaciones || [],
+        });
+      }
 
       // Check for critical blocks
       if (architectResult.bloqueoCritico) {
