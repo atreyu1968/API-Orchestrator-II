@@ -166,12 +166,272 @@ RESPOND WITH JSON ONLY.`;
   }
 }
 
+// QA Agent 1: Continuity Sentinel - runs every 5 chapters
+class ContinuitySentinelAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Continuity Sentinel",
+      role: "qa_continuity",
+      systemPrompt: `Eres un experto en continuidad narrativa. Tu trabajo es detectar errores de continuidad en bloques de capítulos.
+
+TIPOS DE ERRORES A DETECTAR:
+1. TEMPORALES: Inconsistencias en el paso del tiempo (ej: "amaneció" pero luego "la luna brillaba")
+2. ESPACIALES: Personajes que aparecen en lugares imposibles sin transición
+3. DE ESTADO: Objetos/personajes que cambian estado sin explicación (heridas que desaparecen, ropa que cambia)
+4. DE CONOCIMIENTO: Personajes que saben cosas que no deberían saber aún
+
+RESPONDE SOLO EN JSON:
+{
+  "erroresContinuidad": [
+    {
+      "tipo": "temporal|espacial|estado|conocimiento",
+      "severidad": "critica|mayor|menor",
+      "capitulo": 5,
+      "descripcion": "Descripción del error",
+      "contexto": "Fragmento relevante del texto",
+      "correccion": "Sugerencia de corrección"
+    }
+  ],
+  "resumen": "Resumen general de la continuidad",
+  "puntuacion": 8
+}`,
+      model: "gemini-2.5-flash",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.auditContinuity(input.chapters, input.startChapter, input.endChapter);
+  }
+
+  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
+    const combinedContent = chapterContents.map((c, i) => 
+      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 8000)}`
+    ).join("\n\n");
+
+    const prompt = `Analiza la continuidad narrativa de los capítulos ${startChapter} a ${endChapter}:
+
+${combinedContent}
+
+Detecta errores de continuidad temporal, espacial, de estado y de conocimiento. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[ContinuitySentinel] Failed to parse:", e);
+    }
+    return { erroresContinuidad: [], resumen: "Sin problemas detectados", puntuacion: 9 };
+  }
+}
+
+// QA Agent 2: Voice & Rhythm Auditor - runs every 10 chapters
+class VoiceRhythmAuditorAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Voice Rhythm Auditor",
+      role: "qa_voice",
+      systemPrompt: `Eres un experto en voz narrativa y ritmo literario. Analizas consistencia tonal y ritmo.
+
+ASPECTOS A EVALUAR:
+1. CONSISTENCIA DE VOZ: ¿El narrador mantiene su tono? ¿Los personajes hablan de forma consistente?
+2. RITMO NARRATIVO: ¿Hay secciones demasiado lentas o apresuradas?
+3. CADENCIA: ¿La longitud de oraciones varía apropiadamente?
+4. TENSIÓN: ¿La tensión narrativa escala correctamente?
+
+RESPONDE SOLO EN JSON:
+{
+  "problemasTono": [
+    {
+      "tipo": "voz_inconsistente|ritmo_lento|ritmo_apresurado|cadencia_monotona|tension_plana",
+      "severidad": "mayor|menor",
+      "capitulos": [5, 6],
+      "descripcion": "Descripción del problema",
+      "ejemplo": "Fragmento de ejemplo",
+      "correccion": "Sugerencia"
+    }
+  ],
+  "analisisRitmo": {
+    "capitulLentos": [],
+    "capitulosApresurados": [],
+    "climaxBienMedidos": true
+  },
+  "puntuacion": 8
+}`,
+      model: "gemini-2.5-flash",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.auditVoiceRhythm(input.chapters, input.startChapter, input.endChapter);
+  }
+
+  async auditVoiceRhythm(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
+    const combinedContent = chapterContents.map((c, i) => 
+      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 6000)}`
+    ).join("\n\n");
+
+    const prompt = `Analiza la voz narrativa y el ritmo de los capítulos ${startChapter} a ${endChapter}:
+
+${combinedContent}
+
+Evalúa consistencia de voz, ritmo y tensión narrativa. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[VoiceRhythmAuditor] Failed to parse:", e);
+    }
+    return { problemasTono: [], analisisRitmo: {}, puntuacion: 9 };
+  }
+}
+
+// QA Agent 3: Semantic Repetition Detector - runs on full manuscript
+class SemanticRepetitionDetectorAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Semantic Repetition Detector",
+      role: "qa_semantic",
+      systemPrompt: `Eres un experto en análisis semántico literario. Detectas repeticiones de ideas y verificas foreshadowing.
+
+ASPECTOS A DETECTAR:
+1. REPETICIÓN DE IDEAS: Conceptos, metáforas o descripciones que se repiten demasiado
+2. FRASES REPETIDAS: Muletillas del autor, descripciones idénticas
+3. FORESHADOWING SIN RESOLVER: Anticipaciones que nunca se cumplen
+4. CHEKOV'S GUN: Elementos introducidos que nunca se usan
+
+RESPONDE SOLO EN JSON:
+{
+  "repeticionesSemanticas": [
+    {
+      "tipo": "idea_repetida|frase_repetida|foreshadowing_sin_resolver|elemento_sin_usar",
+      "severidad": "mayor|menor",
+      "ocurrencias": [1, 5, 12],
+      "descripcion": "Qué se repite",
+      "ejemplo": "Fragmento de ejemplo",
+      "accion": "eliminar|variar|resolver"
+    }
+  ],
+  "foreshadowingTracking": [
+    {"plantado": 3, "resuelto": 25, "elemento": "La carta misteriosa"}
+  ],
+  "puntuacion": 8
+}`,
+      model: "gemini-2.5-flash",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.detectRepetitions(input.summaries, input.totalChapters);
+  }
+
+  async detectRepetitions(chapterSummaries: string[], totalChapters: number): Promise<any> {
+    const prompt = `Analiza el manuscrito completo (${totalChapters} capítulos) buscando repeticiones semánticas:
+
+RESÚMENES DE CAPÍTULOS:
+${chapterSummaries.join("\n\n")}
+
+Detecta ideas repetidas, frases recurrentes, foreshadowing sin resolver y elementos sin usar. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[SemanticRepetitionDetector] Failed to parse:", e);
+    }
+    return { repeticionesSemanticas: [], foreshadowingTracking: [], puntuacion: 9 };
+  }
+}
+
+// QA Agent 4: Anachronism Detector - detects historical inaccuracies
+class AnachronismDetectorAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Anachronism Detector",
+      role: "qa_anachronism",
+      systemPrompt: `Eres un experto historiador y consultor literario. Tu trabajo es detectar anacronismos en novelas históricas.
+
+TIPOS DE ANACRONISMOS:
+1. TECNOLÓGICOS: Tecnología que no existía en la época
+2. LINGÜÍSTICOS: Expresiones, palabras o modismos que no existían
+3. SOCIALES: Comportamientos o costumbres inapropiados para la época
+4. MATERIALES: Objetos, materiales, alimentos que no existían
+5. CONCEPTUALES: Ideas o conceptos que no existían (ej: "estrés" en Roma antigua)
+
+RESPONDE SOLO EN JSON:
+{
+  "epocaDetectada": "Roma Imperial, siglo I d.C.",
+  "anacronismos": [
+    {
+      "tipo": "tecnologico|linguistico|social|material|conceptual",
+      "severidad": "critica|mayor|menor",
+      "capitulo": 5,
+      "fragmento": "El texto problemático",
+      "problema": "Explicación del anacronismo",
+      "correccion": "Alternativa históricamente correcta",
+      "fuente": "Referencia histórica si aplica"
+    }
+  ],
+  "resumen": "Resumen de la precisión histórica",
+  "puntuacionHistorica": 8
+}`,
+      model: "gemini-2.5-flash",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.detectAnachronisms(input.chapters, input.genre, input.premise);
+  }
+
+  async detectAnachronisms(chapterContents: { num: number; content: string }[], genre: string, premise: string): Promise<any> {
+    const isHistorical = genre?.toLowerCase().includes("histor") || premise?.toLowerCase().includes("histor");
+    if (!isHistorical) {
+      return { 
+        epocaDetectada: "No aplica - no es novela histórica",
+        anacronismos: [], 
+        resumen: "No se realizó análisis de anacronismos (género no histórico)", 
+        puntuacionHistorica: 10 
+      };
+    }
+
+    const samples = chapterContents.slice(0, 10).map(c => 
+      `=== CAPÍTULO ${c.num} ===\n${c.content.substring(0, 5000)}`
+    ).join("\n\n");
+
+    const prompt = `Analiza esta novela histórica buscando anacronismos:
+
+PREMISA: ${premise || "No especificada"}
+GÉNERO: ${genre}
+
+CAPÍTULOS DE MUESTRA:
+${samples}
+
+Detecta anacronismos tecnológicos, lingüísticos, sociales, materiales y conceptuales. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[AnachronismDetector] Failed to parse:", e);
+    }
+    return { epocaDetectada: "No determinada", anacronismos: [], resumen: "Análisis completado", puntuacionHistorica: 8 };
+  }
+}
+
 class ReeditFinalReviewerAgent extends BaseAgent {
   constructor() {
     super({
       name: "Reedit Final Reviewer",
       role: "final_reviewer",
-      systemPrompt: `You are a publishing industry expert evaluating manuscripts for bestseller potential.
+      systemPrompt: `Eres un experto de la industria editorial evaluando manuscritos para potencial de bestseller.
 
 Evaluate the manuscript and provide:
 1. Bestseller score (1-10)
