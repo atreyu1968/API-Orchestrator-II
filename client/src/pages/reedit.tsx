@@ -30,17 +30,17 @@ import {
 import type { ReeditProject, ReeditChapter, ReeditAuditReport } from "@shared/schema";
 
 const SUPPORTED_LANGUAGES = [
+  { code: "es", name: "Español" },
   { code: "en", name: "English" },
   { code: "fr", name: "Français" },
   { code: "de", name: "Deutsch" },
   { code: "it", name: "Italiano" },
   { code: "pt", name: "Português" },
   { code: "ca", name: "Català" },
-  { code: "es", name: "Español" },
 ];
 
 function getLanguageName(code: string | null | undefined): string {
-  if (!code) return "Not detected";
+  if (!code) return "No detectado";
   const lang = SUPPORTED_LANGUAGES.find(l => l.code === code.toLowerCase());
   return lang ? lang.name : code.toUpperCase();
 }
@@ -57,6 +57,12 @@ function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens
 }
 
 function getStatusBadge(status: string) {
+  const statusLabels: Record<string, string> = {
+    pending: "Pendiente",
+    processing: "Procesando",
+    completed: "Completado",
+    error: "Error",
+  };
   const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof CheckCircle }> = {
     pending: { variant: "outline", icon: Clock },
     processing: { variant: "secondary", icon: Loader2 },
@@ -68,19 +74,19 @@ function getStatusBadge(status: string) {
   return (
     <Badge variant={config.variant} className="flex items-center gap-1">
       <IconComponent className={`h-3 w-3 ${status === 'processing' ? 'animate-spin' : ''}`} />
-      {status.charAt(0).toUpperCase() + status.slice(1)}
+      {statusLabels[status] || status}
     </Badge>
   );
 }
 
 function getStageBadge(stage: string) {
   const stageLabels: Record<string, string> = {
-    uploaded: "Uploaded",
-    analyzing: "Analyzing Structure",
-    editing: "AI Editing",
-    auditing: "QA Audit",
-    reviewing: "Final Review",
-    completed: "Complete",
+    uploaded: "Subido",
+    analyzing: "Analizando Estructura",
+    editing: "Editando con IA",
+    auditing: "Auditoría QA",
+    reviewing: "Revisión Final",
+    completed: "Completado",
   };
   return stageLabels[stage] || stage;
 }
@@ -130,19 +136,19 @@ export default function ReeditPage() {
       });
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error || "Upload failed");
+        throw new Error(error.error || "Error al subir");
       }
       return response.json();
     },
     onSuccess: (data) => {
-      toast({ title: "Manuscript Uploaded", description: `Project "${data.title}" created successfully` });
+      toast({ title: "Manuscrito Subido", description: `Proyecto "${data.title}" creado exitosamente. ${data.chaptersDetected || 1} capítulo(s) detectado(s).` });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
       setUploadTitle("");
       setUploadFile(null);
       setSelectedProject(data.projectId);
     },
     onError: (error: Error) => {
-      toast({ title: "Upload Error", description: error.message, variant: "destructive" });
+      toast({ title: "Error de Subida", description: error.message, variant: "destructive" });
     },
   });
 
@@ -151,7 +157,7 @@ export default function ReeditPage() {
       return apiRequest("POST", `/api/reedit-projects/${projectId}/start`);
     },
     onSuccess: () => {
-      toast({ title: "Processing Started", description: "The manuscript is now being re-edited" });
+      toast({ title: "Procesamiento Iniciado", description: "El manuscrito está siendo reeditado" });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
     },
     onError: (error: Error) => {
@@ -164,7 +170,7 @@ export default function ReeditPage() {
       return apiRequest("POST", `/api/reedit-projects/${projectId}/cancel`);
     },
     onSuccess: () => {
-      toast({ title: "Cancelled", description: "Processing has been cancelled" });
+      toast({ title: "Cancelado", description: "El procesamiento ha sido cancelado" });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
     },
   });
@@ -174,7 +180,7 @@ export default function ReeditPage() {
       return apiRequest("DELETE", `/api/reedit-projects/${projectId}`);
     },
     onSuccess: () => {
-      toast({ title: "Deleted", description: "Project has been deleted" });
+      toast({ title: "Eliminado", description: "El proyecto ha sido eliminado" });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
       if (selectedProject) setSelectedProject(null);
     },
@@ -192,7 +198,7 @@ export default function ReeditPage() {
 
   const handleUpload = useCallback(async () => {
     if (!uploadFile || !uploadTitle.trim()) {
-      toast({ title: "Missing Information", description: "Please provide a title and file", variant: "destructive" });
+      toast({ title: "Información Faltante", description: "Por favor proporciona un título y un archivo", variant: "destructive" });
       return;
     }
     setIsUploading(true);
@@ -220,9 +226,9 @@ export default function ReeditPage() {
   return (
     <div className="container mx-auto p-4 max-w-7xl">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold mb-2">Manuscript Re-Editing</h1>
+        <h1 className="text-2xl font-bold mb-2">Reedición de Manuscritos</h1>
         <p className="text-muted-foreground">
-          Upload existing manuscripts for comprehensive AI-powered editing through Editor, Copy Editor, QA Auditors, and Final Reviewer.
+          Sube manuscritos existentes para una edición completa con IA a través de Editor, Corrector de Estilo, Auditores QA y Revisor Final.
         </p>
       </div>
 
@@ -232,28 +238,28 @@ export default function ReeditPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Upload className="h-5 w-5" />
-                Upload Manuscript
+                Subir Manuscrito
               </CardTitle>
               <CardDescription>
-                Upload a Word document (.docx) for re-editing
+                Sube un documento Word (.docx) para reedición
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <Label htmlFor="reedit-title">Title</Label>
+                <Label htmlFor="reedit-title">Título</Label>
                 <Input
                   id="reedit-title"
                   data-testid="input-reedit-title"
                   value={uploadTitle}
                   onChange={(e) => setUploadTitle(e.target.value)}
-                  placeholder="Manuscript title"
+                  placeholder="Título del manuscrito"
                 />
               </div>
               <div>
-                <Label htmlFor="reedit-language">Language</Label>
+                <Label htmlFor="reedit-language">Idioma</Label>
                 <Select value={uploadLanguage} onValueChange={setUploadLanguage}>
                   <SelectTrigger data-testid="select-reedit-language">
-                    <SelectValue placeholder="Select language" />
+                    <SelectValue placeholder="Seleccionar idioma" />
                   </SelectTrigger>
                   <SelectContent>
                     {SUPPORTED_LANGUAGES.map((lang) => (
@@ -265,7 +271,7 @@ export default function ReeditPage() {
                 </Select>
               </div>
               <div>
-                <Label htmlFor="reedit-file">File</Label>
+                <Label htmlFor="reedit-file">Archivo</Label>
                 <Input
                   id="reedit-file"
                   type="file"
@@ -290,7 +296,7 @@ export default function ReeditPage() {
                 ) : (
                   <Upload className="h-4 w-4 mr-2" />
                 )}
-                Upload & Create Project
+                Subir y Crear Proyecto
               </Button>
             </CardContent>
           </Card>
@@ -299,7 +305,7 @@ export default function ReeditPage() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
-                Projects
+                Proyectos
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -309,7 +315,7 @@ export default function ReeditPage() {
                 </div>
               ) : projects.length === 0 ? (
                 <p className="text-muted-foreground text-center py-8">
-                  No projects yet. Upload a manuscript to get started.
+                  Sin proyectos aún. Sube un manuscrito para comenzar.
                 </p>
               ) : (
                 <ScrollArea className="h-[300px]">
@@ -329,7 +335,7 @@ export default function ReeditPage() {
                           <div className="min-w-0 flex-1">
                             <p className="font-medium truncate">{project.title}</p>
                             <p className="text-sm text-muted-foreground">
-                              {getLanguageName(project.detectedLanguage)} • {project.totalWordCount?.toLocaleString() || 0} words
+                              {getLanguageName(project.detectedLanguage)} • {project.totalWordCount?.toLocaleString() || 0} palabras
                             </p>
                           </div>
                           {getStatusBadge(project.status)}
@@ -368,7 +374,7 @@ export default function ReeditPage() {
                   <div>
                     <CardTitle>{selectedProjectData.title}</CardTitle>
                     <CardDescription>
-                      {getLanguageName(selectedProjectData.detectedLanguage)} • {selectedProjectData.totalWordCount?.toLocaleString() || 0} words • {selectedProjectData.totalChapters || 0} chapters
+                      {getLanguageName(selectedProjectData.detectedLanguage)} • {selectedProjectData.totalWordCount?.toLocaleString() || 0} palabras • {selectedProjectData.totalChapters || 0} capítulos
                     </CardDescription>
                   </div>
                   <div className="flex items-center gap-2 flex-wrap">
@@ -384,7 +390,7 @@ export default function ReeditPage() {
                         ) : (
                           <Play className="h-4 w-4 mr-2" />
                         )}
-                        Start Re-Edit
+                        Iniciar Reedición
                       </Button>
                     )}
                     {selectedProjectData.status === "processing" && (
@@ -399,7 +405,7 @@ export default function ReeditPage() {
                         ) : (
                           <StopCircle className="h-4 w-4 mr-2" />
                         )}
-                        Cancel
+                        Cancelar
                       </Button>
                     )}
                     <Button
@@ -417,9 +423,9 @@ export default function ReeditPage() {
               <CardContent>
                 <Tabs defaultValue="progress">
                   <TabsList>
-                    <TabsTrigger value="progress" data-testid="tab-reedit-progress">Progress</TabsTrigger>
-                    <TabsTrigger value="chapters" data-testid="tab-reedit-chapters">Chapters</TabsTrigger>
-                    <TabsTrigger value="report" data-testid="tab-reedit-report">Final Report</TabsTrigger>
+                    <TabsTrigger value="progress" data-testid="tab-reedit-progress">Progreso</TabsTrigger>
+                    <TabsTrigger value="chapters" data-testid="tab-reedit-chapters">Capítulos</TabsTrigger>
+                    <TabsTrigger value="report" data-testid="tab-reedit-report">Informe Final</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="progress" className="space-y-4">
@@ -427,7 +433,7 @@ export default function ReeditPage() {
                       <Card>
                         <CardContent className="pt-6">
                           <div className="text-center">
-                            <p className="text-sm text-muted-foreground mb-1">Current Stage</p>
+                            <p className="text-sm text-muted-foreground mb-1">Etapa Actual</p>
                             <Badge variant="outline" className="text-lg px-4 py-1">
                               {getStageBadge(selectedProjectData.currentStage)}
                             </Badge>
@@ -437,7 +443,7 @@ export default function ReeditPage() {
                       <Card>
                         <CardContent className="pt-6">
                           <div className="text-center">
-                            <p className="text-sm text-muted-foreground mb-1">Progress</p>
+                            <p className="text-sm text-muted-foreground mb-1">Progreso</p>
                             <p className="text-2xl font-bold">
                               {selectedProjectData.processedChapters || 0}/{selectedProjectData.totalChapters || 0}
                             </p>
@@ -449,7 +455,7 @@ export default function ReeditPage() {
                     {selectedProjectData.status === "processing" && (
                       <div>
                         <div className="flex items-center justify-between text-sm mb-2">
-                          <span>Processing chapters...</span>
+                          <span>Procesando capítulos...</span>
                           <span>{Math.round(progress)}%</span>
                         </div>
                         <Progress value={progress} />
@@ -461,11 +467,11 @@ export default function ReeditPage() {
                         <CardContent className="pt-6">
                           <div className="flex items-center justify-between">
                             <div>
-                              <p className="text-sm text-muted-foreground">Bestseller Score</p>
+                              <p className="text-sm text-muted-foreground">Puntuación Bestseller</p>
                               <ScoreDisplay score={selectedProjectData.bestsellerScore} />
                             </div>
                             <div className="text-right">
-                              <p className="text-sm text-muted-foreground">Estimated Cost</p>
+                              <p className="text-sm text-muted-foreground">Coste Estimado</p>
                               <p className="text-lg font-semibold flex items-center gap-1">
                                 <DollarSign className="h-4 w-4" />
                                 {calculateCost(
@@ -483,7 +489,7 @@ export default function ReeditPage() {
                     {selectedProjectData.structureAnalysis != null && (
                       <Card>
                         <CardHeader>
-                          <CardTitle className="text-base">Structure Analysis</CardTitle>
+                          <CardTitle className="text-base">Análisis de Estructura</CardTitle>
                         </CardHeader>
                         <CardContent>
                           <pre className="text-sm bg-muted p-3 rounded-md overflow-auto max-h-[200px]">
@@ -504,7 +510,7 @@ export default function ReeditPage() {
                     <ScrollArea className="h-[400px] mt-4">
                       {chapters.length === 0 ? (
                         <p className="text-center text-muted-foreground py-8">
-                          No chapters parsed yet
+                          Aún no se han parseado capítulos
                         </p>
                       ) : (
                         <div className="space-y-2">
@@ -516,8 +522,8 @@ export default function ReeditPage() {
                             >
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2">
-                                  <Badge variant="outline">Ch. {chapter.chapterNumber}</Badge>
-                                  <span className="font-medium">{chapter.title || `Chapter ${chapter.chapterNumber}`}</span>
+                                  <Badge variant="outline">Cap. {chapter.chapterNumber}</Badge>
+                                  <span className="font-medium">{chapter.title || `Capítulo ${chapter.chapterNumber}`}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   {chapter.editorScore && (
@@ -530,9 +536,9 @@ export default function ReeditPage() {
                               </div>
                               {chapter.editedContent && chapter.originalContent && (
                                 <p className="text-sm text-muted-foreground mt-2">
-                                  {chapter.editedContent.split(/\s+/).length.toLocaleString()} words
+                                  {chapter.editedContent.split(/\s+/).length.toLocaleString()} palabras
                                   {chapter.copyeditorChanges && (
-                                    <span className="ml-2">• Changes: {chapter.copyeditorChanges.substring(0, 100)}...</span>
+                                    <span className="ml-2">• Cambios: {chapter.copyeditorChanges.substring(0, 100)}...</span>
                                   )}
                                 </p>
                               )}
@@ -549,7 +555,7 @@ export default function ReeditPage() {
                         <CardHeader>
                           <CardTitle className="flex items-center gap-2">
                             <Star className="h-5 w-5 text-yellow-500" />
-                            Final Review Results
+                            Resultados de la Revisión Final
                           </CardTitle>
                         </CardHeader>
                         <CardContent>
@@ -559,7 +565,7 @@ export default function ReeditPage() {
                           <div className="mt-4 flex justify-end">
                             <Button variant="outline" data-testid="button-download-reedit">
                               <Download className="h-4 w-4 mr-2" />
-                              Export Edited Manuscript
+                              Exportar Manuscrito Editado
                             </Button>
                           </div>
                         </CardContent>
@@ -567,7 +573,7 @@ export default function ReeditPage() {
                     ) : (
                       <div className="text-center text-muted-foreground py-12">
                         <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                        <p>Final report will be available after processing completes</p>
+                        <p>El informe final estará disponible cuando se complete el procesamiento</p>
                       </div>
                     )}
                   </TabsContent>
@@ -578,9 +584,9 @@ export default function ReeditPage() {
             <Card>
               <CardContent className="py-12 text-center">
                 <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-50" />
-                <h3 className="text-lg font-medium mb-2">Select a Project</h3>
+                <h3 className="text-lg font-medium mb-2">Selecciona un Proyecto</h3>
                 <p className="text-muted-foreground">
-                  Choose a project from the list or upload a new manuscript to begin
+                  Elige un proyecto de la lista o sube un nuevo manuscrito para comenzar
                 </p>
               </CardContent>
             </Card>
