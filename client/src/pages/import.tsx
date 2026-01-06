@@ -113,9 +113,24 @@ function stripChapterHeaders(content: string): string {
   let cleaned = content.trim();
   // First remove any style guide contamination
   cleaned = removeStyleGuideContamination(cleaned);
-  // Remove markdown headers at the start that contain chapter/prólogo/epílogo info
-  cleaned = cleaned.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Prólogo|Prologue|Epílogo|Epilogue|Nota del Autor|Author'?s? Note)[^\n]*\n+/i, '');
+  // Remove markdown headers at the start that contain chapter/prólogo/epílogo info in all supported languages
+  cleaned = cleaned.replace(/^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|Chapitre|Kapitel|Capitolo|Capítol|Prólogo|Prologue|Prolog|Prologo|Pròleg|Epílogo|Epilogue|Épilogue|Epilog|Epilogo|Epíleg|Nota del Autor|Nota de l'Autor|Author'?s? Note|Note de l'auteur|Nachwort|Nota dell'autore)[^\n]*\n+/gi, '');
   return cleaned.trim();
+}
+
+const CHAPTER_LABELS: Record<string, { chapter: string; prologue: string; epilogue: string; authorNote: string }> = {
+  en: { chapter: "Chapter", prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note" },
+  es: { chapter: "Capítulo", prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor" },
+  fr: { chapter: "Chapitre", prologue: "Prologue", epilogue: "Épilogue", authorNote: "Note de l'auteur" },
+  de: { chapter: "Kapitel", prologue: "Prolog", epilogue: "Epilog", authorNote: "Nachwort" },
+  it: { chapter: "Capitolo", prologue: "Prologo", epilogue: "Epilogo", authorNote: "Nota dell'autore" },
+  pt: { chapter: "Capítulo", prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota do Autor" },
+  ca: { chapter: "Capítol", prologue: "Pròleg", epilogue: "Epíleg", authorNote: "Nota de l'Autor" },
+};
+
+function getLabelsForLanguage(langCode: string | null | undefined) {
+  const code = langCode?.toLowerCase() || "es";
+  return CHAPTER_LABELS[code] || CHAPTER_LABELS.es;
 }
 
 function generateMarkdownExport(
@@ -124,6 +139,7 @@ function generateMarkdownExport(
 ): string {
   const sortedChapters = sortChaptersForDisplay(chapters);
   const lines: string[] = [];
+  const labels = getLabelsForLanguage(manuscript.detectedLanguage);
   
   lines.push(`# ${manuscript.title}`);
   lines.push("");
@@ -134,13 +150,17 @@ function generateMarkdownExport(
     
     let heading: string;
     if (chapter.chapterNumber === 0) {
-      heading = chapter.title || "Prólogo";
+      heading = chapter.title || labels.prologue;
     } else if (chapter.chapterNumber === -1) {
-      heading = chapter.title || "Epílogo";
+      heading = chapter.title || labels.epilogue;
     } else if (chapter.chapterNumber === -2) {
-      heading = chapter.title || "Nota del Autor";
+      heading = chapter.title || labels.authorNote;
     } else {
-      heading = chapter.title || `Capítulo ${chapter.chapterNumber}`;
+      if (chapter.title) {
+        heading = `${labels.chapter} ${chapter.chapterNumber}: ${chapter.title}`;
+      } else {
+        heading = `${labels.chapter} ${chapter.chapterNumber}`;
+      }
     }
     
     lines.push(`## ${heading}`);
