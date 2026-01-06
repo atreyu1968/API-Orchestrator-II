@@ -817,6 +817,256 @@ Reescribe el capítulo COMPLETO integrando las correcciones de forma natural. Ma
   }
 }
 
+// NarrativeRewriter Agent - Advanced agent that actually rewrites narrative content
+class NarrativeRewriterAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Narrative Rewriter",
+      role: "narrative_rewriter",
+      systemPrompt: `Eres un MAESTRO ESCRITOR DE FICCIÓN con décadas de experiencia en reparar novelas con problemas estructurales. Tu especialidad es tomar narrativas rotas y transformarlas en historias coherentes y cautivadoras.
+
+TU PROCESO DE TRABAJO (3 FASES):
+
+FASE 1 - ANÁLISIS PROFUNDO:
+- Comprende exactamente QUÉ está roto en la narrativa
+- Identifica las conexiones causales que faltan
+- Determina el contenido MÍNIMO necesario para reparar el problema
+
+FASE 2 - PLANIFICACIÓN DE LA REESCRITURA:
+- Diseña las escenas, diálogos o párrafos específicos a añadir/modificar
+- Asegura que el nuevo contenido se integre NATURALMENTE
+- Mantén la voz y estilo del autor original
+
+FASE 3 - EJECUCIÓN Y VERIFICACIÓN:
+- Escribe el contenido nuevo con maestría literaria
+- Verifica que la corrección no introduzca nuevos problemas
+- Confirma coherencia con la Biblia del Mundo
+
+TIPOS DE CORRECCIONES QUE DOMINAS:
+
+1. HUECOS ARGUMENTALES: Añades escenas de transición, diálogos explicativos, o párrafos de conexión que cierran las brechas lógicas sin forzar la narrativa.
+
+2. SUBPLOTS SIN RESOLVER: Insertas resoluciones elegantes - puede ser una escena completa, un flashback, una conversación reveladora, o incluso un párrafo de reflexión del personaje.
+
+3. ARCOS DE PERSONAJE INCOMPLETOS: Añades los momentos de transformación faltantes - decisiones clave, confrontaciones internas, epifanías que den sentido al cambio.
+
+4. CONTRADICCIONES: Eliges la versión correcta según el peso narrativo y reescribes para mantener coherencia absoluta.
+
+5. ANTAGONISTAS AMBIGUOS: Clarificas motivaciones, añades escenas que establezcan la relación entre antagonistas, o modificas diálogos para eliminar confusión.
+
+6. FORESHADOWING SIN PAYOFF: Añades el payoff de forma orgánica, o reformulas el foreshadowing para que apunte a un evento existente.
+
+REGLAS INVIOLABLES:
+- El contenido nuevo debe ser INDISTINGUIBLE del original en estilo y voz
+- Las correcciones deben ser ELEGANTES, no parches obvios
+- NUNCA cambies nombres, fechas, lugares establecidos en la Biblia del Mundo
+- Prefiere AÑADIR contenido a ELIMINAR (preserva el trabajo del autor)
+- Las escenas nuevas deben tener propósito narrativo, no solo resolver el problema técnico
+
+FORMATO DE RESPUESTA (JSON):
+{
+  "fasePlanificacion": {
+    "problemaAnalizado": "Descripción de lo que está roto y por qué",
+    "solucionPropuesta": "Estrategia específica para repararlo",
+    "contenidoACrear": "Tipo de contenido a añadir (escena, diálogo, párrafo, etc.)",
+    "puntoInsercion": "Dónde exactamente se insertará el nuevo contenido"
+  },
+  "capituloReescrito": "TEXTO COMPLETO del capítulo con las correcciones integradas de forma invisible",
+  "cambiosRealizados": [
+    {
+      "tipoProblema": "hueco_argumental|subplot|arco_incompleto|contradiccion|antagonista|foreshadowing",
+      "descripcionProblema": "El problema específico que se corrigió",
+      "solucionAplicada": "Descripción detallada de la corrección",
+      "contenidoNuevo": "El texto nuevo añadido (primeras 200 palabras si es largo)",
+      "palabrasAnadidas": 150,
+      "ubicacionEnCapitulo": "Después del párrafo que comienza con..."
+    }
+  ],
+  "verificacionInterna": {
+    "coherenciaConWorldBible": true,
+    "estiloConsistente": true,
+    "problemasResueltos": ["Lista de IDs de problemas resueltos"],
+    "nuevosProblemasIntroducidos": [],
+    "confianzaEnCorreccion": 9
+  },
+  "resumenEjecutivo": "Descripción concisa de todas las correcciones realizadas"
+}`,
+      model: "gemini-3-pro-preview",
+      useThinking: true,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.rewriteChapter(
+      input.chapterContent,
+      input.chapterNumber,
+      input.problems,
+      input.worldBible,
+      input.adjacentContext,
+      input.language
+    );
+  }
+
+  async rewriteChapter(
+    chapterContent: string,
+    chapterNumber: number,
+    problems: Array<{ id?: string; tipo: string; descripcion: string; severidad: string; accionSugerida?: string; capitulosAfectados?: number[] }>,
+    worldBible: any,
+    adjacentContext: { previousChapter?: string; nextChapter?: string; previousSummary?: string; nextSummary?: string },
+    language: string
+  ): Promise<any> {
+    const worldBibleContext = this.buildWorldBibleContext(worldBible);
+    const adjacentContextStr = this.buildAdjacentContext(adjacentContext);
+    const problemsList = this.buildProblemsList(problems, chapterNumber);
+
+    const prompt = `MISIÓN: Reescribe el Capítulo ${chapterNumber} para corregir los problemas estructurales detectados.
+
+IDIOMA DEL TEXTO: ${language}
+
+═══════════════════════════════════════════════════════════════
+PROBLEMAS A RESOLVER EN ESTE CAPÍTULO:
+═══════════════════════════════════════════════════════════════
+${problemsList}
+
+═══════════════════════════════════════════════════════════════
+BIBLIA DEL MUNDO (CANON INVIOLABLE):
+═══════════════════════════════════════════════════════════════
+${worldBibleContext}
+
+═══════════════════════════════════════════════════════════════
+CONTEXTO NARRATIVO (capítulos adyacentes):
+═══════════════════════════════════════════════════════════════
+${adjacentContextStr}
+
+═══════════════════════════════════════════════════════════════
+CAPÍTULO A REESCRIBIR:
+═══════════════════════════════════════════════════════════════
+${chapterContent}
+
+═══════════════════════════════════════════════════════════════
+INSTRUCCIONES FINALES:
+═══════════════════════════════════════════════════════════════
+1. Analiza profundamente cada problema y su impacto narrativo
+2. Diseña la solución más elegante y natural
+3. Reescribe el capítulo COMPLETO integrando las correcciones
+4. Verifica que no introduces nuevos problemas
+5. El texto nuevo debe ser INDISTINGUIBLE del original en calidad
+
+RESPONDE ÚNICAMENTE CON JSON VÁLIDO.`;
+
+    console.log(`[NarrativeRewriter] Rewriting chapter ${chapterNumber} to fix ${problems.length} problems:`);
+    problems.forEach((p, i) => {
+      console.log(`  ${i + 1}. [${(p.severidad || 'media').toUpperCase()}] ${p.tipo}: ${p.descripcion.substring(0, 100)}...`);
+    });
+
+    const response = await this.generateContent(prompt);
+    
+    let result: any = {
+      fasePlanificacion: { problemaAnalizado: "", solucionPropuesta: "", contenidoACrear: "", puntoInsercion: "" },
+      capituloReescrito: chapterContent,
+      cambiosRealizados: [],
+      verificacionInterna: { coherenciaConWorldBible: false, estiloConsistente: false, problemasResueltos: [], nuevosProblemasIntroducidos: [], confianzaEnCorreccion: 0 },
+      resumenEjecutivo: "No se pudieron aplicar correcciones"
+    };
+
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[0]);
+        
+        console.log(`[NarrativeRewriter] Chapter ${chapterNumber} rewritten successfully:`);
+        console.log(`  Planificación: ${result.fasePlanificacion?.solucionPropuesta?.substring(0, 150) || 'N/A'}...`);
+        console.log(`  Cambios realizados: ${result.cambiosRealizados?.length || 0}`);
+        
+        if (result.cambiosRealizados?.length > 0) {
+          result.cambiosRealizados.forEach((c: any, i: number) => {
+            console.log(`  ✓ ${i + 1}. [${c.tipoProblema}] ${c.descripcionProblema?.substring(0, 80)}...`);
+            console.log(`      Solución: ${c.solucionAplicada?.substring(0, 100)}...`);
+            console.log(`      Palabras añadidas: ${c.palabrasAnadidas || 'N/A'}`);
+          });
+        }
+        
+        if (result.verificacionInterna) {
+          console.log(`  Verificación: Coherencia=${result.verificacionInterna.coherenciaConWorldBible}, Estilo=${result.verificacionInterna.estiloConsistente}, Confianza=${result.verificacionInterna.confianzaEnCorreccion}/10`);
+        }
+        
+        console.log(`  Resumen: ${result.resumenEjecutivo?.substring(0, 200) || 'N/A'}`);
+      }
+    } catch (e) {
+      console.error("[NarrativeRewriter] Failed to parse response:", e);
+    }
+
+    result.tokenUsage = response.tokenUsage;
+    return result;
+  }
+
+  private buildWorldBibleContext(worldBible: any): string {
+    if (!worldBible) return "No hay Biblia del Mundo disponible.";
+    
+    const sections: string[] = [];
+    
+    if (worldBible.personajes?.length > 0) {
+      const chars = worldBible.personajes.slice(0, 20).map((p: any) => 
+        `• ${p.nombre} (${p.rol || 'secundario'}): ${p.descripcion?.substring(0, 150) || 'Sin descripción'}${p.arcoNarrativo ? ` | Arco: ${p.arcoNarrativo.substring(0, 100)}` : ''}`
+      ).join("\n");
+      sections.push(`PERSONAJES:\n${chars}`);
+    }
+    
+    if (worldBible.ubicaciones?.length > 0) {
+      const locs = worldBible.ubicaciones.slice(0, 10).map((u: any) => 
+        `• ${u.nombre}: ${u.descripcion?.substring(0, 100) || 'Sin descripción'}`
+      ).join("\n");
+      sections.push(`UBICACIONES:\n${locs}`);
+    }
+    
+    if (worldBible.timeline?.length > 0) {
+      const events = worldBible.timeline.slice(0, 15).map((t: any) => 
+        `• ${t.evento}: ${t.descripcion?.substring(0, 80) || ''}`
+      ).join("\n");
+      sections.push(`TIMELINE:\n${events}`);
+    }
+    
+    if (worldBible.reglas?.length > 0) {
+      const rules = worldBible.reglas.slice(0, 10).map((r: any) => 
+        `• ${typeof r === 'string' ? r : r.regla || JSON.stringify(r)}`
+      ).join("\n");
+      sections.push(`REGLAS DEL MUNDO:\n${rules}`);
+    }
+    
+    return sections.join("\n\n") || "Biblia del Mundo vacía.";
+  }
+
+  private buildAdjacentContext(context: { previousChapter?: string; nextChapter?: string; previousSummary?: string; nextSummary?: string }): string {
+    const parts: string[] = [];
+    
+    if (context.previousSummary) {
+      parts.push(`CAPÍTULO ANTERIOR (resumen):\n${context.previousSummary}`);
+    } else if (context.previousChapter) {
+      parts.push(`CAPÍTULO ANTERIOR (extracto):\n${context.previousChapter.substring(0, 2000)}...`);
+    }
+    
+    if (context.nextSummary) {
+      parts.push(`CAPÍTULO SIGUIENTE (resumen):\n${context.nextSummary}`);
+    } else if (context.nextChapter) {
+      parts.push(`CAPÍTULO SIGUIENTE (extracto):\n${context.nextChapter.substring(0, 2000)}...`);
+    }
+    
+    return parts.join("\n\n") || "No hay contexto de capítulos adyacentes disponible.";
+  }
+
+  private buildProblemsList(problems: Array<{ id?: string; tipo: string; descripcion: string; severidad: string; accionSugerida?: string }>, chapterNumber: number): string {
+    return problems.map((p, i) => {
+      const id = p.id || `P${i + 1}`;
+      const severity = p.severidad?.toUpperCase() || 'MEDIA';
+      const type = p.tipo || 'general';
+      const suggestion = p.accionSugerida ? `\n   ACCIÓN SUGERIDA: ${p.accionSugerida}` : '';
+      
+      return `[${id}] [${severity}] ${type}
+   ${p.descripcion}${suggestion}`;
+    }).join("\n\n");
+  }
+}
+
 class ReeditFinalReviewerAgent extends BaseAgent {
   constructor() {
     super({
@@ -882,6 +1132,7 @@ export class ReeditOrchestrator {
   private worldBibleExtractor: WorldBibleExtractorAgent;
   private architectAnalyzer: ArchitectAnalyzerAgent;
   private structuralFixer: StructuralFixerAgent;
+  private narrativeRewriter: NarrativeRewriterAgent;
   private continuitySentinel: ContinuitySentinelAgent;
   private voiceRhythmAuditor: VoiceRhythmAuditorAgent;
   private semanticRepetitionDetector: SemanticRepetitionDetectorAgent;
@@ -899,6 +1150,7 @@ export class ReeditOrchestrator {
     this.worldBibleExtractor = new WorldBibleExtractorAgent();
     this.architectAnalyzer = new ArchitectAnalyzerAgent();
     this.structuralFixer = new StructuralFixerAgent();
+    this.narrativeRewriter = new NarrativeRewriterAgent();
     this.continuitySentinel = new ContinuitySentinelAgent();
     this.voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
     this.semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
@@ -933,6 +1185,30 @@ export class ReeditOrchestrator {
       updates.lastCompletedChapter = lastCompletedChapter;
     }
     await storage.updateReeditProject(projectId, updates);
+  }
+
+  private buildAdjacentChapterContext(
+    chapters: ReeditChapter[],
+    currentChapterNumber: number
+  ): { previousChapter?: string; nextChapter?: string; previousSummary?: string; nextSummary?: string } {
+    const sortedChapters = [...chapters].sort((a, b) => a.chapterNumber - b.chapterNumber);
+    const currentIndex = sortedChapters.findIndex(c => c.chapterNumber === currentChapterNumber);
+    
+    const context: { previousChapter?: string; nextChapter?: string; previousSummary?: string; nextSummary?: string } = {};
+    
+    if (currentIndex > 0) {
+      const prevChapter = sortedChapters[currentIndex - 1];
+      context.previousChapter = prevChapter.originalContent?.substring(0, 3000);
+      context.previousSummary = `Capítulo ${prevChapter.chapterNumber}: ${prevChapter.title || 'Sin título'}`;
+    }
+    
+    if (currentIndex < sortedChapters.length - 1) {
+      const nextChapter = sortedChapters[currentIndex + 1];
+      context.nextChapter = nextChapter.originalContent?.substring(0, 3000);
+      context.nextSummary = `Capítulo ${nextChapter.chapterNumber}: ${nextChapter.title || 'Sin título'}`;
+    }
+    
+    return context;
   }
 
   private async checkCancellation(projectId: number): Promise<boolean> {
@@ -1399,107 +1675,161 @@ export class ReeditOrchestrator {
         console.log(`[ReeditOrchestrator] Critical block detected, continuing with warnings`);
       }
 
-      // === STAGE 4.5: STRUCTURAL FIXING (automatic correction of architect-detected issues) ===
+      // === STAGE 4.5: NARRATIVE REWRITING (advanced correction of structural issues) ===
       const allProblems = this.collectArchitectProblems(architectResult);
       
-      if (allProblems.length > 0) {
-        console.log(`[ReeditOrchestrator] Found ${allProblems.length} structural problems to fix`);
+      // Check if NarrativeRewriter already completed (to avoid reprocesing on restarts)
+      const existingRewriteReport = await storage.getReeditAuditReportByType(projectId, "narrative_rewrite");
+      const narrativeRewriteCompleted = existingRewriteReport && 
+        (existingRewriteReport.findings as any)?.chaptersRewritten > 0;
+      
+      if (allProblems.length > 0 && !narrativeRewriteCompleted) {
+        console.log(`[ReeditOrchestrator] Found ${allProblems.length} structural problems to fix with NarrativeRewriter`);
         
         this.emitProgress({
           projectId,
-          stage: "structural_fixing",
+          stage: "narrative_rewriting",
           currentChapter: 0,
           totalChapters: allProblems.length,
-          message: `Corrigiendo ${allProblems.length} problemas estructurales detectados...`,
+          message: `Reescribiendo narrativa para corregir ${allProblems.length} problemas estructurales...`,
         });
         
-        await storage.updateReeditProject(projectId, { currentStage: "structural_fixing" });
+        await storage.updateReeditProject(projectId, { currentStage: "narrative_rewriting" });
         
         // Group problems by affected chapters
         const problemsByChapter = new Map<number, any[]>();
         for (const problem of allProblems) {
           const chapters = problem.capitulosAfectados || problem.capitulos || [];
           for (const chapNum of chapters) {
-            if (!problemsByChapter.has(chapNum)) {
-              problemsByChapter.set(chapNum, []);
+            if (typeof chapNum === 'number') {
+              if (!problemsByChapter.has(chapNum)) {
+                problemsByChapter.set(chapNum, []);
+              }
+              problemsByChapter.get(chapNum)!.push(problem);
             }
-            problemsByChapter.get(chapNum)!.push(problem);
           }
         }
         
         let fixedCount = 0;
         const chaptersToReprocess: number[] = [];
-        const chapterEntries = Array.from(problemsByChapter.entries());
+        const rewriteResults: any[] = [];
+        const chapterEntries = Array.from(problemsByChapter.entries()).sort((a, b) => a[0] - b[0]);
         
         for (const [chapNum, chapterProblems] of chapterEntries) {
           if (await this.checkCancellation(projectId)) {
-            console.log(`[ReeditOrchestrator] Processing cancelled during structural fixing`);
+            console.log(`[ReeditOrchestrator] Processing cancelled during narrative rewriting`);
             return;
           }
           
           const chapter = validChapters.find(c => c.chapterNumber === chapNum);
           if (!chapter) {
-            console.log(`[ReeditOrchestrator] Chapter ${chapNum} not found for structural fix`);
+            console.log(`[ReeditOrchestrator] Chapter ${chapNum} not found for narrative rewriting`);
             continue;
           }
           
           this.emitProgress({
             projectId,
-            stage: "structural_fixing",
+            stage: "narrative_rewriting",
             currentChapter: fixedCount + 1,
             totalChapters: problemsByChapter.size,
-            message: `Corrigiendo capítulo ${chapNum} (${chapterProblems.length} problemas)...`,
+            message: `Reescribiendo capítulo ${chapNum} (${chapterProblems.length} problemas)...`,
           });
           
           try {
-            const fixResult = await this.structuralFixer.fixChapter(
+            // Build adjacent context for better narrative coherence
+            const adjacentContext = this.buildAdjacentChapterContext(validChapters, chapNum);
+            
+            // Use NarrativeRewriter for deep structural fixes
+            const rewriteResult = await this.narrativeRewriter.rewriteChapter(
               chapter.originalContent,
               chapNum,
-              chapterProblems,
+              chapterProblems.map((p: any) => ({
+                id: p.id || `P${chapterProblems.indexOf(p) + 1}`,
+                tipo: p.tipo || 'structural',
+                descripcion: p.descripcion,
+                severidad: p.severidad || 'mayor',
+                accionSugerida: p.accionSugerida
+              })),
               worldBibleResult,
+              adjacentContext,
               detectedLang
             );
-            this.trackTokens(fixResult);
+            this.trackTokens(rewriteResult);
             
-            if (fixResult.capituloCorregido && fixResult.correccionesRealizadas?.length > 0) {
+            // Check if rewrite was successful
+            const hasChanges = rewriteResult.cambiosRealizados?.length > 0 || 
+                              (rewriteResult.capituloReescrito && rewriteResult.capituloReescrito !== chapter.originalContent);
+            
+            if (rewriteResult.capituloReescrito && hasChanges) {
               await storage.updateReeditChapter(chapter.id, {
-                originalContent: fixResult.capituloCorregido,
+                originalContent: rewriteResult.capituloReescrito,
                 processingStage: "editing",
               });
               
               chaptersToReprocess.push(chapNum);
-              console.log(`[ReeditOrchestrator] Chapter ${chapNum} fixed with ${fixResult.correccionesRealizadas.length} corrections`);
+              rewriteResults.push({
+                chapter: chapNum,
+                problems: chapterProblems.length,
+                changes: rewriteResult.cambiosRealizados?.length || 0,
+                confidence: rewriteResult.verificacionInterna?.confianzaEnCorreccion || 0,
+                summary: rewriteResult.resumenEjecutivo
+              });
+              
+              console.log(`[ReeditOrchestrator] Chapter ${chapNum} rewritten: ${rewriteResult.cambiosRealizados?.length || 0} changes, confidence: ${rewriteResult.verificacionInterna?.confianzaEnCorreccion || 'N/A'}/10`);
             } else {
-              console.log(`[ReeditOrchestrator] Chapter ${chapNum}: No corrections applied by StructuralFixer`);
+              console.log(`[ReeditOrchestrator] Chapter ${chapNum}: No effective changes from NarrativeRewriter`);
             }
-          } catch (fixError) {
-            console.error(`[ReeditOrchestrator] Error fixing chapter ${chapNum}:`, fixError);
+          } catch (rewriteError) {
+            console.error(`[ReeditOrchestrator] Error rewriting chapter ${chapNum}:`, rewriteError);
           }
           
           fixedCount++;
           await this.updateHeartbeat(projectId);
         }
         
-        // Save structural fixing report
+        // Save narrative rewriting report
         await storage.createReeditAuditReport({
           projectId,
-          auditType: "structural_fix",
+          auditType: "narrative_rewrite",
           chapterRange: "all",
-          score: 8,
+          score: rewriteResults.length > 0 ? Math.round(rewriteResults.reduce((sum, r) => sum + (r.confidence || 7), 0) / rewriteResults.length) : 7,
           findings: {
             totalProblems: allProblems.length,
-            chaptersFixed: chaptersToReprocess.length,
+            chaptersRewritten: chaptersToReprocess.length,
             problems: allProblems,
+            rewriteResults: rewriteResults
           },
           recommendations: [],
         });
         
-        console.log(`[ReeditOrchestrator] Structural fixing complete: ${chaptersToReprocess.length} chapters updated`);
+        console.log(`[ReeditOrchestrator] Narrative rewriting complete: ${chaptersToReprocess.length} chapters updated`);
+        
+        // === POST-REWRITE VALIDATION ===
+        if (rewriteResults.length > 0) {
+          const avgConfidence = rewriteResults.reduce((sum, r) => sum + (r.confidence || 0), 0) / rewriteResults.length;
+          const totalChanges = rewriteResults.reduce((sum, r) => sum + (r.changes || 0), 0);
+          const successfulRewrites = rewriteResults.filter(r => r.confidence >= 7).length;
+          
+          console.log(`[ReeditOrchestrator] === VALIDATION SUMMARY ===`);
+          console.log(`  Chapters rewritten: ${chaptersToReprocess.length}/${problemsByChapter.size}`);
+          console.log(`  Total changes applied: ${totalChanges}`);
+          console.log(`  Average confidence: ${avgConfidence.toFixed(1)}/10`);
+          console.log(`  Successful rewrites (confidence >= 7): ${successfulRewrites}/${rewriteResults.length}`);
+          
+          if (avgConfidence < 6) {
+            console.log(`[ReeditOrchestrator] WARNING: Low average confidence. Some structural issues may not be fully resolved.`);
+          } else {
+            console.log(`[ReeditOrchestrator] Structural issues addressed with acceptable confidence.`);
+          }
+        }
         
         // Reload chapters to get updated content
         const updatedChapters = await storage.getReeditChaptersByProject(projectId);
         validChapters.length = 0;
         validChapters.push(...updatedChapters.filter(c => c.originalContent));
+      } else if (narrativeRewriteCompleted) {
+        const chaptersRewritten = (existingRewriteReport.findings as any)?.chaptersRewritten || 0;
+        console.log(`[ReeditOrchestrator] Skipping narrative rewriting (already completed: ${chaptersRewritten} chapters rewritten)`);
       } else {
         console.log(`[ReeditOrchestrator] No structural problems to fix`);
       }

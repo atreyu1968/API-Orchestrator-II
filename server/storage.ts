@@ -161,6 +161,7 @@ export interface IStorage {
   // Reedit Audit Reports
   createReeditAuditReport(data: InsertReeditAuditReport): Promise<ReeditAuditReport>;
   getReeditAuditReportsByProject(projectId: number): Promise<ReeditAuditReport[]>;
+  getReeditAuditReportByType(projectId: number, auditType: string): Promise<ReeditAuditReport | undefined>;
 
   // Reedit World Bibles
   createReeditWorldBible(data: InsertReeditWorldBible): Promise<ReeditWorldBible>;
@@ -906,6 +907,17 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(reeditAuditReports)
       .where(eq(reeditAuditReports.projectId, projectId))
       .orderBy(desc(reeditAuditReports.createdAt));
+  }
+
+  async getReeditAuditReportByType(projectId: number, auditType: string): Promise<ReeditAuditReport | undefined> {
+    const [report] = await db.select().from(reeditAuditReports)
+      .where(and(
+        eq(reeditAuditReports.projectId, projectId),
+        eq(reeditAuditReports.auditType, auditType)
+      ))
+      .orderBy(desc(reeditAuditReports.createdAt))
+      .limit(1);
+    return report;
   }
 
   // Reedit World Bibles
