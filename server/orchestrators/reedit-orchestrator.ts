@@ -1,6 +1,12 @@
 import { storage } from "../storage";
 import { BaseAgent } from "../agents/base-agent";
 import type { ReeditProject, ReeditChapter } from "@shared/schema";
+import { 
+  ChapterExpansionAnalyzer, 
+  ChapterExpanderAgent, 
+  NewChapterGeneratorAgent,
+  type ExpansionPlan 
+} from "../agents/chapter-expander";
 
 interface StructureAnalysis {
   hasIssues: boolean;
@@ -1139,6 +1145,9 @@ export class ReeditOrchestrator {
   private voiceRhythmAuditor: VoiceRhythmAuditorAgent;
   private semanticRepetitionDetector: SemanticRepetitionDetectorAgent;
   private anachronismDetector: AnachronismDetectorAgent;
+  private expansionAnalyzer: ChapterExpansionAnalyzer;
+  private chapterExpander: ChapterExpanderAgent;
+  private newChapterGenerator: NewChapterGeneratorAgent;
   private progressCallback: ProgressCallback | null = null;
   
   private totalInputTokens: number = 0;
@@ -1161,6 +1170,9 @@ export class ReeditOrchestrator {
     this.voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
     this.semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
     this.anachronismDetector = new AnachronismDetectorAgent();
+    this.expansionAnalyzer = new ChapterExpansionAnalyzer();
+    this.chapterExpander = new ChapterExpanderAgent();
+    this.newChapterGenerator = new NewChapterGeneratorAgent();
   }
   
   private trackTokens(response: any) {
@@ -1229,6 +1241,209 @@ export class ReeditOrchestrator {
       return true;
     }
     return false;
+  }
+
+  private async expandManuscript(
+    projectId: number,
+    project: ReeditProject,
+    validChapters: ReeditChapter[],
+    worldBible: any
+  ): Promise<ReeditChapter[]> {
+    const enableExpansion = project.expandChapters || false;
+    const enableNewChapters = project.insertNewChapters || false;
+    const targetMinWords = project.targetMinWordsPerChapter || 2000;
+
+    if (!enableExpansion && !enableNewChapters) {
+      console.log(`[ReeditOrchestrator] Expansion disabled for project ${projectId}`);
+      return validChapters;
+    }
+
+    console.log(`[ReeditOrchestrator] Starting manuscript expansion analysis`);
+    console.log(`  - Expand existing chapters: ${enableExpansion}`);
+    console.log(`  - Insert new chapters: ${enableNewChapters}`);
+    console.log(`  - Target min words/chapter: ${targetMinWords}`);
+
+    this.emitProgress({
+      projectId,
+      stage: "expansion",
+      currentChapter: 0,
+      totalChapters: validChapters.length,
+      message: "Analizando manuscrito para expansión...",
+    });
+
+    const projectGenre = (project as any).genre || "thriller literario";
+    
+    const chapterSummaries = validChapters.map(c => ({
+      chapterNumber: c.chapterNumber,
+      title: c.title || `Capítulo ${c.chapterNumber}`,
+      wordCount: c.wordCount || c.originalContent.split(/\s+/).length,
+      summary: c.originalContent.substring(0, 1500) + (c.originalContent.length > 1500 ? "..." : ""),
+    }));
+
+    const analysisResult = await this.expansionAnalyzer.execute({
+      chapters: chapterSummaries,
+      genre: projectGenre,
+      targetMinWordsPerChapter: targetMinWords,
+      enableNewChapters,
+      enableChapterExpansion: enableExpansion,
+    });
+    this.trackTokens(analysisResult);
+
+    if (!analysisResult.result) {
+      console.log(`[ReeditOrchestrator] Expansion analysis failed, continuing without expansion`);
+      return validChapters;
+    }
+
+    const plan = analysisResult.result;
+    console.log(`[ReeditOrchestrator] Expansion plan:`);
+    console.log(`  - Chapters to expand: ${plan.chaptersToExpand?.length || 0}`);
+    console.log(`  - New chapters to insert: ${plan.newChaptersToInsert?.length || 0}`);
+    console.log(`  - Estimated new words: ${plan.totalEstimatedNewWords || 0}`);
+
+    await storage.updateReeditProject(projectId, {
+      expansionPlan: plan as any,
+    });
+
+    let updatedChapters = [...validChapters];
+
+    if (enableExpansion && plan.chaptersToExpand?.length > 0) {
+      for (let i = 0; i < plan.chaptersToExpand.length; i++) {
+        const expansion = plan.chaptersToExpand[i];
+        const chapter = updatedChapters.find(c => c.chapterNumber === expansion.chapterNumber);
+        
+        if (!chapter) continue;
+
+        if (await this.checkCancellation(projectId)) return updatedChapters;
+
+        this.emitProgress({
+          projectId,
+          stage: "expansion",
+          currentChapter: i + 1,
+          totalChapters: plan.chaptersToExpand.length,
+          message: `Expandiendo capítulo ${chapter.chapterNumber}: ${chapter.title || "Sin título"}...`,
+        });
+
+        const adjacentContext = this.buildAdjacentChapterContext(updatedChapters, chapter.chapterNumber);
+
+        const expandResult = await this.chapterExpander.execute({
+          chapterContent: chapter.originalContent,
+          chapterNumber: chapter.chapterNumber,
+          chapterTitle: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+          expansionPlan: {
+            targetWords: expansion.targetWords,
+            expansionType: expansion.expansionType,
+            suggestedContent: expansion.suggestedContent,
+          },
+          worldBible,
+          adjacentContext: {
+            previousSummary: adjacentContext.previousSummary,
+            nextSummary: adjacentContext.nextSummary,
+          },
+        });
+        this.trackTokens(expandResult);
+
+        if (expandResult.result?.expandedContent) {
+          const newWordCount = expandResult.result.newWordCount || expandResult.result.expandedContent.split(/\s+/).length;
+          
+          await storage.updateReeditChapter(chapter.id, {
+            originalContent: expandResult.result.expandedContent,
+            wordCount: newWordCount,
+          });
+
+          const chapterIndex = updatedChapters.findIndex(c => c.id === chapter.id);
+          if (chapterIndex >= 0) {
+            updatedChapters[chapterIndex] = {
+              ...updatedChapters[chapterIndex],
+              originalContent: expandResult.result.expandedContent,
+              wordCount: newWordCount,
+            };
+          }
+
+          console.log(`[ReeditOrchestrator] Chapter ${chapter.chapterNumber} expanded: ${expansion.currentWords} -> ${newWordCount} words`);
+        }
+
+        await this.updateHeartbeat(projectId);
+      }
+    }
+
+    if (enableNewChapters && plan.newChaptersToInsert?.length > 0) {
+      const sortedInsertions = [...plan.newChaptersToInsert].sort(
+        (a, b) => b.insertAfterChapter - a.insertAfterChapter
+      );
+
+      for (let i = 0; i < sortedInsertions.length; i++) {
+        const insertion = sortedInsertions[i];
+        
+        if (await this.checkCancellation(projectId)) return updatedChapters;
+
+        this.emitProgress({
+          projectId,
+          stage: "expansion",
+          currentChapter: (plan.chaptersToExpand?.length || 0) + i + 1,
+          totalChapters: (plan.chaptersToExpand?.length || 0) + plan.newChaptersToInsert.length,
+          message: `Generando nuevo capítulo: "${insertion.title}"...`,
+        });
+
+        const prevChapter = updatedChapters.find(c => c.chapterNumber === insertion.insertAfterChapter);
+        const nextChapter = updatedChapters.find(c => c.chapterNumber === insertion.insertAfterChapter + 1);
+
+        const newChapterResult = await this.newChapterGenerator.execute({
+          insertAfterChapter: insertion.insertAfterChapter,
+          title: insertion.title,
+          purpose: insertion.purpose,
+          plotPoints: insertion.plotPoints,
+          estimatedWords: insertion.estimatedWords,
+          worldBible,
+          previousChapterSummary: prevChapter?.originalContent?.substring(0, 2000) || "No disponible",
+          nextChapterSummary: nextChapter?.originalContent?.substring(0, 2000) || "No disponible",
+          genre: projectGenre,
+        });
+        this.trackTokens(newChapterResult);
+
+        if (newChapterResult.result?.content) {
+          const newChapterNumber = insertion.insertAfterChapter + 0.5;
+          const wordCount = newChapterResult.result.wordCount || newChapterResult.result.content.split(/\s+/).length;
+
+          const newChapter = await storage.createReeditChapter({
+            projectId,
+            chapterNumber: newChapterNumber,
+            title: newChapterResult.result.title || insertion.title,
+            originalContent: newChapterResult.result.content,
+            wordCount,
+            status: "pending",
+            processingStage: "none",
+          });
+
+          updatedChapters.push(newChapter);
+          updatedChapters.sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+          console.log(`[ReeditOrchestrator] New chapter created after ${insertion.insertAfterChapter}: "${insertion.title}" (${wordCount} words)`);
+        }
+
+        await this.updateHeartbeat(projectId);
+      }
+
+      let newChapterNum = 1;
+      for (const chapter of updatedChapters) {
+        if (chapter.chapterNumber !== newChapterNum) {
+          await storage.updateReeditChapter(chapter.id, {
+            originalChapterNumber: chapter.chapterNumber,
+            chapterNumber: newChapterNum,
+          });
+          chapter.chapterNumber = newChapterNum;
+        }
+        newChapterNum++;
+      }
+
+      await storage.updateReeditProject(projectId, {
+        totalChapters: updatedChapters.length,
+      });
+    }
+
+    const totalWords = updatedChapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+    console.log(`[ReeditOrchestrator] Expansion complete: ${updatedChapters.length} chapters, ${totalWords} words`);
+
+    return updatedChapters;
   }
 
   private async collectQaFindings(projectId: number): Promise<Map<number, any[]>> {
@@ -1799,6 +2014,39 @@ export class ReeditOrchestrator {
           extractedFromChapters: validChapters.length,
           confidence: worldBibleResult.confianza || 7,
         });
+      }
+
+      // === STAGE 3.5: MANUSCRIPT EXPANSION (optional) ===
+      // Check cancellation before expansion
+      if (await this.checkCancellation(projectId)) {
+        console.log(`[ReeditOrchestrator] Processing cancelled before expansion stage`);
+        return;
+      }
+
+      // Reload project to get expansion settings
+      const projectWithExpansion = await storage.getReeditProject(projectId);
+      if (projectWithExpansion && (projectWithExpansion.expandChapters || projectWithExpansion.insertNewChapters)) {
+        await storage.updateReeditProject(projectId, { currentStage: "expansion" });
+        
+        const worldBibleForExpansion = {
+          characters: worldBibleResult.personajes || [],
+          locations: worldBibleResult.ubicaciones || [],
+          timeline: worldBibleResult.timeline || [],
+          rules: worldBibleResult.reglasDelMundo || [],
+        };
+
+        const expandedChapters = await this.expandManuscript(
+          projectId,
+          projectWithExpansion,
+          validChapters,
+          worldBibleForExpansion
+        );
+
+        // Update validChapters with expanded result
+        validChapters.length = 0;
+        validChapters.push(...expandedChapters);
+
+        await this.updateHeartbeat(projectId);
       }
 
       // === STAGE 4: ARCHITECT ANALYSIS ===

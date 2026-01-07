@@ -556,6 +556,10 @@ export const reeditProjects = pgTable("reedit_projects", {
   heartbeatAt: timestamp("heartbeat_at"),
   cancelRequested: boolean("cancel_requested").default(false),
   lastCompletedChapter: integer("last_completed_chapter").default(0),
+  expandChapters: boolean("expand_chapters").default(false),
+  insertNewChapters: boolean("insert_new_chapters").default(false),
+  targetMinWordsPerChapter: integer("target_min_words_per_chapter").default(2000),
+  expansionPlan: jsonb("expansion_plan"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

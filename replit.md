@@ -117,6 +117,28 @@ The re-edit pipeline has been optimized to reduce token consumption by 40-60%:
 - **Spanish accent support in severities**: Extended severity matching to include both "critica" and "crítica"
 - **consolidateAllProblems() function**: Helper function to merge Architect + QA findings by chapter
 
+### Manuscript Expansion System (NEW - 2026-01-07)
+
+New functionality to expand manuscripts by:
+1. **Chapter Expansion**: Automatically expands short chapters (below target word count) by adding scenes, dialogues, and descriptions
+2. **New Chapter Insertion**: Detects narrative gaps and inserts new intermediate chapters
+
+**New Agents**:
+- `ChapterExpansionAnalyzer`: Analyzes manuscript structure and creates expansion plan
+- `ChapterExpanderAgent`: Expands existing chapters while preserving author voice
+- `NewChapterGeneratorAgent`: Generates new chapters that integrate seamlessly
+
+**Configuration Fields** (reeditProjects table):
+- `expandChapters` (boolean): Enable chapter expansion
+- `insertNewChapters` (boolean): Enable new chapter insertion
+- `targetMinWordsPerChapter` (integer, default 2000): Minimum word target per chapter
+- `expansionPlan` (jsonb): Stores the expansion analysis results
+
+**Pipeline Integration**: Runs as STAGE 3.5 after World Bible extraction, before Architect analysis
+
+**UI**: Upload form now includes toggle switches for expansion options
+
 ### Project Status
 - Project 4 "La superficie rota": COMPLETED (65 chapters, 97,683 words, score 9/10, "muy alto potencial de mercado")
 - Pipeline optimization: IMPLEMENTED and ready for next project
+- Manuscript expansion system: IMPLEMENTED with 3 specialized agents

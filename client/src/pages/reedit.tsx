@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
@@ -670,6 +671,9 @@ export default function ReeditPage() {
   const [uploadLanguage, setUploadLanguage] = useState("es");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [expandChapters, setExpandChapters] = useState(false);
+  const [insertNewChapters, setInsertNewChapters] = useState(false);
+  const [targetMinWords, setTargetMinWords] = useState(2000);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
@@ -785,12 +789,15 @@ export default function ReeditPage() {
     formData.append("manuscript", uploadFile);
     formData.append("title", uploadTitle.trim());
     formData.append("language", uploadLanguage);
+    formData.append("expandChapters", expandChapters.toString());
+    formData.append("insertNewChapters", insertNewChapters.toString());
+    formData.append("targetMinWordsPerChapter", targetMinWords.toString());
     try {
       await uploadMutation.mutateAsync(formData);
     } finally {
       setIsUploading(false);
     }
-  }, [uploadFile, uploadTitle, uploadLanguage, uploadMutation, toast]);
+  }, [uploadFile, uploadTitle, uploadLanguage, expandChapters, insertNewChapters, targetMinWords, uploadMutation, toast]);
 
   useEffect(() => {
     if (!selectedProject && projects.length > 0) {
@@ -848,6 +855,49 @@ export default function ReeditPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-3 pt-2 border-t">
+                <p className="text-sm font-medium">Opciones de Expansión</p>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="expand-chapters" className="text-sm cursor-pointer">
+                    Expandir capítulos cortos
+                  </Label>
+                  <Switch
+                    id="expand-chapters"
+                    data-testid="switch-expand-chapters"
+                    checked={expandChapters}
+                    onCheckedChange={setExpandChapters}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="insert-chapters" className="text-sm cursor-pointer">
+                    Insertar nuevos capítulos
+                  </Label>
+                  <Switch
+                    id="insert-chapters"
+                    data-testid="switch-insert-chapters"
+                    checked={insertNewChapters}
+                    onCheckedChange={setInsertNewChapters}
+                  />
+                </div>
+                {(expandChapters || insertNewChapters) && (
+                  <div>
+                    <Label htmlFor="target-words" className="text-sm">
+                      Palabras mínimas por capítulo
+                    </Label>
+                    <Input
+                      id="target-words"
+                      type="number"
+                      data-testid="input-target-words"
+                      value={targetMinWords}
+                      onChange={(e) => setTargetMinWords(parseInt(e.target.value) || 2000)}
+                      min={500}
+                      max={5000}
+                      step={100}
+                      className="mt-1"
+                    />
+                  </div>
+                )}
               </div>
               <div>
                 <Label htmlFor="reedit-file">Archivo</Label>
