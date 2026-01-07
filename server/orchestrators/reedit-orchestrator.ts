@@ -1457,9 +1457,11 @@ export class ReeditOrchestrator {
           const tempChapterNumber = 9000 + i;
           const wordCount = newChapterResult.result.wordCount || newChapterResult.result.content.split(/\s+/).length;
 
-          const newChapter = await storage.createReeditChapter({
+          // Use createReeditChapterIfNotExists to prevent duplicates on pipeline restart/retry
+          const newChapter = await storage.createReeditChapterIfNotExists({
             projectId,
             chapterNumber: tempChapterNumber,
+            originalChapterNumber: tempChapterNumber, // Set originalChapterNumber for deduplication
             title: newChapterResult.result.title || insertion.title,
             originalContent: newChapterResult.result.content,
             wordCount,
