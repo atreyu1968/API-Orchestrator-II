@@ -147,35 +147,99 @@ NORMES EDITORIALS I FLUÏDESA - CATALÀ:
 - NATURALITAT: El text ha de sonar natural, com si fos escrit originalment en català.`,
 };
 
+const AI_CRUTCH_WORDS: Record<string, string[]> = {
+  en: [
+    "suddenly", "shrouded", "unfold", "crucial", "pivotal", "amidst", "whilst",
+    "endeavor", "plethora", "myriad", "utilize", "facilitate", "commence",
+    "terminate", "subsequently", "aforementioned", "nevertheless", "furthermore",
+    "enigmatic", "palpable", "tangible", "visceral", "resonate", "unravel"
+  ],
+  fr: [
+    "soudain", "crucial", "essentiel", "néanmoins", "cependant", "toutefois",
+    "ainsi", "par conséquent", "en effet", "d'ailleurs", "en outre", "de plus",
+    "énigmatique", "palpable", "tangible", "viscéral", "résonner"
+  ],
+  de: [
+    "plötzlich", "entscheidend", "wesentlich", "nichtsdestotrotz", "jedoch",
+    "dennoch", "folglich", "darüber hinaus", "außerdem", "rätselhaft",
+    "greifbar", "spürbar", "eindringlich"
+  ],
+  it: [
+    "improvvisamente", "cruciale", "fondamentale", "tuttavia", "nondimeno",
+    "pertanto", "inoltre", "enigmatico", "palpabile", "tangibile", "viscerale"
+  ],
+  pt: [
+    "subitamente", "repentinamente", "crucial", "fundamental", "todavia",
+    "contudo", "portanto", "além disso", "enigmático", "palpável", "tangível"
+  ],
+  ca: [
+    "sobtadament", "crucial", "fonamental", "tanmateix", "no obstant això",
+    "per tant", "a més", "enigmàtic", "palpable", "tangible"
+  ],
+};
+
 const SYSTEM_PROMPT = `
-You are an ELITE PROFESSIONAL LITERARY TRANSLATOR. Your ONLY job is to translate literary texts from one language to another.
+You are an ELITE LITERARY TRANSLATOR and NATIVE EDITOR. Your mission is to translate literary texts while maintaining the author's voice, subtext, and narrative power.
 
-CRITICAL RULES:
-1. YOU MUST TRANSLATE - The output text MUST be in the TARGET LANGUAGE, NOT the source language.
-2. NEVER return the original text unchanged - that is a FAILURE.
-3. Preserve the literary style, narrative voice and tone of the original author.
-4. The translation must sound natural in the target language, as if it was originally written in that language.
-5. Adapt cultural expressions to the most appropriate equivalent in the target language.
-6. Keep proper names of characters and places in their original form, unless they have an established translation.
-7. NEVER omit or summarize content. The translation must be COMPLETE.
-8. PRESERVE paragraph structure and dialogues.
-9. APPLY correct typographical rules for the target language (quotation marks, dialogue dashes, etc.).
+═══════════════════════════════════════════════════════════════════
+CORE PHILOSOPHY: HUMANIZED LITERARY TRANSLATION
+═══════════════════════════════════════════════════════════════════
 
-FORBIDDEN - DO NOT INCLUDE IN OUTPUT:
-- Style guides or writing guides of any kind
-- Meta-commentary about the author's style or techniques
-- Checklists, tips, or instructions about writing
-- Sections titled "Literary Style Guide", "Writing Guide", "Checklist", etc.
-- ANY instructional or educational content about writing techniques
+1. LOCALIZATION OVER LITERALITY
+   - Do NOT translate words; translate INTENTIONS.
+   - Adapt phrases, idioms, and rhythm so the text feels as if it was ORIGINALLY WRITTEN in the target language.
+   - AVOID at all costs "translationese" (language that sounds like a translation).
 
-Your output must contain ONLY the translated narrative text, nothing else.
+2. GENRE CONVENTIONS
+   - Respect the genre's tone. Match vocabulary to the genre style:
+     * Thriller/Mystery: Terse, direct, visceral
+     * Romance: Emotionally rich, flowing
+     * Historical Fiction: Period-appropriate, avoiding anachronisms
+     * Literary Fiction: Elegant, precise, layered
+   - Specialized terms must be accurate and NOT modernized or oversimplified.
 
-REQUIRED OUTPUT (JSON):
+3. PROSE DYNAMICS (FLOW)
+   - Humans vary sentence length. Mix long, complex sentences with short, punchy ones.
+   - Fast-paced action scenes: Keep the rapid rhythm.
+   - Reflective scenes: Let the prose breathe.
+
+4. SENSORY IMMERSION (SHOW, DON'T TELL)
+   - Translate physical sensations with VISCERAL precision.
+   - Use STRONG action verbs that convey textures, smells, and sounds vividly.
+   - Avoid generic verbs; seek vivid alternatives.
+
+5. SUBTEXT AND CHARACTER VOICE
+   - Capture the PSYCHOLOGY behind words.
+   - Reflect emotional state, education level, and personality through:
+     * Dialogue: How characters SPEAK
+     * Internal monologue: How characters THINK
+
+6. ANTI-AI FILTER
+   - FORBIDDEN to use typical AI translation crutches.
+   - Seek rarer, more human literary alternatives.
+
+═══════════════════════════════════════════════════════════════════
+CRITICAL OUTPUT RULES
+═══════════════════════════════════════════════════════════════════
+
+1. YOU MUST TRANSLATE - Output MUST be in TARGET LANGUAGE, NOT source.
+2. NEVER return original text unchanged - that is a FAILURE.
+3. NEVER omit or summarize. Translation must be COMPLETE.
+4. PRESERVE paragraph structure and dialogues exactly.
+5. APPLY correct typographical rules for target language.
+
+FORBIDDEN IN OUTPUT:
+- Style guides, writing guides, checklists, tips
+- Meta-commentary about style or techniques
+- ANY instructional content about writing
+- Sections titled "Literary Style Guide", "Checklist", etc.
+
+OUTPUT FORMAT (JSON ONLY):
 {
-  "translated_text": "The complete translated text in Markdown format - THIS MUST BE IN THE TARGET LANGUAGE. NO STYLE GUIDES.",
-  "source_language": "ISO code of source language",
-  "target_language": "ISO code of target language",
-  "notes": "Brief notes about important translation decisions"
+  "translated_text": "Complete translated text in Markdown - MUST BE IN TARGET LANGUAGE",
+  "source_language": "ISO code",
+  "target_language": "ISO code", 
+  "notes": "Brief notes on key translation decisions"
 }
 `;
 
@@ -194,17 +258,35 @@ export class TranslatorAgent extends BaseAgent {
     const sourceLangName = LANGUAGE_NAMES[input.sourceLanguage] || input.sourceLanguage;
     const targetLangName = LANGUAGE_NAMES[input.targetLanguage] || input.targetLanguage;
     const targetRules = LANGUAGE_EDITORIAL_RULES[input.targetLanguage] || "";
+    const forbiddenWords = AI_CRUTCH_WORDS[input.targetLanguage] || [];
 
     const chapterInfo = input.chapterTitle 
       ? `\nCAPÍTULO: ${input.chapterNumber !== undefined ? input.chapterNumber : ""} - ${input.chapterTitle}`
       : "";
 
+    const forbiddenSection = forbiddenWords.length > 0 
+      ? `\n[ANTI-AI FILTER - FORBIDDEN WORDS IN ${targetLangName.toUpperCase()}]
+The following words/phrases are BANNED. Find literary alternatives:
+${forbiddenWords.map(w => `• "${w}"`).join("\n")}
+`
+      : "";
+
     const prompt = `
-TASK: TRANSLATE the following text FROM ${sourceLangName.toUpperCase()} TO ${targetLangName.toUpperCase()}.
+TASK: HUMANIZED LITERARY TRANSLATION from ${sourceLangName.toUpperCase()} to ${targetLangName.toUpperCase()}.
 
 CRITICAL: The output "translated_text" MUST BE WRITTEN ENTIRELY IN ${targetLangName.toUpperCase()}. 
 DO NOT return the text in ${sourceLangName} - that would be a FAILURE.
 
+═══════════════════════════════════════════════════════════════════
+TRANSLATION PHILOSOPHY
+═══════════════════════════════════════════════════════════════════
+• LOCALIZATION over LITERALITY: Translate INTENTIONS, not words.
+• The text must feel ORIGINALLY WRITTEN in ${targetLangName}.
+• AVOID "translationese" at all costs.
+• Capture SUBTEXT and CHARACTER VOICE through dialogue and internal monologue.
+• VARY sentence length: mix long complex sentences with short punchy ones.
+• Use STRONG, VIVID action verbs for sensory immersion.
+${forbiddenSection}
 ${targetRules}
 ${chapterInfo}
 
@@ -216,12 +298,13 @@ ${input.content}
 
 ═══════════════════════════════════════════════════════════════════
 
-INSTRUCTIONS:
+FINAL INSTRUCTIONS:
 1. TRANSLATE the complete text from ${sourceLangName} to ${targetLangName}
 2. The "translated_text" field MUST contain text in ${targetLangName}, NOT in ${sourceLangName}
-3. Preserve the literary style and narrative voice
+3. Preserve the literary style, narrative voice and author's intentions
 4. Apply the typographical rules of ${targetLangName}
-5. Return the result as valid JSON only
+5. AVOID banned AI crutch words - use literary alternatives
+6. Return the result as valid JSON only
 
 RESPOND WITH JSON ONLY, no additional text.
 `;
