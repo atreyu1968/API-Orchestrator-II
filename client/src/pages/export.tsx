@@ -283,7 +283,8 @@ export default function ExportPage() {
       queryClient.resetQueries({ queryKey: ["/api/translations"] });
       queryClient.refetchQueries({ queryKey: ["/api/translations"], exact: true });
 
-      const safeFilename = data.title.replace(/[^a-zA-Z0-9\u00C0-\u024F\s]/g, "").replace(/\s+/g, "_");
+      const projectTitle = data.title || data.projectTitle || "traduccion";
+      const safeFilename = projectTitle.replace(/[^a-zA-Z0-9\u00C0-\u024F\s]/g, "").replace(/\s+/g, "_");
       downloadMarkdown(`${safeFilename}_${tgtLang.toUpperCase()}.md`, data.markdown);
 
       toast({
