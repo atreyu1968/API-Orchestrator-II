@@ -1773,7 +1773,7 @@ export class ReeditOrchestrator {
     }
     
     // Add QA findings (already in unified format by chapter)
-    for (const [chapNum, problems] of qaFindings) {
+    for (const [chapNum, problems] of Array.from(qaFindings.entries())) {
       if (!consolidatedByChapter.has(chapNum)) {
         consolidatedByChapter.set(chapNum, []);
       }
@@ -1789,8 +1789,8 @@ export class ReeditOrchestrator {
     }
     
     console.log(`[ReeditOrchestrator] Consolidated problems: ${consolidatedByChapter.size} chapters with issues`);
-    for (const [chapNum, problems] of consolidatedByChapter) {
-      console.log(`  - Chapter ${chapNum}: ${problems.length} problems (${problems.map(p => p.source).join(', ')})`);
+    for (const [chapNum, problems] of Array.from(consolidatedByChapter.entries())) {
+      console.log(`  - Chapter ${chapNum}: ${problems.length} problems (${(problems as any[]).map((p: any) => p.source).join(', ')})`);
     }
     
     return consolidatedByChapter;
@@ -2145,6 +2145,15 @@ export class ReeditOrchestrator {
         await this.updateHeartbeat(projectId);
       }
 
+      // Rebuild chaptersForBible AFTER expansion to include new/expanded chapters
+      // This ensures Architect analyzes the complete manuscript including expansions
+      const chaptersForArchitect = validChapters.map((c, i) => ({
+        num: c.chapterNumber,
+        content: c.editedContent || c.originalContent, // Use expanded content if available
+        feedback: editorFeedbacks[i] || { score: 7, issues: [], strengths: [] }
+      }));
+      console.log(`[ReeditOrchestrator] Rebuilt chapters for Architect: ${chaptersForArchitect.length} chapters (includes expansions)`);
+
       // === STAGE 4: ARCHITECT ANALYSIS ===
       // Check if Architect analysis already exists (resume support)
       const existingArchitectReport = await storage.getReeditAuditReportsByProject(projectId);
@@ -2168,7 +2177,7 @@ export class ReeditOrchestrator {
 
         architectResult = await this.architectAnalyzer.analyzeArchitecture(
           worldBibleResult,
-          chaptersForBible,
+          chaptersForArchitect,
           structureAnalysis
         );
         this.trackTokens(architectResult);
