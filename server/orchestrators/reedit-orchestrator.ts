@@ -2393,7 +2393,7 @@ export class ReeditOrchestrator {
         await this.updateHeartbeat(projectId, endChap);
       }
 
-      // 4.5c: Semantic Repetition Detector - full manuscript
+      // 4.5c: Semantic Repetition Detector - full manuscript (needs REAL content, not summaries)
       this.emitProgress({
         projectId,
         stage: "qa",
@@ -2402,8 +2402,13 @@ export class ReeditOrchestrator {
         message: "Detector de Repetición Semántica: manuscrito completo...",
       });
 
+      // Pass real chapter content to semantic detector, not empty summaries
+      const chapterContentsForSemantic = validChapters.map(c => 
+        `=== CAPÍTULO ${c.chapterNumber}: ${c.title || ''} ===\n${c.editedContent || c.originalContent}`
+      );
+      
       const semanticResult = await this.semanticRepetitionDetector.detectRepetitions(
-        chapterSummaries,
+        chapterContentsForSemantic,
         validChapters.length
       );
       this.trackTokens(semanticResult);
