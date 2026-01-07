@@ -542,6 +542,7 @@ export const reeditProjects = pgTable("reedit_projects", {
   processedChapters: integer("processed_chapters").default(0),
   currentStage: text("current_stage").notNull().default("uploaded"), // uploaded, analyzing, editing, auditing, reviewing, completed
   currentChapter: integer("current_chapter").default(0),
+  currentActivity: text("current_activity"), // Real-time progress message shown in UI
   bestsellerScore: integer("bestseller_score"), // 1-10 final score
   finalReviewResult: jsonb("final_review_result"),
   structureAnalysis: jsonb("structure_analysis"), // Chapter order issues, duplicates detected

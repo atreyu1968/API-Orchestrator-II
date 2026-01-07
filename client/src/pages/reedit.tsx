@@ -1152,12 +1152,18 @@ export default function ReeditPage() {
                     </div>
 
                     {selectedProjectData.status === "processing" && (
-                      <div>
+                      <div className="space-y-3">
                         <div className="flex items-center justify-between text-sm mb-2">
-                          <span>Procesando capítulos...</span>
+                          <span>Procesando manuscrito...</span>
                           <span>{Math.round(progress)}%</span>
                         </div>
                         <Progress value={progress} />
+                        {selectedProjectData.currentActivity && (
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 p-3 rounded-md" data-testid="text-current-activity">
+                            <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                            <span className="line-clamp-2">{selectedProjectData.currentActivity}</span>
+                          </div>
+                        )}
                       </div>
                     )}
 

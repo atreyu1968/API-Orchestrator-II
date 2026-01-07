@@ -1824,6 +1824,12 @@ export class ReeditOrchestrator {
       this.progressCallback(progress);
     }
     console.log(`[ReeditOrchestrator] ${progress.stage}: ${progress.message}`);
+    
+    // Persist activity message to database for real-time UI updates
+    storage.updateReeditProject(progress.projectId, {
+      currentActivity: progress.message,
+      currentChapter: progress.currentChapter,
+    }).catch(err => console.error("[ReeditOrchestrator] Failed to update currentActivity:", err));
   }
 
   async analyzeStructure(chapters: ReeditChapter[]): Promise<StructureAnalysis> {
