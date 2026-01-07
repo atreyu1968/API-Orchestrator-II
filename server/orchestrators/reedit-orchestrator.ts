@@ -1959,7 +1959,7 @@ export class ReeditOrchestrator {
         message: "Analizando estructura del manuscrito...",
       });
 
-      const structureAnalysis = await this.analyzeStructure(chapters);
+      let structureAnalysis = await this.analyzeStructure(chapters);
       await storage.updateReeditProject(projectId, {
         currentStage: "analyzing",
         structureAnalysis: structureAnalysis as any,
@@ -2178,6 +2178,17 @@ export class ReeditOrchestrator {
         feedback: editorFeedbacks[i] || { score: 7, issues: [], strengths: [] }
       }));
       console.log(`[ReeditOrchestrator] Rebuilt chapters for Architect: ${chaptersForArchitect.length} chapters (includes expansions)`);
+
+      // Re-analyze structure after expansion to reflect new/modified chapters
+      if (projectWithExpansion?.expandChapters || projectWithExpansion?.insertNewChapters) {
+        console.log(`[ReeditOrchestrator] Re-analyzing structure after expansion...`);
+        structureAnalysis = await this.analyzeStructure(validChapters);
+        await storage.updateReeditProject(projectId, {
+          structureAnalysis: structureAnalysis as any,
+          totalChapters: validChapters.length,
+        });
+        console.log(`[ReeditOrchestrator] Structure re-analyzed: ${validChapters.length} chapters, issues: ${structureAnalysis.hasIssues}`);
+      }
 
       // === STAGE 4: ARCHITECT ANALYSIS ===
       // Check if Architect analysis already exists (resume support)
