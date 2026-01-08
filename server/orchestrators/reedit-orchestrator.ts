@@ -2126,46 +2126,70 @@ export class ReeditOrchestrator {
     this.totalThinkingTokens = project.totalThinkingTokens || 0;
     console.log(`[ReeditOrchestrator] Loaded existing tokens: ${this.totalInputTokens} input, ${this.totalOutputTokens} output, ${this.totalThinkingTokens} thinking`);
 
+    // Detect resume stage - if project was interrupted, continue from where it left off
+    const resumeStage = project.currentStage || "none";
+    const stageOrder = ["none", "analyzing", "editing", "world_bible", "expansion", "architect", "qa", "narrative_rewriting", "copyediting", "reviewing", "completed"];
+    const resumeStageIndex = stageOrder.indexOf(resumeStage);
+    
+    if (resumeStageIndex > 0 && resumeStage !== "completed") {
+      console.log(`[ReeditOrchestrator] RESUMING project ${projectId} from stage: ${resumeStage} (index ${resumeStageIndex})`);
+      this.emitProgress({
+        projectId,
+        stage: resumeStage as any,
+        currentChapter: 0,
+        totalChapters: 0,
+        message: `Retomando procesamiento desde etapa: ${resumeStage}...`,
+      });
+    }
+
     try {
       await storage.updateReeditProject(projectId, { status: "processing" });
 
       const chapters = await storage.getReeditChaptersByProject(projectId);
       
       // === STAGE 1: STRUCTURE ANALYSIS ===
-      this.emitProgress({
-        projectId,
-        stage: "analyzing",
-        currentChapter: 0,
-        totalChapters: chapters.length,
-        message: "Analizando estructura del manuscrito...",
-      });
-
-      let structureAnalysis = await this.analyzeStructure(chapters);
-      await storage.updateReeditProject(projectId, {
-        currentStage: "analyzing",
-        structureAnalysis: structureAnalysis as any,
-      });
-
-      for (const dup of structureAnalysis.duplicateChapters) {
-        await storage.updateReeditChapter(dup.chapterId, {
-          isDuplicate: true,
-          duplicateOfChapter: dup.duplicateOf,
-          status: "skipped",
+      // Skip if already past this stage
+      const skipAnalyzing = resumeStageIndex > stageOrder.indexOf("analyzing");
+      let structureAnalysis: any = project.structureAnalysis || { duplicateChapters: [], outOfOrderChapters: [], missingChapters: [] };
+      
+      if (!skipAnalyzing) {
+        this.emitProgress({
+          projectId,
+          stage: "analyzing",
+          currentChapter: 0,
+          totalChapters: chapters.length,
+          message: "Analizando estructura del manuscrito...",
         });
-      }
 
-      for (const ooo of structureAnalysis.outOfOrderChapters) {
-        const chapter = chapters.find(c => c.chapterNumber === ooo.chapterNumber);
-        if (chapter) {
-          await storage.updateReeditChapter(chapter.id, {
-            isOutOfOrder: true,
-            suggestedOrder: ooo.suggestedPosition,
+        structureAnalysis = await this.analyzeStructure(chapters);
+        await storage.updateReeditProject(projectId, {
+          currentStage: "analyzing",
+          structureAnalysis: structureAnalysis as any,
+        });
+
+        for (const dup of structureAnalysis.duplicateChapters) {
+          await storage.updateReeditChapter(dup.chapterId, {
+            isDuplicate: true,
+            duplicateOfChapter: dup.duplicateOf,
+            status: "skipped",
           });
         }
+
+        for (const ooo of structureAnalysis.outOfOrderChapters) {
+          const chapter = chapters.find(c => c.chapterNumber === ooo.chapterNumber);
+          if (chapter) {
+            await storage.updateReeditChapter(chapter.id, {
+              isOutOfOrder: true,
+              suggestedOrder: ooo.suggestedPosition,
+            });
+          }
+        }
+      } else {
+        console.log(`[ReeditOrchestrator] Skipping STAGE 1 (analyzing) - already completed`);
       }
 
       let validChapters = chapters.filter(c => {
-        const isDup = structureAnalysis.duplicateChapters.some(d => d.chapterId === c.id);
+        const isDup = structureAnalysis.duplicateChapters?.some((d: any) => d.chapterId === c.id);
         return !isDup;
       }).sort((a, b) => a.chapterNumber - b.chapterNumber);
 
