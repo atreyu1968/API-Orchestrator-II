@@ -1319,6 +1319,64 @@ export class ReeditOrchestrator {
     return `Capítulo ${newChapterNumber}: ${title}`;
   }
 
+  /**
+   * Update the chapter header inside the content text to match new chapter number.
+   * This ensures the internal text reflects the correct chapter numbering.
+   * Returns the updated content, or the original if no header was found.
+   */
+  private normalizeChapterHeaderContent(
+    content: string | null,
+    newChapterNumber: number,
+    updatedTitle: string
+  ): string | null {
+    if (!content) return content;
+    
+    // Special titles that should NOT be renumbered
+    const specialTitles = /^(prólogo|epílogo|preludio|interludio|epilogue|prologue|prelude|interlude)/i;
+    if (specialTitles.test(updatedTitle.trim())) {
+      return content;
+    }
+    
+    // Pattern to match chapter headers at the start of content (with variations)
+    // Matches: "Capítulo X", "Capítulo X:", "Capítulo X -", "CAPÍTULO X", "Chapter X", etc.
+    // Also handles "Capitulo" without accent, roman numerals, etc.
+    const headerPatterns = [
+      // Spanish: Capítulo X: Título or Capítulo X - Título or just Capítulo X
+      /^(Capítulo|Capitulo|CAPÍTULO|CAPITULO)\s+(\d+|[IVXLCDM]+)\s*[:|-]?\s*([^\n]*)/im,
+      // English: Chapter X: Title
+      /^(Chapter|CHAPTER)\s+(\d+|[IVXLCDM]+)\s*[:|-]?\s*([^\n]*)/im,
+      // French: Chapitre X
+      /^(Chapitre|CHAPITRE)\s+(\d+|[IVXLCDM]+)\s*[:|-]?\s*([^\n]*)/im,
+      // Italian: Capitolo X
+      /^(Capitolo|CAPITOLO)\s+(\d+|[IVXLCDM]+)\s*[:|-]?\s*([^\n]*)/im,
+      // German: Kapitel X
+      /^(Kapitel|KAPITEL)\s+(\d+|[IVXLCDM]+)\s*[:|-]?\s*([^\n]*)/im,
+      // Catalan: Capítol X
+      /^(Capítol|Capitol|CAPÍTOL|CAPITOL)\s+(\d+|[IVXLCDM]+)\s*[:|-]?\s*([^\n]*)/im,
+    ];
+    
+    for (const pattern of headerPatterns) {
+      const match = content.match(pattern);
+      if (match) {
+        const keyword = match[1]; // e.g., "Capítulo", "Chapter"
+        // Reconstruct the header with the new number
+        // Use the title directly as it already has the correct format
+        const newHeader = updatedTitle;
+        
+        // Replace the old header with the new one
+        const updatedContent = content.replace(pattern, newHeader);
+        
+        if (updatedContent !== content) {
+          console.log(`[ReeditOrchestrator] Updated internal header: "${match[0].substring(0, 50)}..." -> "${newHeader}"`);
+          return updatedContent;
+        }
+        break;
+      }
+    }
+    
+    return content;
+  }
+
   private buildAdjacentChapterContext(
     chapters: ReeditChapter[],
     currentChapterNumber: number
@@ -1652,6 +1710,7 @@ export class ReeditOrchestrator {
   /**
    * Renumber all chapters in the database based on their _sortOrder (or chapterNumber).
    * This ensures new chapters appear in the correct position in the UI immediately.
+   * Also updates the internal chapter headers in originalContent and editedContent.
    */
   private async renumberChaptersInDatabase(
     chapters: ReeditChapter[],
@@ -1674,6 +1733,36 @@ export class ReeditOrchestrator {
         console.log(`[ReeditOrchestrator] Renaming: "${chapter.title}" -> "${updatedTitle}"`);
       }
       
+      // Update internal chapter headers in content (originalContent and editedContent)
+      // This ensures the text content matches the new chapter number
+      if (chapter.chapterNumber !== newChapterNum || updatedTitle !== chapter.title) {
+        const titleForContent = updatedTitle;
+        
+        // Update originalContent header
+        const updatedOriginalContent = this.normalizeChapterHeaderContent(
+          chapter.originalContent,
+          newChapterNum,
+          titleForContent
+        );
+        if (updatedOriginalContent && updatedOriginalContent !== chapter.originalContent) {
+          updates.originalContent = updatedOriginalContent;
+          chapter.originalContent = updatedOriginalContent;
+        }
+        
+        // Update editedContent header if it exists
+        if (chapter.editedContent) {
+          const updatedEditedContent = this.normalizeChapterHeaderContent(
+            chapter.editedContent,
+            newChapterNum,
+            titleForContent
+          );
+          if (updatedEditedContent && updatedEditedContent !== chapter.editedContent) {
+            updates.editedContent = updatedEditedContent;
+            chapter.editedContent = updatedEditedContent;
+          }
+        }
+      }
+      
       // Apply updates if any
       if (Object.keys(updates).length > 0) {
         await storage.updateReeditChapter(chapter.id, updates);
@@ -1689,7 +1778,7 @@ export class ReeditOrchestrator {
       totalChapters: chapters.length,
     });
     
-    console.log(`[ReeditOrchestrator] Renumbered ${chapters.length} chapters in database`);
+    console.log(`[ReeditOrchestrator] Renumbered ${chapters.length} chapters in database (including internal content headers)`);
   }
 
   /**

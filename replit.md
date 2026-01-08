@@ -154,6 +154,27 @@ The Architect Analyzer can now recommend and automatically execute chapter reord
 - Inserted chapters now automatically get "Capítulo X:" prefix (previously only preserved existing prefixes)
 - Special titles (Prólogo, Epílogo, Preludio, Interludio) are preserved without prefix
 
+### Internal Chapter Header Sync (NEW - 2026-01-08)
+
+When chapters are renumbered (via reordering or insertion), the system now updates:
+1. **Metadata** (`chapterNumber`, `title`) - as before
+2. **Internal Content** (`originalContent`, `editedContent`) - NEW: headers inside the text are updated
+
+**normalizeChapterHeaderContent()** function:
+- Detects chapter headers in 6 languages (Spanish, English, French, Italian, German, Catalan)
+- Replaces old header with new title matching the renumbered position
+- Preserves special sections (Prólogo, Epílogo, etc.) without renumbering
+- Works with various formats: "Capítulo X:", "Capítulo X -", "CAPÍTULO X", etc.
+
+### Automatic Pause System (NEW - 2026-01-08)
+
+The system now pauses automatically after 15 non-perfect evaluations (< 10/10):
+- Status changes to `awaiting_instructions`
+- `pauseReason` field explains why the pause occurred
+- User can provide instructions via textarea in UI
+- On resume, `nonPerfectFinalReviews` counter resets to 0
+- `pendingUserInstructions` passed to next correction cycle
+
 ### Perfection Mode (10/10 Scoring)
 
 All agents now target 10/10 perfection:
