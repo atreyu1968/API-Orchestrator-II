@@ -185,9 +185,20 @@ All agents now target 10/10 perfection:
 - **Final Reviewer**: MUST give 10/10 when manuscript is perfect (no artificial criticism)
 - **Approval Logic**: Requires TWO consecutive 10/10 scores (no escape hatch)
 
+### Critical Bug Fix (2026-01-08)
+
+**Problem**: Projects could be marked "completed" with low scores (e.g., 6/10) without resolving critical issues. The while loop would exit after reaching `maxFinalReviewCycles` (10) and proceed to mark as "completed" without verifying 2x 10/10 consecutive scores were achieved.
+
+**Solution**: Added mandatory pause check after the review loop exits:
+- If `consecutiveHighScores < requiredConsecutiveHighScores`, the project is set to `awaiting_instructions` status
+- The project is NOT marked as "completed" until 2x consecutive 10/10 scores are achieved
+- This applies to both `runReedit()` and `runFinalReviewOnly()` functions
+
+**Result**: Projects will NEVER close with unresolved problems. They will pause waiting for user instructions instead.
+
 ### Project Status
 - Project 4 "La superficie rota": COMPLETED (65 chapters, 97,683 words, score 9/10, "muy alto potencial de mercado")
-- Project 5: 40 chapters with 5 inserted chapters, titles now correctly formatted
+- Project 5 "El silencio de las plataneras": AWAITING_INSTRUCTIONS (40 chapters, score 6/10, critical issues to resolve: redundant ch36, Gaspar death inconsistency, geographic inconsistency)
 - Pipeline optimization: IMPLEMENTED and ready for next project
 - Manuscript expansion system: IMPLEMENTED with 3 specialized agents
 - Chapter reordering: IMPLEMENTED with automatic title renumbering

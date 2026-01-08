@@ -3228,6 +3228,35 @@ export class ReeditOrchestrator {
         });
       }
 
+      // CRITICAL: If we exited the loop without achieving 2x consecutive 10/10, pause for instructions
+      // This prevents projects from being marked "completed" with low scores
+      if (consecutiveHighScores < this.requiredConsecutiveHighScores) {
+        const pauseReason = `El proceso alcanzó ${revisionCycle} ciclos sin lograr 2 puntuaciones 10/10 consecutivas. Última puntuación: ${Math.round(bestsellerScore)}/10. Por favor, revisa los problemas detectados y proporciona instrucciones para continuar.`;
+        
+        console.log(`[ReeditOrchestrator] PAUSING: Did not achieve required consecutive 10/10 scores. Score: ${bestsellerScore}/10`);
+        
+        await storage.updateReeditProject(projectId, {
+          status: "awaiting_instructions",
+          pauseReason,
+          revisionCycle,
+          consecutiveHighScores,
+          nonPerfectFinalReviews: nonPerfectCount,
+          previousScores: previousScores as any,
+          finalReviewResult: finalResult,
+          bestsellerScore: Math.round(bestsellerScore),
+        });
+        
+        this.emitProgress({
+          projectId,
+          stage: "paused",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: pauseReason,
+        });
+        
+        return; // Exit without marking as completed
+      }
+
       for (const chapter of validChapters) {
         await storage.updateReeditChapter(chapter.id, {
           status: "completed",
@@ -3521,6 +3550,33 @@ export class ReeditOrchestrator {
       revisionCycle++;
     }
 
+    // CRITICAL: If we exited the loop without achieving 2x consecutive 10/10, pause for instructions
+    if (consecutiveHighScores < this.requiredConsecutiveHighScores) {
+      const pauseReason = `El proceso alcanzó ${revisionCycle} ciclos sin lograr 2 puntuaciones 10/10 consecutivas. Última puntuación: ${Math.round(bestsellerScore)}/10. Por favor, revisa los problemas detectados y proporciona instrucciones para continuar.`;
+      
+      console.log(`[ReeditOrchestrator] PAUSING (runFinalReviewOnly): Did not achieve required consecutive 10/10 scores. Score: ${bestsellerScore}/10`);
+      
+      await storage.updateReeditProject(projectId, {
+        status: "awaiting_instructions",
+        pauseReason,
+        revisionCycle,
+        consecutiveHighScores,
+        previousScores: previousScores as any,
+        finalReviewResult: finalResult,
+        bestsellerScore: Math.round(bestsellerScore),
+      });
+      
+      this.emitProgress({
+        projectId,
+        stage: "paused",
+        currentChapter: validChapters.length,
+        totalChapters: validChapters.length,
+        message: pauseReason,
+      });
+      
+      return; // Exit without marking as completed
+    }
+
     await storage.createReeditAuditReport({
       projectId,
       auditType: "final_review",
@@ -3535,7 +3591,7 @@ export class ReeditOrchestrator {
     await storage.updateReeditProject(projectId, {
       currentStage: "completed",
       status: "completed",
-      bestsellerScore,
+      bestsellerScore: Math.round(bestsellerScore),
       finalReviewResult: finalResult,
       totalWordCount: totalWords,
       totalInputTokens: this.totalInputTokens,
@@ -3543,9 +3599,7 @@ export class ReeditOrchestrator {
       totalThinkingTokens: this.totalThinkingTokens,
     });
 
-    const finalMessage = consecutiveHighScores >= this.requiredConsecutiveHighScores
-      ? `Revisión final completa. Puntuación bestseller: ${bestsellerScore}/10 (confirmado ${this.requiredConsecutiveHighScores}x consecutivas)`
-      : `Revisión final completa. Puntuación bestseller: ${bestsellerScore}/10`;
+    const finalMessage = `Revisión final completa. Puntuación bestseller: ${Math.round(bestsellerScore)}/10 (confirmado ${this.requiredConsecutiveHighScores}x consecutivas)`;
 
     this.emitProgress({
       projectId,
