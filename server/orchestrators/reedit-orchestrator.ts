@@ -2215,17 +2215,23 @@ export class ReeditOrchestrator {
     this.totalThinkingTokens = project.totalThinkingTokens || 0;
     console.log(`[ReeditOrchestrator] Loaded existing tokens: ${this.totalInputTokens} input, ${this.totalOutputTokens} output, ${this.totalThinkingTokens} thinking`);
 
-    // SPECIAL CASE: If resuming from awaiting_instructions with existing finalReviewResult,
-    // skip directly to applying corrections based on final review + user instructions
+    // SPECIAL CASE: If resuming with existing finalReviewResult OR already in reviewing stage,
+    // skip directly to final review (don't re-run entire pipeline)
     const hasExistingFinalReview = project.finalReviewResult && 
-      ((project.finalReviewResult as any).issues?.length > 0 || 
+      ((project.finalReviewResult as any).puntuacion_global !== undefined ||
+       (project.finalReviewResult as any).issues?.length > 0 || 
        (project.finalReviewResult as any).capitulos_para_reescribir?.length > 0);
     const hasUserInstructions = project.pendingUserInstructions && project.pendingUserInstructions.trim().length > 0;
-    // Only trigger fast-track if project was actually awaiting instructions (not if it was successfully completed)
+    // Trigger fast-track if:
+    // 1. Project was awaiting instructions with issues to fix
+    // 2. Project was in "reviewing" stage (already past all earlier stages)
+    // 3. Project has consecutive high scores pending confirmation
+    const isResumingFromReviewing = project.currentStage === "reviewing";
+    const hasConsecutiveScoresPending = (project.consecutiveHighScores || 0) >= 1;
     const isResumingFromPause = project.status === "awaiting_instructions" || 
-      (project.status !== "completed" && (project.currentStage === "reviewing" || project.currentStage === "completed"));
+      (project.status !== "completed" && isResumingFromReviewing);
     
-    if (hasExistingFinalReview && isResumingFromPause && (hasUserInstructions || project.currentStage === "reviewing" || project.currentStage === "completed")) {
+    if ((hasExistingFinalReview && isResumingFromPause) || (isResumingFromReviewing && hasConsecutiveScoresPending)) {
       console.log(`[ReeditOrchestrator] FAST-TRACK RESUME: Project has finalReviewResult with issues. Skipping to corrections + final review.`);
       console.log(`  - User instructions: ${hasUserInstructions ? 'YES' : 'NO'}`);
       console.log(`  - Previous stage: ${project.currentStage}`);
@@ -3370,7 +3376,9 @@ export class ReeditOrchestrator {
     const guiaEstilo = (project as any).styleGuide || "";
 
     let revisionCycle = 0;
-    let consecutiveHighScores = 0;
+    // Preserve existing consecutive high scores when resuming
+    let consecutiveHighScores = project.consecutiveHighScores || 0;
+    console.log(`[ReeditOrchestrator] Starting with ${consecutiveHighScores} consecutive high score(s) from previous session`);
     const previousScores: number[] = [];
     let finalResult: FinalReviewerResult | null = null;
     let bestsellerScore = 0;
@@ -3384,9 +3392,15 @@ export class ReeditOrchestrator {
       // NOTE: Instructions are cleared AFTER corrections are applied successfully (see below)
     }
     
-    // If we have an existing finalReviewResult, apply those corrections FIRST before running review
+    // If we have an existing finalReviewResult with issues, apply those corrections FIRST before running review
+    // Skip corrections if we already have consecutive high scores (meaning previous review was 10/10)
     const existingFinalReview = project.finalReviewResult as any;
-    if (existingFinalReview?.issues?.length > 0 || existingFinalReview?.capitulos_para_reescribir?.length > 0) {
+    const hasIssuesToFix = existingFinalReview?.issues?.length > 0 || existingFinalReview?.capitulos_para_reescribir?.length > 0;
+    const skipCorrectionsForConsecutive = consecutiveHighScores >= 1 && !hasIssuesToFix;
+    
+    if (skipCorrectionsForConsecutive) {
+      console.log(`[ReeditOrchestrator] Previous review was 10/10 with no issues. Proceeding directly to confirmation review.`);
+    } else if (hasIssuesToFix) {
       console.log(`[ReeditOrchestrator] Applying corrections from existing finalReviewResult before re-review...`);
       
       const issues = existingFinalReview.issues || [];
