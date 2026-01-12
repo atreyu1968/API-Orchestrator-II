@@ -2679,13 +2679,13 @@ IMPORTANTE:
         return res.status(404).json({ error: "Extended guide not found" });
       }
 
-      const allowedFields = ["title", "description"];
       const updateData: Record<string, any> = {};
       
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updateData[field] = req.body[field];
-        }
+      if (req.body.title !== undefined) {
+        updateData.title = req.body.title;
+      }
+      if (req.body.description !== undefined) {
+        updateData.description = req.body.description;
       }
 
       const updated = await storage.updateExtendedGuide(id, updateData);
