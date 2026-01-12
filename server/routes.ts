@@ -2256,14 +2256,12 @@ ${series.seriesGuide.substring(0, 50000)}`;
         return res.status(404).json({ error: "Chapter not found" });
       }
 
-      const allowedFields = ["editedContent", "changesLog", "status"];
       const updateData: Record<string, any> = {};
+      const body = req.body as Record<string, unknown>;
       
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updateData[field] = req.body[field];
-        }
-      }
+      if (body.editedContent !== undefined) updateData.editedContent = body.editedContent;
+      if (body.changesLog !== undefined) updateData.changesLog = body.changesLog;
+      if (body.status !== undefined) updateData.status = body.status;
 
       const updated = await storage.updateImportedChapter(id, updateData);
       res.json(updated);
