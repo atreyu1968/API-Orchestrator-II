@@ -2227,17 +2227,18 @@ ${series.seriesGuide.substring(0, 50000)}`;
         return res.status(404).json({ error: "Manuscript not found" });
       }
 
-      const allowedFields = [
-        "status", "processedChapters", "totalInputTokens", "totalOutputTokens", 
-        "totalThinkingTokens", "seriesId", "seriesOrder", "pseudonymId", "totalWordCount"
-      ];
       const updateData: Record<string, any> = {};
+      const body = req.body as Record<string, unknown>;
       
-      for (const field of allowedFields) {
-        if (req.body[field] !== undefined) {
-          updateData[field] = req.body[field];
-        }
-      }
+      if (body.status !== undefined) updateData.status = body.status;
+      if (body.processedChapters !== undefined) updateData.processedChapters = body.processedChapters;
+      if (body.totalInputTokens !== undefined) updateData.totalInputTokens = body.totalInputTokens;
+      if (body.totalOutputTokens !== undefined) updateData.totalOutputTokens = body.totalOutputTokens;
+      if (body.totalThinkingTokens !== undefined) updateData.totalThinkingTokens = body.totalThinkingTokens;
+      if (body.seriesId !== undefined) updateData.seriesId = body.seriesId;
+      if (body.seriesOrder !== undefined) updateData.seriesOrder = body.seriesOrder;
+      if (body.pseudonymId !== undefined) updateData.pseudonymId = body.pseudonymId;
+      if (body.totalWordCount !== undefined) updateData.totalWordCount = body.totalWordCount;
 
       const updated = await storage.updateImportedManuscript(id, updateData);
       res.json(updated);
