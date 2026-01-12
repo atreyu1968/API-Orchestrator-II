@@ -3215,6 +3215,12 @@ export class ReeditOrchestrator {
             .slice(0, 5);
           
           for (let i = 0; i < chaptersNeedingFix.length; i++) {
+            // Check cancellation before each chapter fix
+            if (await this.checkCancellation(projectId)) {
+              console.log(`[ReeditOrchestrator] Cancelled during chapter correction ${i + 1}/${chaptersNeedingFix.length}`);
+              return;
+            }
+            
             const chapter = chaptersNeedingFix[i];
             
             // Get issues specific to this chapter
@@ -3690,6 +3696,12 @@ export class ReeditOrchestrator {
           .slice(0, 5);
         
         for (let i = 0; i < chaptersNeedingFix.length; i++) {
+          // Check cancellation before each chapter fix
+          if (await this.checkCancellation(projectId)) {
+            console.log(`[ReeditOrchestrator] Cancelled during chapter correction (FRO) ${i + 1}/${chaptersNeedingFix.length}`);
+            return;
+          }
+          
           const chapter = chaptersNeedingFix[i];
           
           // Get issues specific to this chapter
