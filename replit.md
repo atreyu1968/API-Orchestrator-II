@@ -59,6 +59,7 @@ Preferred communication style: Simple, everyday language.
 - **Issue Hash Tracking System**: Prevents re-reporting of already resolved issues by generating and tracking unique hashes for issues.
 - **Improved Cancellation**: Allows for immediate cancellation of processes, with checks implemented before each chapter correction.
 - **Fast-Track Resume System**: Optimizes project resumption from `awaiting_instructions` by skipping unnecessary pipeline stages and directly engaging `runFinalReviewOnly()` with user instructions.
+- **Translation Export Improvements**: Markdown exports now: (1) strip code fences/JSON artifacts from AI output, (2) omit trailing dividers after the last chapter, and (3) use localized chapter labels (Prologue, Epilogue, Author's Note, Chapter) based on project language for 7 languages (es, en, fr, de, it, pt, ca).
 
 ## External Dependencies
 
