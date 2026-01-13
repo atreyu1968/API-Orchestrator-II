@@ -4,6 +4,7 @@ import {
   series, continuitySnapshots, importedManuscripts, importedChapters, extendedGuides, activityLogs,
   projectQueue, queueState, seriesArcMilestones, seriesPlotThreads, seriesArcVerifications,
   aiUsageEvents, reeditProjects, reeditChapters, reeditAuditReports, reeditWorldBibles,
+  chatSessions, chatMessages,
   type Project, type InsertProject, type Chapter, type InsertChapter,
   type WorldBible, type InsertWorldBible, type ThoughtLog, type InsertThoughtLog,
   type AgentStatus, type InsertAgentStatus, type Pseudonym, type InsertPseudonym,
@@ -23,7 +24,9 @@ import {
   type ReeditProject, type InsertReeditProject,
   type ReeditChapter, type InsertReeditChapter,
   type ReeditAuditReport, type InsertReeditAuditReport,
-  type ReeditWorldBible, type InsertReeditWorldBible
+  type ReeditWorldBible, type InsertReeditWorldBible,
+  type ChatSession, type InsertChatSession,
+  type ChatMessage, type InsertChatMessage
 } from "@shared/schema";
 import { eq, desc, asc, and, lt, isNull, or, sql } from "drizzle-orm";
 
@@ -173,6 +176,20 @@ export interface IStorage {
   getReeditWorldBibleByProject(projectId: number): Promise<ReeditWorldBible | undefined>;
   updateReeditWorldBible(id: number, data: Partial<ReeditWorldBible>): Promise<ReeditWorldBible | undefined>;
   deleteReeditWorldBible(projectId: number): Promise<void>;
+
+  // Chat Sessions
+  createChatSession(data: InsertChatSession): Promise<ChatSession>;
+  getChatSession(id: number): Promise<ChatSession | undefined>;
+  getChatSessionsByProject(projectId: number, agentType: string): Promise<ChatSession[]>;
+  getChatSessionsByReeditProject(reeditProjectId: number, agentType: string): Promise<ChatSession[]>;
+  updateChatSession(id: number, data: Partial<ChatSession>): Promise<ChatSession | undefined>;
+  deleteChatSession(id: number): Promise<void>;
+
+  // Chat Messages
+  createChatMessage(data: InsertChatMessage): Promise<ChatMessage>;
+  getChatMessagesBySession(sessionId: number): Promise<ChatMessage[]>;
+  updateChatMessage(id: number, data: Partial<ChatMessage>): Promise<ChatMessage | undefined>;
+  deleteChatMessage(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1004,6 +1021,72 @@ export class DatabaseStorage implements IStorage {
   async deleteReeditWorldBible(projectId: number): Promise<void> {
     await db.delete(reeditWorldBibles)
       .where(eq(reeditWorldBibles.projectId, projectId));
+  }
+
+  // Chat Sessions
+  async createChatSession(data: InsertChatSession): Promise<ChatSession> {
+    const [session] = await db.insert(chatSessions).values(data).returning();
+    return session;
+  }
+
+  async getChatSession(id: number): Promise<ChatSession | undefined> {
+    const [session] = await db.select().from(chatSessions)
+      .where(eq(chatSessions.id, id));
+    return session;
+  }
+
+  async getChatSessionsByProject(projectId: number, agentType: string): Promise<ChatSession[]> {
+    return db.select().from(chatSessions)
+      .where(and(
+        eq(chatSessions.projectId, projectId),
+        eq(chatSessions.agentType, agentType)
+      ))
+      .orderBy(desc(chatSessions.updatedAt));
+  }
+
+  async getChatSessionsByReeditProject(reeditProjectId: number, agentType: string): Promise<ChatSession[]> {
+    return db.select().from(chatSessions)
+      .where(and(
+        eq(chatSessions.reeditProjectId, reeditProjectId),
+        eq(chatSessions.agentType, agentType)
+      ))
+      .orderBy(desc(chatSessions.updatedAt));
+  }
+
+  async updateChatSession(id: number, data: Partial<ChatSession>): Promise<ChatSession | undefined> {
+    const [updated] = await db.update(chatSessions)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(chatSessions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteChatSession(id: number): Promise<void> {
+    await db.delete(chatSessions).where(eq(chatSessions.id, id));
+  }
+
+  // Chat Messages
+  async createChatMessage(data: InsertChatMessage): Promise<ChatMessage> {
+    const [message] = await db.insert(chatMessages).values(data).returning();
+    return message;
+  }
+
+  async getChatMessagesBySession(sessionId: number): Promise<ChatMessage[]> {
+    return db.select().from(chatMessages)
+      .where(eq(chatMessages.sessionId, sessionId))
+      .orderBy(asc(chatMessages.createdAt));
+  }
+
+  async updateChatMessage(id: number, data: Partial<ChatMessage>): Promise<ChatMessage | undefined> {
+    const [updated] = await db.update(chatMessages)
+      .set(data)
+      .where(eq(chatMessages.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteChatMessage(id: number): Promise<void> {
+    await db.delete(chatMessages).where(eq(chatMessages.id, id));
   }
 }
 
