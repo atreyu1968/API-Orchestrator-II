@@ -33,6 +33,7 @@ export function ChatPanel({
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const sessionsQueryKey = projectId
@@ -110,7 +111,12 @@ export function ChatPanel({
   }, [sessions, activeSessionId]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollAreaRef.current) {
+      const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
+    }
   }, [messages, streamingContent]);
 
   const handleSendMessage = useCallback(async () => {
@@ -232,7 +238,7 @@ export function ChatPanel({
         </div>
       )}
 
-      <ScrollArea className="flex-1 p-3">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 p-3">
         {loadingSessions || loadingMessages ? (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
