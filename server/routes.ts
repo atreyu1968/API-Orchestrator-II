@@ -10,6 +10,7 @@ import { generateManuscriptDocx } from "./services/docx-exporter";
 import { z } from "zod";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
+import { chatService } from "./services/chatService";
 
 const workTypeEnum = z.enum(["standalone", "series", "trilogy"]);
 
@@ -5996,6 +5997,191 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     } finally {
       cleanup();
       res.end();
+    }
+  });
+
+  // ============================================
+  // CHAT ROUTES - Interactive agent conversations
+  // ============================================
+
+  // Create a new chat session
+  app.post("/api/chat/sessions", async (req: Request, res: Response) => {
+    try {
+      const { projectId, reeditProjectId, agentType, chapterNumber, title } = req.body;
+      
+      if (!agentType || !["architect", "reeditor"].includes(agentType)) {
+        return res.status(400).json({ error: "agentType must be 'architect' or 'reeditor'" });
+      }
+      
+      if (agentType === "architect" && !projectId) {
+        return res.status(400).json({ error: "projectId is required for architect chats" });
+      }
+      
+      if (agentType === "reeditor" && !reeditProjectId) {
+        return res.status(400).json({ error: "reeditProjectId is required for reeditor chats" });
+      }
+      
+      const session = await chatService.createSession({
+        projectId: projectId ? parseInt(projectId) : undefined,
+        reeditProjectId: reeditProjectId ? parseInt(reeditProjectId) : undefined,
+        agentType,
+        chapterNumber: chapterNumber ? parseInt(chapterNumber) : undefined,
+        title,
+      });
+      
+      res.json(session);
+    } catch (error: any) {
+      console.error("Error creating chat session:", error);
+      res.status(500).json({ error: error.message || "Failed to create chat session" });
+    }
+  });
+
+  // Get chat sessions for a project
+  app.get("/api/chat/sessions", async (req: Request, res: Response) => {
+    try {
+      const { projectId, reeditProjectId, agentType } = req.query;
+      
+      if (!agentType) {
+        return res.status(400).json({ error: "agentType is required" });
+      }
+      
+      let sessions;
+      if (projectId) {
+        sessions = await storage.getChatSessionsByProject(parseInt(projectId as string), agentType as string);
+      } else if (reeditProjectId) {
+        sessions = await storage.getChatSessionsByReeditProject(parseInt(reeditProjectId as string), agentType as string);
+      } else {
+        return res.status(400).json({ error: "projectId or reeditProjectId is required" });
+      }
+      
+      res.json(sessions);
+    } catch (error: any) {
+      console.error("Error fetching chat sessions:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch chat sessions" });
+    }
+  });
+
+  // Get a single chat session
+  app.get("/api/chat/sessions/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const session = await storage.getChatSession(id);
+      
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      
+      res.json(session);
+    } catch (error: any) {
+      console.error("Error fetching chat session:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch chat session" });
+    }
+  });
+
+  // Update chat session (e.g., change chapter context)
+  app.patch("/api/chat/sessions/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { chapterNumber, title, status } = req.body;
+      
+      const session = await storage.updateChatSession(id, {
+        ...(chapterNumber !== undefined && { chapterNumber }),
+        ...(title && { title }),
+        ...(status && { status }),
+      });
+      
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      
+      res.json(session);
+    } catch (error: any) {
+      console.error("Error updating chat session:", error);
+      res.status(500).json({ error: error.message || "Failed to update chat session" });
+    }
+  });
+
+  // Delete a chat session
+  app.delete("/api/chat/sessions/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteChatSession(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting chat session:", error);
+      res.status(500).json({ error: error.message || "Failed to delete chat session" });
+    }
+  });
+
+  // Get messages for a chat session
+  app.get("/api/chat/sessions/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const sessionId = parseInt(req.params.id);
+      const messages = await storage.getChatMessagesBySession(sessionId);
+      res.json(messages);
+    } catch (error: any) {
+      console.error("Error fetching chat messages:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch chat messages" });
+    }
+  });
+
+  // Send a message and get streaming response
+  app.get("/api/chat/sessions/:id/stream", async (req: Request, res: Response) => {
+    const sessionId = parseInt(req.params.id);
+    const message = req.query.message as string;
+    
+    if (!message) {
+      return res.status(400).json({ error: "message query parameter is required" });
+    }
+    
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    try {
+      sendEvent("start", { sessionId });
+      
+      const result = await chatService.sendMessage(sessionId, message, (chunk) => {
+        sendEvent("chunk", { text: chunk });
+      });
+      
+      sendEvent("complete", {
+        message: result.message,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      });
+    } catch (error: any) {
+      console.error("Error in chat stream:", error);
+      sendEvent("error", { error: error.message || "Failed to process message" });
+    } finally {
+      res.end();
+    }
+  });
+
+  // Non-streaming message endpoint (for simple use cases)
+  app.post("/api/chat/sessions/:id/messages", async (req: Request, res: Response) => {
+    try {
+      const sessionId = parseInt(req.params.id);
+      const { content } = req.body;
+      
+      if (!content) {
+        return res.status(400).json({ error: "content is required" });
+      }
+      
+      const result = await chatService.sendMessage(sessionId, content);
+      res.json({
+        message: result.message,
+        inputTokens: result.inputTokens,
+        outputTokens: result.outputTokens,
+      });
+    } catch (error: any) {
+      console.error("Error sending chat message:", error);
+      res.status(500).json({ error: error.message || "Failed to send message" });
     }
   });
 
