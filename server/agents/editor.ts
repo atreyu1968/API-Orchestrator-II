@@ -57,6 +57,7 @@ export interface EditorResult {
     preservar?: string;
     procedimiento: string;
     objetivo: string;
+    palabras_objetivo?: number;
   };
   aprobado: boolean;
 }
@@ -154,8 +155,15 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
 INSTRUCCIONES DE REESCRITURA PRECISAS:
 Cuando rechaces un capítulo, tu plan_quirurgico debe incluir:
 
-1. **preservar**: Lista ESPECÍFICA de lo que funciona bien y NO debe cambiar
+1. **preservar**: Lista ESPECÍFICA de lo que funciona bien y NO debe cambiar (escenas, diálogos, descripciones que funcionan)
 2. **procedimiento**: Cambio QUIRÚRGICO: qué párrafos/líneas específicas modificar
+3. **palabras_objetivo**: El número de palabras que debe tener el capítulo final (NUNCA reducir)
+
+⚠️ REGLA DE ORO DE LA REESCRITURA:
+- NUNCA pidas eliminar contenido sin reemplazarlo por algo equivalente o mejor
+- NUNCA pidas "simplificar" o "condensar" - esto degrada la calidad
+- SIEMPRE indica qué PRESERVAR antes de qué cambiar
+- Las correcciones deben MEJORAR sin REDUCIR la extensión
 
 CHECKLIST DE RECHAZO (Cualquiera = aprobado: false):
 - Inconsistencia física con World Bible
@@ -182,9 +190,10 @@ SALIDA JSON OBLIGATORIA:
   "violaciones_estilo": ["Violaciones a la guía de estilo"],
   "plan_quirurgico": {
     "diagnostico": "Qué falló exactamente",
-    "preservar": "Lista ESPECÍFICA de elementos que NO deben modificarse",
-    "procedimiento": "Cambio QUIRÚRGICO: qué párrafos/líneas modificar y cómo",
-    "objetivo": "Resultado esperado según plan del arquitecto"
+    "preservar": "Lista ESPECÍFICA de elementos que NO deben modificarse (escenas, diálogos, descripciones efectivas)",
+    "procedimiento": "Cambio QUIRÚRGICO: qué párrafos/líneas modificar y cómo (SIN reducir extensión)",
+    "objetivo": "Resultado esperado según plan del arquitecto",
+    "palabras_objetivo": (número de palabras que debe tener el capítulo corregido - NUNCA menor que el actual)
   },
   "aprobado": (Boolean: true si puntuacion >= 7 Y sin errores graves)
 }

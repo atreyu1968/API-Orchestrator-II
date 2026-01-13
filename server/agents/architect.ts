@@ -40,6 +40,44 @@ El peor pecado narrativo es la REPETICIÓN. Cada capítulo debe:
 - Avanzar al menos UN arco narrativo de forma MEDIBLE
 
 ═══════════════════════════════════════════════════════════════════
+🎯 DENSIDAD DE CONTENIDO POR CAPÍTULO (CRÍTICO PARA EXTENSIÓN)
+═══════════════════════════════════════════════════════════════════
+PROBLEMA A RESOLVER: Los capítulos deben alcanzar 2500-3500 palabras de forma NATURAL,
+sin relleno superfluo. Esto requiere planificar SUFICIENTE MATERIAL en cada capítulo.
+
+REQUISITOS MÍNIMOS POR CAPÍTULO:
+1. MÍNIMO 6 BEATS SUSTANCIALES - No 3-4 beats genéricos, sino 6 beats detallados:
+   - Beat de apertura (300-500 palabras): Establecimiento de escena sensorial
+   - Beat de desarrollo (300-500 palabras): Complicación o información nueva
+   - Beat de tensión (300-500 palabras): Conflicto o confrontación
+   - Beat de reflexión (200-400 palabras): Pausa emocional, monólogo interno
+   - Beat de escalada (300-500 palabras): Nueva complicación o revelación
+   - Beat de cierre (200-400 palabras): Hook que obliga a seguir leyendo
+
+2. MÍNIMO 2 SUBTRAMAS ACTIVAS por capítulo:
+   - Cada capítulo debe tocar al menos 2 hilos narrativos diferentes
+   - Esto evita monotonía y permite desarrollo paralelo
+
+3. ELEMENTOS SENSORIALES OBLIGATORIOS:
+   - Cada beat debe incluir al menos 2 elementos sensoriales específicos
+   - Vista, olfato, tacto, sonido, gusto - variados por beat
+
+4. OPORTUNIDADES DE DIÁLOGO:
+   - Mínimo 2-3 intercambios de diálogo significativos por capítulo
+   - El diálogo extenso es la mejor herramienta para alcanzar extensión sin relleno
+
+5. MONÓLOGO INTERNO:
+   - Al menos 1 momento de reflexión interna del protagonista por capítulo
+   - Los pensamientos y emociones son contenido legítimo, no relleno
+
+CÁLCULO DE PALABRAS:
+Si cada beat tiene 300-500 palabras promedio × 6 beats = 1800-3000 palabras
++ Transiciones y descripciones = 400-500 palabras adicionales
+= TOTAL: 2200-3500 palabras de forma NATURAL
+
+⚠️ SI NO PLANIFICAS SUFICIENTE MATERIAL, EL GHOSTWRITER NO PODRÁ ALCANZAR LA EXTENSIÓN ⚠️
+
+═══════════════════════════════════════════════════════════════════
 ARQUITECTURA DE ARCOS NARRATIVOS
 ═══════════════════════════════════════════════════════════════════
 Debes diseñar una MATRIZ DE ARCOS que incluya:
@@ -231,11 +269,64 @@ Genera un JSON con las siguientes claves:
     },
     
     "beats": [
-      "Beat 1: Descripción específica de la primera escena/momento",
-      "Beat 2: Desarrollo con complicación",
-      "Beat 3: Giro o revelación",
-      "Beat 4: Cierre con gancho"
+      {
+        "numero": 1,
+        "tipo": "apertura",
+        "descripcion": "Descripción detallada de la escena de apertura (300-500 palabras esperadas)",
+        "personajes_activos": ["Quién participa"],
+        "accion_principal": "Qué ocurre narrativamente",
+        "objetivo_narrativo": "Qué debe lograr este beat",
+        "elementos_sensoriales": ["Vista, sonido, olor, tacto a incluir"],
+        "dialogo_sugerido": "Tema o intercambio de diálogo importante (si aplica)",
+        "subtrama_tocada": "Qué subtrama avanza aquí (si aplica)"
+      },
+      {
+        "numero": 2,
+        "tipo": "desarrollo",
+        "descripcion": "Desarrollo con complicación o información nueva (300-500 palabras)",
+        "elementos_sensoriales": [],
+        "dialogo_sugerido": "",
+        "subtrama_tocada": ""
+      },
+      {
+        "numero": 3,
+        "tipo": "tension/conflicto",
+        "descripcion": "Escalada de tensión o confrontación (300-500 palabras)",
+        "elementos_sensoriales": [],
+        "dialogo_sugerido": ""
+      },
+      {
+        "numero": 4,
+        "tipo": "reflexion/respiro",
+        "descripcion": "Momento de pausa, reflexión interna o atmósfera (200-400 palabras)",
+        "elementos_sensoriales": [],
+        "monologo_interno": "Pensamiento o emoción del protagonista"
+      },
+      {
+        "numero": 5,
+        "tipo": "escalada",
+        "descripcion": "Nueva complicación o revelación (300-500 palabras)",
+        "elementos_sensoriales": [],
+        "informacion_nueva": "Dato que el lector descubre aquí"
+      },
+      {
+        "numero": 6,
+        "tipo": "cierre_hook",
+        "descripcion": "Cierre con gancho poderoso (200-400 palabras)",
+        "tipo_hook": "cliffhanger/pregunta/revelacion/amenaza",
+        "pregunta_abierta": "Qué se pregunta el lector al terminar"
+      }
     ],
+    "palabras_objetivo_capitulo": 2500,
+    "distribucion_palabras": {
+      "apertura": "300-500",
+      "desarrollo": "300-500", 
+      "tension": "300-500",
+      "reflexion": "200-400",
+      "escalada": "300-500",
+      "cierre": "200-400",
+      "transiciones": "200-300"
+    },
     
     "giro_emocional": {
       "emocion_inicio": "Cómo se siente el lector al empezar",

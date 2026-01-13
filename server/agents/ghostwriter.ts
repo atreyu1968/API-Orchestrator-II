@@ -51,6 +51,10 @@ interface GhostwriterInput {
   refinementInstructions?: string;
   authorName?: string;
   isRewrite?: boolean;
+  minWordCount?: number;
+  maxWordCount?: number;
+  extendedGuideContent?: string;
+  previousChapterContent?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -82,7 +86,7 @@ REGLAS DE ORO INVIOLABLES
    - Puntuación española correcta
    - Acotaciones integradas naturalmente
 
-5. LONGITUD: 2500-3500 palabras, desarrollando cada beat con profundidad
+5. LONGITUD: Respeta ESTRICTAMENTE el rango de palabras indicado en las instrucciones específicas del capítulo
 
 ═══════════════════════════════════════════════════════════════════
 PROTOCOLO ANTI-REPETICIÓN (CRÍTICO)
@@ -289,6 +293,41 @@ export class GhostwriterAgent extends BaseAgent {
     ` : ""}
     `;
 
+    const minWords = input.minWordCount || 2500;
+    const maxWords = input.maxWordCount || Math.round(minWords * 1.4);
+    
+    prompt += `
+    ╔═══════════════════════════════════════════════════════════════════╗
+    ║  🚨🚨🚨 REQUISITO CRÍTICO DE EXTENSIÓN - LEE ESTO PRIMERO 🚨🚨🚨  ║
+    ╠═══════════════════════════════════════════════════════════════════╣
+    ║                                                                   ║
+    ║   EXTENSIÓN MÍNIMA OBLIGATORIA: ${String(minWords).padStart(5)} PALABRAS               ║
+    ║   EXTENSIÓN MÁXIMA RECOMENDADA: ${String(maxWords).padStart(5)} PALABRAS               ║
+    ║                                                                   ║
+    ║   ⛔ CUALQUIER CAPÍTULO MENOR A ${minWords} PALABRAS SERÁ         ║
+    ║      RECHAZADO AUTOMÁTICAMENTE Y DEBERÁS REESCRIBIRLO            ║
+    ║                                                                   ║
+    ║   TÉCNICAS PARA ALCANZAR LA EXTENSIÓN:                           ║
+    ║   • Desarrolla CADA beat con 300-500 palabras mínimo             ║
+    ║   • Incluye descripciones sensoriales detalladas                 ║
+    ║   • Escribe diálogos extensos con acotaciones ricas              ║
+    ║   • Añade monólogo interno del protagonista                      ║
+    ║   • Describe el entorno, la atmósfera, los olores, sonidos      ║
+    ║   • NO resumas - NARRA con detalle cada momento                  ║
+    ║                                                                   ║
+    ╚═══════════════════════════════════════════════════════════════════╝
+    `;
+
+    if (input.extendedGuideContent) {
+      prompt += `
+    ═══════════════════════════════════════════════════════════════════
+    GUÍA DE EXTENSIÓN DEL AUTOR (CRÍTICO):
+    ═══════════════════════════════════════════════════════════════════
+    ${input.extendedGuideContent}
+    ═══════════════════════════════════════════════════════════════════
+    `;
+    }
+
     if (input.refinementInstructions) {
       prompt += `
     
@@ -297,10 +336,29 @@ export class GhostwriterAgent extends BaseAgent {
     ========================================
     ${input.refinementInstructions}
     
-    IMPORTANTE: Este es un intento de REESCRITURA. Debes aplicar las correcciones indicadas por el Editor 
-    mientras mantienes las fortalezas identificadas. Sigue el procedimiento de corrección al pie de la letra.
+    ⚠️ REGLAS DE REESCRITURA (CRÍTICAS):
+    1. PRESERVA las fortalezas y pasajes efectivos del borrador anterior
+    2. APLICA solo las correcciones específicas indicadas
+    3. NO reduzcas la extensión - mantén o aumenta el número de palabras
+    4. NO reescribas desde cero - es una EDICIÓN QUIRÚRGICA, no una reescritura total
+    5. Si algo funcionaba bien, MANTENLO INTACTO
     ========================================
     `;
+
+      if (input.previousChapterContent) {
+        const truncatedPrevious = input.previousChapterContent.length > 20000 
+          ? input.previousChapterContent.substring(0, 20000) + "\n[...contenido truncado...]"
+          : input.previousChapterContent;
+        prompt += `
+    ========================================
+    BORRADOR ANTERIOR (BASE PARA EDICIÓN):
+    ========================================
+    ${truncatedPrevious}
+    ========================================
+    
+    INSTRUCCIÓN: Usa este borrador como BASE. Modifica SOLO lo que indican las instrucciones de corrección.
+    `;
+      }
     }
 
     const chapterData = input.chapterData;
@@ -436,10 +494,13 @@ export class GhostwriterAgent extends BaseAgent {
     ═══════════════════════════════════════════════════════════════════
     
     ═══════════════════════════════════════════════════════════════════
-    ESCRIBE EL CAPÍTULO COMPLETO
+    🚨 RECORDATORIO FINAL: ESCRIBE EL CAPÍTULO COMPLETO 🚨
     ═══════════════════════════════════════════════════════════════════
     Comienza directamente con la narrativa. Sin introducción ni comentarios.
     Recuerda: NO repitas expresiones, metáforas o conceptos. Cada imagen debe ser única.
+    
+    ⚠️ TU CAPÍTULO DEBE TENER MÍNIMO ${minWords} PALABRAS ⚠️
+    Si escribes menos, serás obligado a reescribir. Desarrolla cada escena con detalle.
     
     ═══════════════════════════════════════════════════════════════════
     ESTADO DE CONTINUIDAD (OBLIGATORIO AL FINAL)

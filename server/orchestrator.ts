@@ -694,6 +694,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const optimizedContinuity = slidingContext || previousContinuity;
 
           const isRewrite = refinementAttempts > 0;
+          const minWordCount = (project as any).minWordCount || 2500;
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -703,29 +704,60 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             refinementInstructions,
             authorName,
             isRewrite,
+            minWordCount,
+            extendedGuideContent: extendedGuideContent || undefined,
+            previousChapterContent: isRewrite ? bestVersion.content : undefined,
           });
 
           const { cleanContent, continuityState } = this.ghostwriter.extractContinuityState(writerResult.content);
           let currentContent = cleanContent;
           const currentContinuityState = continuityState;
           
-          // Validate minimum word count - reject truncated responses
-          const MIN_CHAPTER_WORDS = 500;
+          // Validate minimum word count - reject short responses
+          const ABSOLUTE_MIN = 500; // Detect severe truncation
+          const TARGET_MIN = (project as any).minWordCount || 2500; // From project config
           const contentWordCount = currentContent.split(/\s+/).filter((w: string) => w.length > 0).length;
           
-          if (contentWordCount < MIN_CHAPTER_WORDS) {
-            console.warn(`[Orchestrator] Capítulo truncado detectado: ${contentWordCount} palabras < ${MIN_CHAPTER_WORDS} mínimo. Reintentando...`);
+          // Check for severe truncation (less than 500 words)
+          if (contentWordCount < ABSOLUTE_MIN) {
+            console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando...`);
             this.callbacks.onAgentStatus("ghostwriter", "warning", 
               `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando...`
             );
-            
-            // Force a retry by incrementing attempts
             refinementAttempts++;
-            refinementInstructions = `CRÍTICO: Tu respuesta anterior fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con 2500-3500 palabras. Sigue todos los beats narrativos hasta el final.`;
-            
-            // Add delay before retry to avoid rate limits
+            refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${Math.round(TARGET_MIN * 1.4)} palabras.`;
             await new Promise(resolve => setTimeout(resolve, 10000));
             continue;
+          }
+          
+          // Check if it meets the target minimum - retry with increasingly urgent prompts
+          if (contentWordCount < TARGET_MIN) {
+            // If we still have retry attempts, try again
+            if (refinementAttempts < this.maxRefinementLoops - 1) {
+              console.warn(`[Orchestrator] Capítulo corto: ${contentWordCount} palabras < ${TARGET_MIN} objetivo. Reintentando...`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel} muy corto (${contentWordCount}/${TARGET_MIN} palabras). Expandiendo...`
+              );
+              refinementAttempts++;
+              refinementInstructions = `CRÍTICO: Tu capítulo tiene solo ${contentWordCount} palabras pero el MÍNIMO OBLIGATORIO es ${TARGET_MIN} palabras. DEBES expandir cada beat con más descripciones sensoriales, diálogos extensos y monólogo interno. NO resumas - NARRA cada momento con detalle.`;
+              await new Promise(resolve => setTimeout(resolve, 10000));
+              continue;
+            } else {
+              // Final attempt exhausted - save content but mark as needs_expansion
+              console.warn(`[Orchestrator] ⚠️ CAPÍTULO CORTO: ${sectionLabel} tiene ${contentWordCount}/${TARGET_MIN} palabras. Marcando para expansión.`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel} guardado con ${contentWordCount} palabras (objetivo: ${TARGET_MIN}). Requiere expansión.`
+              );
+              // Mark chapter as needing expansion - will be handled specially
+              await storage.updateChapter(chapter.id, {
+                content: currentContent,
+                wordCount: contentWordCount,
+                status: "needs_expansion",
+                needsRevision: true,
+                revisionReason: `Capítulo corto: ${contentWordCount}/${TARGET_MIN} palabras después de ${refinementAttempts + 1} intentos`
+              });
+              continue; // Skip to next chapter without editor pass
+            }
           }
           
           await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "chapter_write");
@@ -1106,6 +1138,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
       let styleGuideContent = "";
       let authorName = "";
+      let extendedGuideContent = "";
       
       if (project.styleGuideId) {
         const styleGuide = await storage.getStyleGuide(project.styleGuideId);
@@ -1115,6 +1148,14 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       if (project.pseudonymId) {
         const pseudonym = await storage.getPseudonym(project.pseudonymId);
         if (pseudonym) authorName = pseudonym.name;
+      }
+
+      if ((project as any).extendedGuideId) {
+        const extendedGuide = await storage.getExtendedGuide((project as any).extendedGuideId);
+        if (extendedGuide) {
+          extendedGuideContent = extendedGuide.content;
+          console.log(`[Orchestrator:Resume] Using extended guide: "${extendedGuide.title}"`);
+        }
       }
 
       const pendingChapters = existingChapters
@@ -1174,6 +1215,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             : baseStyleGuide;
 
           const isRewrite = refinementAttempts > 0;
+          const minWordCountResume = (project as any).minWordCount || 2500;
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -1183,29 +1225,60 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             refinementInstructions,
             authorName,
             isRewrite,
+            minWordCount: minWordCountResume,
+            extendedGuideContent: extendedGuideContent || undefined,
+            previousChapterContent: isRewrite ? bestVersion.content : undefined,
           });
 
           const { cleanContent, continuityState } = this.ghostwriter.extractContinuityState(writerResult.content);
           let currentContent = cleanContent;
           const currentContinuityState = continuityState;
           
-          // Validate minimum word count - reject truncated responses
-          const MIN_CHAPTER_WORDS = 500;
+          // Validate minimum word count - reject short responses
+          const ABSOLUTE_MIN = 500; // Detect severe truncation
+          const TARGET_MIN = (project as any).minWordCount || 2500; // From project config
           const contentWordCount = currentContent.split(/\s+/).filter((w: string) => w.length > 0).length;
           
-          if (contentWordCount < MIN_CHAPTER_WORDS) {
-            console.warn(`[Orchestrator] Capítulo truncado detectado: ${contentWordCount} palabras < ${MIN_CHAPTER_WORDS} mínimo. Reintentando...`);
+          // Check for severe truncation (less than 500 words)
+          if (contentWordCount < ABSOLUTE_MIN) {
+            console.warn(`[Orchestrator] Capítulo severamente truncado: ${contentWordCount} palabras < ${ABSOLUTE_MIN}. Reintentando...`);
             this.callbacks.onAgentStatus("ghostwriter", "warning", 
               `${sectionLabel} truncado (${contentWordCount} palabras). Reintentando...`
             );
-            
-            // Force a retry by incrementing attempts
             refinementAttempts++;
-            refinementInstructions = `CRÍTICO: Tu respuesta anterior fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con 2500-3500 palabras. Sigue todos los beats narrativos hasta el final.`;
-            
-            // Add delay before retry to avoid rate limits
+            refinementInstructions = `CRÍTICO: Tu respuesta fue TRUNCADA con solo ${contentWordCount} palabras. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN}-${Math.round(TARGET_MIN * 1.4)} palabras.`;
             await new Promise(resolve => setTimeout(resolve, 10000));
             continue;
+          }
+          
+          // Check if it meets the target minimum - retry with increasingly urgent prompts
+          if (contentWordCount < TARGET_MIN) {
+            // If we still have retry attempts, try again
+            if (refinementAttempts < this.maxRefinementLoops - 1) {
+              console.warn(`[Orchestrator] Capítulo corto: ${contentWordCount} palabras < ${TARGET_MIN} objetivo. Reintentando...`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel} muy corto (${contentWordCount}/${TARGET_MIN} palabras). Expandiendo...`
+              );
+              refinementAttempts++;
+              refinementInstructions = `CRÍTICO: Tu capítulo tiene solo ${contentWordCount} palabras pero el MÍNIMO OBLIGATORIO es ${TARGET_MIN} palabras. DEBES expandir cada beat con más descripciones sensoriales, diálogos extensos y monólogo interno. NO resumas - NARRA cada momento con detalle.`;
+              await new Promise(resolve => setTimeout(resolve, 10000));
+              continue;
+            } else {
+              // Final attempt exhausted - save content but mark as needs_expansion
+              console.warn(`[Orchestrator] ⚠️ CAPÍTULO CORTO: ${sectionLabel} tiene ${contentWordCount}/${TARGET_MIN} palabras. Marcando para expansión.`);
+              this.callbacks.onAgentStatus("ghostwriter", "warning", 
+                `${sectionLabel} guardado con ${contentWordCount} palabras (objetivo: ${TARGET_MIN}). Requiere expansión.`
+              );
+              // Mark chapter as needing expansion - will be handled specially
+              await storage.updateChapter(chapter.id, {
+                content: currentContent,
+                wordCount: contentWordCount,
+                status: "needs_expansion",
+                needsRevision: true,
+                revisionReason: `Capítulo corto: ${contentWordCount}/${TARGET_MIN} palabras después de ${refinementAttempts + 1} intentos`
+              });
+              continue; // Skip to next chapter without editor pass
+            }
           }
           
           await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "chapter_write");
@@ -1966,6 +2039,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           ? `Continuidad del capítulo anterior disponible.` 
           : "";
 
+        const minWordCountQA = (project as any).minWordCount || 2500;
+        const originalChapterContent = chapter.content || "";
         const writerResult = await this.ghostwriter.execute({
           chapterNumber: sectionData.numero,
           chapterData: sectionData,
@@ -1974,6 +2049,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           previousContinuity,
           refinementInstructions: `CORRECCIONES DEL REVISOR FINAL:\n${revisionInstructions}`,
           authorName,
+          minWordCount: minWordCountQA,
+          extendedGuideContent: styleGuideContent || undefined,
+          previousChapterContent: originalChapterContent,
         });
 
         let chapterContent = writerResult.content;
@@ -2001,6 +2079,9 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             previousContinuity,
             refinementInstructions,
             authorName,
+            minWordCount: minWordCountQA,
+            extendedGuideContent: styleGuideContent || undefined,
+            previousChapterContent: chapterContent,
           });
           chapterContent = rewriteResult.content;
           await this.trackTokenUsage(project.id, rewriteResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", sectionData.numero, "qa_rewrite");
@@ -2323,7 +2404,8 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
         // Retry loop for truncated responses
         const MAX_REGENERATION_ATTEMPTS = 3;
-        const MIN_CHAPTER_WORDS = 500;
+        const TARGET_MIN_WORDS = (project as any).minWordCount || 2500;
+        const ABSOLUTE_MIN_WORDS = 500;
         let regenerationAttempt = 0;
         let successfulContent = "";
         let successfulWordCount = 0;
@@ -2338,10 +2420,11 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             guiaEstilo,
             previousContinuity,
             refinementInstructions: regenerationAttempt > 1 
-              ? `CRÍTICO: Tu respuesta anterior fue TRUNCADA. DEBES escribir el capítulo COMPLETO con 2500-3500 palabras.`
+              ? `CRÍTICO: Tu respuesta anterior fue TRUNCADA. DEBES escribir el capítulo COMPLETO con ${TARGET_MIN_WORDS}-${Math.round(TARGET_MIN_WORDS * 1.4)} palabras.`
               : "",
             authorName: "",
             isRewrite: regenerationAttempt > 1,
+            minWordCount: TARGET_MIN_WORDS,
           });
 
           await this.trackTokenUsage(project.id, writerResult.tokenUsage, "El Narrador", "gemini-3-pro-preview", chapter.chapterNumber, "chapter_regenerate");
@@ -2349,22 +2432,39 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           const { cleanContent } = this.ghostwriter.extractContinuityState(writerResult.content);
           const wordCount = cleanContent.split(/\s+/).filter((w: string) => w.length > 0).length;
 
-          if (wordCount >= MIN_CHAPTER_WORDS) {
+          // Accept if it meets the target minimum
+          if (wordCount >= TARGET_MIN_WORDS) {
             successfulContent = cleanContent;
             successfulWordCount = wordCount;
             break;
           }
+          
+          // On last attempt, save as needs_expansion if below target but above absolute min
+          if (regenerationAttempt >= MAX_REGENERATION_ATTEMPTS && wordCount >= ABSOLUTE_MIN_WORDS) {
+            console.warn(`[Orchestrator] Capítulo ${chapter.chapterNumber} corto (${wordCount}/${TARGET_MIN_WORDS}). Guardando para expansión.`);
+            await storage.updateChapter(chapter.id, {
+              content: cleanContent,
+              wordCount: wordCount,
+              status: "needs_expansion",
+              needsRevision: true,
+              revisionReason: `Capítulo corto: ${wordCount}/${TARGET_MIN_WORDS} palabras después de ${MAX_REGENERATION_ATTEMPTS} intentos`
+            });
+            this.callbacks.onAgentStatus("ghostwriter", "warning", 
+              `Capítulo ${chapter.chapterNumber} guardado con ${wordCount} palabras. Requiere expansión.`
+            );
+            break; // Move to next chapter
+          }
 
-          console.warn(`[Orchestrator] Capítulo ${chapter.chapterNumber} truncado (${wordCount} palabras). Intento ${regenerationAttempt}/${MAX_REGENERATION_ATTEMPTS}`);
+          console.warn(`[Orchestrator] Capítulo ${chapter.chapterNumber} corto (${wordCount}/${TARGET_MIN_WORDS} palabras). Intento ${regenerationAttempt}/${MAX_REGENERATION_ATTEMPTS}`);
           this.callbacks.onAgentStatus("ghostwriter", "warning", 
-            `Capítulo ${chapter.chapterNumber} truncado (${wordCount} palabras). Reintentando ${regenerationAttempt}/${MAX_REGENERATION_ATTEMPTS}...`
+            `Capítulo ${chapter.chapterNumber} corto (${wordCount}/${TARGET_MIN_WORDS} palabras). Reintentando ${regenerationAttempt}/${MAX_REGENERATION_ATTEMPTS}...`
           );
           
           // Wait before retry
           await new Promise(resolve => setTimeout(resolve, 15000));
         }
 
-        if (successfulWordCount < MIN_CHAPTER_WORDS) {
+        if (successfulWordCount < ABSOLUTE_MIN_WORDS) {
           console.error(`[Orchestrator] Capítulo ${chapter.chapterNumber} sigue truncado después de ${MAX_REGENERATION_ATTEMPTS} intentos`);
           this.callbacks.onError(`Capítulo ${chapter.chapterNumber} no pudo regenerarse correctamente después de ${MAX_REGENERATION_ATTEMPTS} intentos`);
           continue;
