@@ -71,6 +71,7 @@ const configSchema = z.object({
   workType: z.string().default("standalone"),
   seriesId: z.number().nullable().optional(),
   seriesOrder: z.number().nullable().optional(),
+  minWordCount: z.number().min(0).nullable().optional(),
 });
 
 type ConfigFormData = z.infer<typeof configSchema>;
@@ -101,10 +102,12 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       workType: (defaultValues as any)?.workType || "standalone",
       seriesId: (defaultValues as any)?.seriesId || null,
       seriesOrder: (defaultValues as any)?.seriesOrder || null,
+      minWordCount: (defaultValues as any)?.minWordCount || null,
     },
   });
 
   const chapterCount = form.watch("chapterCount");
+  const minWordCount = form.watch("minWordCount");
   const hasPrologue = form.watch("hasPrologue");
   const hasEpilogue = form.watch("hasEpilogue");
   const hasAuthorNote = form.watch("hasAuthorNote");
@@ -487,6 +490,34 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
               </FormControl>
               <FormDescription>
                 Entre 1 y 50 capítulos (aproximadamente {(chapterCount * 2500).toLocaleString()} - {(chapterCount * 3500).toLocaleString()} palabras)
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+
+        <FormField
+          control={form.control}
+          name="minWordCount"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Palabras Mínimas (objetivo)</FormLabel>
+              <FormControl>
+                <Input
+                  type="number"
+                  placeholder="Ej: 80000"
+                  value={field.value || ""}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    field.onChange(val ? parseInt(val) : null);
+                  }}
+                  data-testid="input-min-word-count"
+                />
+              </FormControl>
+              <FormDescription>
+                {minWordCount && chapterCount > 0 
+                  ? `Aproximadamente ${Math.round(minWordCount / chapterCount).toLocaleString()} palabras por capítulo`
+                  : "Opcional: Define el mínimo de palabras para la novela completa"}
               </FormDescription>
               <FormMessage />
             </FormItem>
