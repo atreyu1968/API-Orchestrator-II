@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Progress } from "@/components/ui/progress";
+import { ChatPanel } from "@/components/chat-panel";
 import { 
   Upload, 
   FileText, 
@@ -34,7 +35,8 @@ import {
   Zap,
   RotateCcw,
   Pause,
-  Unlock
+  Unlock,
+  MessageSquare
 } from "lucide-react";
 import type { ReeditProject, ReeditChapter, ReeditAuditReport } from "@shared/schema";
 
@@ -690,6 +692,9 @@ export default function ReeditPage() {
   
   // User instructions for awaiting_instructions state
   const [userInstructions, setUserInstructions] = useState("");
+  
+  // Chat panel state
+  const [showChat, setShowChat] = useState(false);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
@@ -888,7 +893,7 @@ export default function ReeditPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className={`grid grid-cols-1 gap-6 ${showChat ? "lg:grid-cols-4" : "lg:grid-cols-3"}`}>
         <div className="lg:col-span-1 space-y-4">
           <Card>
             <CardHeader>
@@ -1167,6 +1172,14 @@ export default function ReeditPage() {
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>
+                    <Button
+                      variant={showChat ? "secondary" : "outline"}
+                      onClick={() => setShowChat(!showChat)}
+                      data-testid="button-toggle-chat-reedit"
+                    >
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      {showChat ? "Cerrar Chat" : "Reeditor IA"}
+                    </Button>
                   </div>
                 </div>
               </CardHeader>
@@ -1415,6 +1428,15 @@ export default function ReeditPage() {
             </Card>
           )}
         </div>
+
+        {showChat && selectedProject && (
+          <ChatPanel
+            agentType="reeditor"
+            reeditProjectId={selectedProject}
+            className="lg:col-span-1 h-[calc(100vh-200px)]"
+            onClose={() => setShowChat(false)}
+          />
+        )}
       </div>
 
       {/* Restart Dialog */}
