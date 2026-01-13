@@ -124,16 +124,19 @@ export class ChatService {
 
     if (context.project) {
       const p = context.project;
-      const chapterCount = context.chapters?.length || 0;
+      const storedChapters = context.chapters?.length || 0;
+      const plannedChapters = 'chapterCount' in p ? (p.chapterCount || storedChapters) : storedChapters;
+      const chapterCountForCalc = plannedChapters > 0 ? plannedChapters : 1;
       const minWordCount = 'minWordCount' in p ? p.minWordCount : null;
-      const minWordsPerChapter = minWordCount && chapterCount > 0 
-        ? Math.round(minWordCount / chapterCount) 
+      const minWordsPerChapter = minWordCount 
+        ? Math.round(minWordCount / chapterCountForCalc) 
         : null;
       
       parts.push(`
 PROYECTO ACTUAL: "${p.title}"
 - ID: ${p.id}
-- Total capítulos: ${chapterCount}
+- Total capítulos planificados: ${plannedChapters}
+- Capítulos generados: ${storedChapters}
 - Estado: ${'status' in p ? p.status : 'N/A'}${minWordCount ? `
 - Objetivo mínimo de palabras: ${minWordCount.toLocaleString()} palabras
 - Mínimo por capítulo (estimado): ${minWordsPerChapter?.toLocaleString()} palabras` : ''}

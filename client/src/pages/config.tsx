@@ -497,6 +497,7 @@ export default function ConfigPage() {
                 workType: editingProject.workType || "standalone",
                 seriesId: editingProject.seriesId,
                 seriesOrder: editingProject.seriesOrder,
+                minWordCount: editingProject.minWordCount,
               }}
               isEditing
             />

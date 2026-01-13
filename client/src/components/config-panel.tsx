@@ -506,7 +506,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
                 <Input
                   type="number"
                   placeholder="Ej: 80000"
-                  value={field.value || ""}
+                  value={field.value ?? ""}
                   onChange={(e) => {
                     const val = e.target.value;
                     field.onChange(val ? parseInt(val) : null);
