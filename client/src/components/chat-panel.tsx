@@ -152,6 +152,7 @@ export function ChatPanel({
     mutationFn: async (params: { proposal: ParsedProposal; messageId: number; proposalIdx: number }) => {
       const body = {
         sessionId: activeSessionId,
+        messageId: params.messageId,
         proposal: params.proposal,
         projectId,
         reeditProjectId,

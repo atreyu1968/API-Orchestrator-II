@@ -6188,10 +6188,14 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   // Apply a proposal from chat
   app.post("/api/chat/proposals/apply", async (req: Request, res: Response) => {
     try {
-      const { sessionId, proposal, projectId, reeditProjectId } = req.body;
+      const { sessionId, messageId, proposal, projectId, reeditProjectId } = req.body;
       
       if (!proposal || !proposal.descripcion) {
         return res.status(400).json({ error: "proposal with descripcion is required" });
+      }
+      
+      if (!messageId) {
+        return res.status(400).json({ error: "messageId is required" });
       }
       
       // Determine target based on proposal type
@@ -6266,25 +6270,20 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         result = { applied: false, message: "Información insuficiente para aplicar el cambio" };
       }
       
-      // Store proposal in database
-      if (sessionId) {
-        const messages = await storage.getChatMessagesBySession(sessionId);
-        const lastAssistantMsg = messages.filter(m => m.role === "assistant").pop();
-        
-        if (lastAssistantMsg) {
-          await storage.createChatProposal({
-            messageId: lastAssistantMsg.id,
-            sessionId,
-            proposalType: tipo,
-            targetType: capitulo ? "chapter" : "unknown",
-            targetId: capitulo || undefined,
-            targetName: proposal.objetivo,
-            description: proposal.descripcion,
-            originalContent: proposal.texto_original,
-            proposedContent: textoNuevo,
-            status: result.applied ? "applied" : "pending",
-          });
-        }
+      // Store proposal in database with the correct messageId from frontend
+      if (sessionId && messageId) {
+        await storage.createChatProposal({
+          messageId,
+          sessionId,
+          proposalType: tipo,
+          targetType: capitulo ? "chapter" : "unknown",
+          targetId: capitulo || undefined,
+          targetName: proposal.objetivo,
+          description: proposal.descripcion,
+          originalContent: proposal.texto_original,
+          proposedContent: textoNuevo,
+          status: result.applied ? "applied" : "pending",
+        });
       }
       
       res.json(result);
