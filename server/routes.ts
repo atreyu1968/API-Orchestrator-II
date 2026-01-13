@@ -6185,6 +6185,115 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // Apply a proposal from chat
+  app.post("/api/chat/proposals/apply", async (req: Request, res: Response) => {
+    try {
+      const { sessionId, proposal, projectId, reeditProjectId } = req.body;
+      
+      if (!proposal || !proposal.descripcion) {
+        return res.status(400).json({ error: "proposal with descripcion is required" });
+      }
+      
+      // Determine target based on proposal type
+      const tipo = proposal.tipo?.toLowerCase() || "";
+      const capitulo = proposal.capitulo ? parseInt(proposal.capitulo) : null;
+      const textoNuevo = proposal.texto_propuesto || proposal.contenido_propuesto || "";
+      
+      if (!textoNuevo) {
+        return res.status(400).json({ error: "No proposed text found in proposal" });
+      }
+      
+      let result: any = { applied: false, message: "" };
+      
+      // Handle reedit project changes
+      if (reeditProjectId && capitulo) {
+        const chapters = await storage.getReeditChaptersByProject(reeditProjectId);
+        const targetChapter = chapters.find(ch => ch.chapterNumber === capitulo);
+        
+        if (targetChapter) {
+          // For now, we append a note about the proposed change
+          // In a full implementation, we would apply the specific text replacement
+          const currentContent = targetChapter.editedContent || targetChapter.originalContent || "";
+          
+          // If there's original text to find and replace
+          if (proposal.texto_original) {
+            const newContent = currentContent.replace(proposal.texto_original, textoNuevo);
+            if (newContent !== currentContent) {
+              await storage.updateReeditChapter(targetChapter.id, { editedContent: newContent });
+              result = { applied: true, message: `Cambio aplicado al capítulo ${capitulo}` };
+            } else {
+              result = { applied: false, message: "No se encontró el texto original en el capítulo" };
+            }
+          } else {
+            // No specific original text, create a note
+            result = { 
+              applied: false, 
+              message: "Propuesta guardada. Necesitas revisar y aplicar manualmente el cambio propuesto.",
+              proposedContent: textoNuevo
+            };
+          }
+        } else {
+          result = { applied: false, message: `Capítulo ${capitulo} no encontrado` };
+        }
+      }
+      // Handle original project changes
+      else if (projectId && capitulo) {
+        const chapters = await storage.getChaptersByProject(projectId);
+        const targetChapter = chapters.find(ch => ch.chapterNumber === capitulo);
+        
+        if (targetChapter) {
+          const currentContent = targetChapter.content || "";
+          
+          if (proposal.texto_original) {
+            const newContent = currentContent.replace(proposal.texto_original, textoNuevo);
+            if (newContent !== currentContent) {
+              await storage.updateChapter(targetChapter.id, { content: newContent });
+              result = { applied: true, message: `Cambio aplicado al capítulo ${capitulo}` };
+            } else {
+              result = { applied: false, message: "No se encontró el texto original en el capítulo" };
+            }
+          } else {
+            result = { 
+              applied: false, 
+              message: "Propuesta guardada. Necesitas revisar y aplicar manualmente el cambio propuesto.",
+              proposedContent: textoNuevo
+            };
+          }
+        } else {
+          result = { applied: false, message: `Capítulo ${capitulo} no encontrado` };
+        }
+      } else {
+        result = { applied: false, message: "Información insuficiente para aplicar el cambio" };
+      }
+      
+      // Store proposal in database
+      if (sessionId) {
+        const messages = await storage.getChatMessagesBySession(sessionId);
+        const lastAssistantMsg = messages.filter(m => m.role === "assistant").pop();
+        
+        if (lastAssistantMsg) {
+          await storage.createChatProposal({
+            messageId: lastAssistantMsg.id,
+            sessionId,
+            proposalType: tipo,
+            targetType: capitulo ? "chapter" : "unknown",
+            targetId: capitulo || undefined,
+            targetName: proposal.objetivo,
+            description: proposal.descripcion,
+            originalContent: proposal.texto_original,
+            proposedContent: textoNuevo,
+            status: result.applied ? "applied" : "pending",
+          });
+        }
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Error applying proposal:", error);
+      res.status(500).json({ error: error.message || "Failed to apply proposal" });
+    }
+  });
+
   return httpServer;
 }
 

@@ -145,6 +145,44 @@ export function ChatPanel({
     },
   });
 
+  const [appliedProposals, setAppliedProposals] = useState<Set<string>>(new Set());
+  const [applyingProposal, setApplyingProposal] = useState<string | null>(null);
+
+  const applyProposalMutation = useMutation({
+    mutationFn: async (params: { proposal: ParsedProposal; messageId: number; proposalIdx: number }) => {
+      const body = {
+        sessionId: activeSessionId,
+        proposal: params.proposal,
+        projectId,
+        reeditProjectId,
+      };
+      const res = await apiRequest("POST", "/api/chat/proposals/apply", body);
+      return res.json();
+    },
+    onSuccess: (result, params) => {
+      const key = `${params.messageId}-${params.proposalIdx}`;
+      if (result.applied) {
+        setAppliedProposals(prev => new Set(Array.from(prev).concat(key)));
+      }
+      queryClient.invalidateQueries({ queryKey: messagesQueryKey });
+    },
+  });
+
+  const handleApplyProposal = async (proposal: ParsedProposal, messageId: number, proposalIdx: number) => {
+    const key = `${messageId}-${proposalIdx}`;
+    setApplyingProposal(key);
+    try {
+      await applyProposalMutation.mutateAsync({ proposal, messageId, proposalIdx });
+    } finally {
+      setApplyingProposal(null);
+    }
+  };
+
+  const handleDiscardProposal = (messageId: number, proposalIdx: number) => {
+    const key = `${messageId}-${proposalIdx}`;
+    setAppliedProposals(prev => new Set(Array.from(prev).concat(key)));
+  };
+
   useEffect(() => {
     setActiveSessionId(null);
     setInputValue("");
@@ -341,53 +379,77 @@ export function ChatPanel({
                           <FileEdit className="h-3 w-3" />
                           Propuestas de cambio
                         </div>
-                        {proposals.map((proposal, idx) => (
-                          <div
-                            key={idx}
-                            className="bg-background rounded-md p-2 border text-xs"
-                            data-testid={`proposal-${message.id}-${idx}`}
-                          >
-                            <div className="font-medium mb-1">
-                              {proposal.descripcion}
+                        {proposals.map((proposal, idx) => {
+                          const proposalKey = `${message.id}-${idx}`;
+                          const isApplied = appliedProposals.has(proposalKey);
+                          const isApplying = applyingProposal === proposalKey;
+
+                          return (
+                            <div
+                              key={idx}
+                              className={cn(
+                                "bg-background rounded-md p-2 border text-xs",
+                                isApplied && "opacity-50"
+                              )}
+                              data-testid={`proposal-${message.id}-${idx}`}
+                            >
+                              <div className="font-medium mb-1">
+                                {proposal.descripcion}
+                              </div>
+                              {proposal.capitulo && (
+                                <div className="text-muted-foreground mb-1">
+                                  Capítulo: {proposal.capitulo}
+                                </div>
+                              )}
+                              {proposal.objetivo && (
+                                <div className="text-muted-foreground mb-1">
+                                  Objetivo: {proposal.objetivo}
+                                </div>
+                              )}
+                              {(proposal.texto_propuesto || proposal.contenido_propuesto) && (
+                                <div className="bg-green-50 dark:bg-green-900/20 rounded p-1 mb-2 text-green-800 dark:text-green-200 max-h-24 overflow-y-auto">
+                                  <span className="font-medium">Nuevo: </span>
+                                  {proposal.texto_propuesto || proposal.contenido_propuesto}
+                                </div>
+                              )}
+                              {!isApplied ? (
+                                <div className="flex gap-1 mt-2">
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    className="h-6 text-xs"
+                                    onClick={() => handleApplyProposal(proposal, message.id, idx)}
+                                    disabled={isApplying}
+                                    data-testid={`button-approve-${message.id}-${idx}`}
+                                  >
+                                    {isApplying ? (
+                                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    ) : (
+                                      <Check className="h-3 w-3 mr-1" />
+                                    )}
+                                    Aplicar
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 text-xs"
+                                    onClick={() => handleDiscardProposal(message.id, idx)}
+                                    disabled={isApplying}
+                                    data-testid={`button-reject-${message.id}-${idx}`}
+                                  >
+                                    <XIcon className="h-3 w-3 mr-1" />
+                                    Descartar
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                                  <Check className="h-3 w-3" />
+                                  Procesado
+                                </div>
+                              )}
                             </div>
-                            {proposal.capitulo && (
-                              <div className="text-muted-foreground mb-1">
-                                Capítulo: {proposal.capitulo}
-                              </div>
-                            )}
-                            {proposal.objetivo && (
-                              <div className="text-muted-foreground mb-1">
-                                Objetivo: {proposal.objetivo}
-                              </div>
-                            )}
-                            {(proposal.texto_propuesto || proposal.contenido_propuesto) && (
-                              <div className="bg-green-50 dark:bg-green-900/20 rounded p-1 mb-2 text-green-800 dark:text-green-200 max-h-24 overflow-y-auto">
-                                <span className="font-medium">Nuevo: </span>
-                                {proposal.texto_propuesto || proposal.contenido_propuesto}
-                              </div>
-                            )}
-                            <div className="flex gap-1 mt-2">
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="h-6 text-xs"
-                                data-testid={`button-approve-${message.id}-${idx}`}
-                              >
-                                <Check className="h-3 w-3 mr-1" />
-                                Aplicar
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 text-xs"
-                                data-testid={`button-reject-${message.id}-${idx}`}
-                              >
-                                <XIcon className="h-3 w-3 mr-1" />
-                                Descartar
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>
