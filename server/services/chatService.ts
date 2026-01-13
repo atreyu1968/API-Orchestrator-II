@@ -2,7 +2,12 @@ import { GoogleGenAI } from "@google/genai";
 import { storage } from "../storage";
 import type { ChatSession, ChatMessage, Project, ReeditProject, ReeditChapter, Chapter, WorldBible, ReeditWorldBible } from "@shared/schema";
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+const ai = new GoogleGenAI({
+  apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY,
+  httpOptions: {
+    baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL,
+  },
+});
 
 const ARCHITECT_SYSTEM_PROMPT = `
 Eres el Arquitecto de Tramas, un asistente experto en narrativa literaria que ayuda a los autores durante el proceso de creación de novelas.
@@ -200,11 +205,11 @@ ${context.styleGuide.substring(0, 3000)}
         if (onProgress) {
           onProgress(text);
         }
+        if (chunk.usageMetadata) {
+          inputTokens = chunk.usageMetadata.promptTokenCount || 0;
+          outputTokens = chunk.usageMetadata.candidatesTokenCount || 0;
+        }
       }
-
-      const finalResponse = await response.response;
-      inputTokens = finalResponse?.usageMetadata?.promptTokenCount || 0;
-      outputTokens = finalResponse?.usageMetadata?.candidatesTokenCount || 0;
 
     } catch (error: any) {
       console.error("Error generating chat response:", error);
