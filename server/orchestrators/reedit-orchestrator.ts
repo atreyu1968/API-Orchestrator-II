@@ -3201,13 +3201,18 @@ export class ReeditOrchestrator {
 
         console.log(`[ReeditOrchestrator] Final review cycle ${revisionCycle + 1}: score ${rawScore}/10, veredicto: ${veredicto}, issues: ${issuesCount} (${criticalIssues.length} críticos, ${rawIssuesForApproval.length - issuesCount} ya resueltos), chapters to rewrite: ${chapsToRewrite}`);
 
-        // Aprobar si: puntuación >= 9 Y no hay issues críticos
-        if (rawScore >= this.minAcceptableScore && !hasCriticalIssues) {
+        // Aprobar si: puntuación >= 9 Y no hay NINGÚN issue nuevo (crítico o no)
+        // Si hay issues pendientes (incluso menores), deben corregirse antes de aprobar
+        const hasAnyNewIssues = issuesCount > 0 || chapsToRewrite > 0;
+        
+        if (rawScore >= this.minAcceptableScore && !hasAnyNewIssues) {
           consecutiveHighScores++;
           nonPerfectCount = 0;
-        } else if (rawScore >= this.minAcceptableScore && hasCriticalIssues) {
-          // Puntuación alta pero con issues críticos - no aprobar pero no contar como fallo
-          console.log(`[ReeditOrchestrator] Score ${rawScore}/10 is good but ${criticalIssues.length} critical issue(s) remain. Correcting...`);
+          console.log(`[ReeditOrchestrator] Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores}`);
+        } else if (rawScore >= this.minAcceptableScore && hasAnyNewIssues) {
+          // Puntuación alta pero con issues pendientes - no aprobar, corregir primero
+          console.log(`[ReeditOrchestrator] Score ${rawScore}/10 is good but ${issuesCount} issue(s) remain (${criticalIssues.length} críticos). Correcting...`);
+          // Don't increment consecutiveHighScores - must correct issues first
         } else {
           consecutiveHighScores = 0;
           nonPerfectCount++;
@@ -3256,9 +3261,9 @@ export class ReeditOrchestrator {
           break;
         }
 
-        // Only skip corrections if score is high AND no critical issues remain
-        // If there are critical issues, we must fall through to the correction phase
-        if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores && !hasCriticalIssues) {
+        // Only skip corrections if score is high AND no issues remain at all
+        // If there are ANY issues (critical or not), we must fall through to the correction phase
+        if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores && !hasAnyNewIssues) {
           this.emitProgress({
             projectId,
             stage: "reviewing",
@@ -3753,12 +3758,17 @@ export class ReeditOrchestrator {
 
       console.log(`[ReeditOrchestrator] Final review cycle ${revisionCycle + 1}: score ${rawScore}/10, veredicto: ${veredicto}, issues: ${issuesCount} (${criticalIssuesFRO.length} críticos, ${rawIssuesFROApproval.length - issuesCount} ya resueltos), chapters to rewrite: ${chapsToRewrite}`);
 
-      // Aprobar si: puntuación >= 9 Y no hay issues críticos NUEVOS
-      if (rawScore >= this.minAcceptableScore && !hasCriticalIssuesFRO) {
+      // Aprobar si: puntuación >= 9 Y no hay NINGÚN issue nuevo (crítico o no)
+      // Si hay issues pendientes (incluso menores), deben corregirse antes de aprobar
+      const hasAnyNewIssuesFRO = issuesCount > 0 || chapsToRewrite > 0;
+      
+      if (rawScore >= this.minAcceptableScore && !hasAnyNewIssuesFRO) {
         consecutiveHighScores++;
-      } else if (rawScore >= this.minAcceptableScore && hasCriticalIssuesFRO) {
-        // Puntuación alta pero con issues críticos - no aprobar pero no contar como fallo
-        console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 is good but ${criticalIssuesFRO.length} critical issue(s) remain. Correcting...`);
+        console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores}`);
+      } else if (rawScore >= this.minAcceptableScore && hasAnyNewIssuesFRO) {
+        // Puntuación alta pero con issues pendientes - no aprobar, corregir primero
+        console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 is good but ${issuesCount} issue(s) remain (${criticalIssuesFRO.length} críticos). Correcting...`);
+        // Don't increment consecutiveHighScores - must correct issues first
       } else {
         consecutiveHighScores = 0;
       }
@@ -3777,9 +3787,9 @@ export class ReeditOrchestrator {
         break;
       }
 
-      // Only skip corrections if score is high AND no critical issues remain
-      // If there are critical issues, we must fall through to the correction phase
-      if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores && !hasCriticalIssuesFRO) {
+      // Only skip corrections if score is high AND no issues remain at all
+      // If there are ANY issues (critical or not), we must fall through to the correction phase
+      if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores && !hasAnyNewIssuesFRO) {
         this.emitProgress({
           projectId,
           stage: "reviewing",
