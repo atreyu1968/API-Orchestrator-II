@@ -1010,16 +1010,27 @@ FORMATO DE RESPUESTA (JSON):
     problems: Array<{ id?: string; tipo: string; descripcion: string; severidad: string; accionSugerida?: string; capitulosAfectados?: number[] }>,
     worldBible: any,
     adjacentContext: { previousChapter?: string; nextChapter?: string; previousSummary?: string; nextSummary?: string },
-    language: string
+    language: string,
+    userInstructions?: string
   ): Promise<any> {
     const worldBibleContext = this.buildWorldBibleContext(worldBible);
     const adjacentContextStr = this.buildAdjacentContext(adjacentContext);
     const problemsList = this.buildProblemsList(problems, chapterNumber);
+    
+    const userInstructionsSection = userInstructions ? `
+═══════════════════════════════════════════════════════════════
+INSTRUCCIONES DEL AUTOR (MÁXIMA PRIORIDAD):
+═══════════════════════════════════════════════════════════════
+${userInstructions}
+
+NOTA: Estas instrucciones del autor deben guiar tu enfoque al corregir los problemas.
+Adapta el tono, estilo y soluciones a estas directrices específicas.
+` : '';
 
     const prompt = `MISIÓN: Reescribe el Capítulo ${chapterNumber} para corregir los problemas estructurales detectados.
 
 IDIOMA DEL TEXTO: ${language}
-
+${userInstructionsSection}
 ═══════════════════════════════════════════════════════════════
 PROBLEMAS A RESOLVER EN ESTE CAPÍTULO:
 ═══════════════════════════════════════════════════════════════
@@ -2830,6 +2841,9 @@ export class ReeditOrchestrator {
       console.log(`[ReeditOrchestrator] QA stage completed: ${completedQaOps}/${totalQaOps} operations`);
 
       // === STAGE 5: CONSOLIDATED NARRATIVE REWRITING (Architect + QA problems in ONE pass) ===
+      // CRITICAL: Update stage IMMEDIATELY after QA completes to prevent re-running QA on resume
+      await storage.updateReeditProject(projectId, { currentStage: "narrative_rewriting" });
+      
       // Collect all problems from Architect
       const architectProblems = this.collectArchitectProblems(architectResult);
       
@@ -2847,6 +2861,9 @@ export class ReeditOrchestrator {
       // Track which chapters were rewritten (for CopyEditor optimization)
       const rewrittenChapters = new Set<number>();
       
+      // Get user instructions for rewriting (architectInstructions from project creation)
+      const userRewriteInstructions = (project as any).architectInstructions || "";
+      
       if (consolidatedProblems.size > 0 && !narrativeRewriteCompleted) {
         const totalProblemsCount = Array.from(consolidatedProblems.values()).reduce((sum, p) => sum + p.length, 0);
         console.log(`[ReeditOrchestrator] OPTIMIZED: Consolidating ${totalProblemsCount} problems (Architect + QA) in ${consolidatedProblems.size} chapters for SINGLE rewriting pass`);
@@ -2859,7 +2876,9 @@ export class ReeditOrchestrator {
           message: `Reescritura consolidada: ${totalProblemsCount} problemas (Arquitecto + QA) en ${consolidatedProblems.size} capítulos...`,
         });
         
-        await storage.updateReeditProject(projectId, { currentStage: "narrative_rewriting" });
+        if (userRewriteInstructions) {
+          console.log(`[ReeditOrchestrator] User instructions for rewriting: "${userRewriteInstructions.substring(0, 100)}..."`);
+        }
         
         let fixedCount = 0;
         const rewriteResults: any[] = [];
@@ -2905,7 +2924,8 @@ export class ReeditOrchestrator {
               })),
               worldBibleResult,
               adjacentContext,
-              detectedLang
+              detectedLang,
+              userRewriteInstructions || undefined
             );
             this.trackTokens(rewriteResult);
             
@@ -3376,7 +3396,8 @@ export class ReeditOrchestrator {
                 problems,
                 worldBibleForReview || {},
                 adjacentContext,
-                "español"
+                "español",
+                userInstructions || undefined
               );
               this.trackTokens(rewriteResult);
               await this.updateHeartbeat(projectId);
@@ -3624,7 +3645,8 @@ export class ReeditOrchestrator {
               problems,
               worldBibleForReview || {},
               adjacentContext,
-              "español"
+              "español",
+              userInstructions || undefined
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
@@ -3897,7 +3919,8 @@ export class ReeditOrchestrator {
               problems,
               worldBibleForReview || {},
               adjacentContext,
-              "español"
+              "español",
+              userInstructions || undefined
             );
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
@@ -4036,6 +4059,9 @@ export class ReeditOrchestrator {
 
     // Get worldBible
     const worldBible = await storage.getReeditWorldBibleByProject(projectId);
+    
+    // Get user instructions (architectInstructions or pendingUserInstructions)
+    const userInstructions = project.pendingUserInstructions || (project as any).architectInstructions || "";
 
     // Get all chapters
     const allChapters = await storage.getReeditChaptersByProject(projectId);
@@ -4094,7 +4120,8 @@ export class ReeditOrchestrator {
           problems,
           worldBible || {},
           adjacentContext,
-          "español"
+          "español",
+          userInstructions || undefined
         );
         this.trackTokens(rewriteResult);
 
