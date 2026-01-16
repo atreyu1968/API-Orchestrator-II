@@ -3256,7 +3256,9 @@ export class ReeditOrchestrator {
           break;
         }
 
-        if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores) {
+        // Only skip corrections if score is high AND no critical issues remain
+        // If there are critical issues, we must fall through to the correction phase
+        if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores && !hasCriticalIssues) {
           this.emitProgress({
             projectId,
             stage: "reviewing",
@@ -3775,7 +3777,9 @@ export class ReeditOrchestrator {
         break;
       }
 
-      if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores) {
+      // Only skip corrections if score is high AND no critical issues remain
+      // If there are critical issues, we must fall through to the correction phase
+      if (bestsellerScore >= this.minAcceptableScore && consecutiveHighScores < this.requiredConsecutiveHighScores && !hasCriticalIssuesFRO) {
         this.emitProgress({
           projectId,
           stage: "reviewing",
