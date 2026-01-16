@@ -487,6 +487,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             hasPrologue: project.hasPrologue,
             hasEpilogue: project.hasEpilogue,
             hasAuthorNote: project.hasAuthorNote,
+            architectInstructions: project.architectInstructions || undefined,
           });
 
           await this.trackTokenUsage(project.id, architectResult.tokenUsage, "El Arquitecto", "gemini-3-pro-preview", undefined, "world_bible");

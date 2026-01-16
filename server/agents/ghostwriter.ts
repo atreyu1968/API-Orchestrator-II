@@ -309,7 +309,8 @@ export class GhostwriterAgent extends BaseAgent {
     `;
 
     const minWords = input.minWordCount || 2500;
-    const maxWords = input.maxWordCount || Math.round(minWords * 1.4);
+    // Reduced from 1.4 to 1.15 to prevent manuscripts from exceeding target by more than 15%
+    const maxWords = input.maxWordCount || Math.round(minWords * 1.15);
     
     prompt += `
     ╔═══════════════════════════════════════════════════════════════════╗

@@ -83,6 +83,7 @@ export const projects = pgTable("projects", {
   totalOutputTokens: integer("total_output_tokens").default(0),
   totalThinkingTokens: integer("total_thinking_tokens").default(0),
   minWordCount: integer("min_word_count"),
+  architectInstructions: text("architect_instructions"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

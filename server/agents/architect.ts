@@ -10,6 +10,7 @@ interface ArchitectInput {
   hasEpilogue?: boolean;
   hasAuthorNote?: boolean;
   guiaEstilo?: string;
+  architectInstructions?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -475,6 +476,18 @@ export class ArchitectAgent extends BaseAgent {
     ${input.hasPrologue ? "NOTA: La novela incluirá un PRÓLOGO que debe establecer el tono y sembrar intriga." : ""}
     ${input.hasEpilogue ? "NOTA: La novela terminará con un EPÍLOGO que cierre todos los arcos narrativos." : ""}
     ${input.hasAuthorNote ? "NOTA: Incluye reflexiones para una NOTA DEL AUTOR al final." : ""}
+    
+    ${input.architectInstructions ? `
+    ═══════════════════════════════════════════════════════════════════
+    🎯🎯🎯 INSTRUCCIONES ESPECÍFICAS DEL AUTOR (PRIORIDAD ALTA) 🎯🎯🎯
+    ═══════════════════════════════════════════════════════════════════
+    El autor ha proporcionado las siguientes instrucciones que DEBES incorporar en tu planificación:
+    
+    ${input.architectInstructions}
+    
+    Estas instrucciones tienen PRIORIDAD sobre las guías generales. Asegúrate de que cada elemento solicitado se refleje en la estructura de la novela.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
     
     ═══════════════════════════════════════════════════════════════════
     ⛔⛔⛔ REQUISITO ABSOLUTO E INNEGOCIABLE: EXACTAMENTE ${input.chapterCount} CAPÍTULOS ⛔⛔⛔

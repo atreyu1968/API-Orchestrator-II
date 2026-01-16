@@ -8,9 +8,12 @@ import { ProcessFlow } from "@/components/process-flow";
 import { ConsoleOutput, type LogEntry } from "@/components/console-output";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DuplicateManager } from "@/components/duplicate-manager";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
@@ -66,6 +69,8 @@ export default function Dashboard() {
   const [confirmDialog, setConfirmDialog] = useState<ConfirmType>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [showArchitectDialog, setShowArchitectDialog] = useState(false);
+  const [architectInstructions, setArchitectInstructions] = useState("");
   const { projects, currentProject, setSelectedProjectId } = useProject();
 
   const handleExportData = async () => {
@@ -178,14 +183,32 @@ export default function Dashboard() {
     }
   }, [currentProject?.id, currentProject?.status]);
 
+  const saveArchitectInstructionsMutation = useMutation({
+    mutationFn: async (params: { projectId: number; instructions: string }) => {
+      const response = await apiRequest("PATCH", `/api/projects/${params.projectId}`, {
+        architectInstructions: params.instructions,
+      });
+      return response.json();
+    },
+  });
+
   const startGenerationMutation = useMutation({
-    mutationFn: async (projectId: number) => {
-      const response = await apiRequest("POST", `/api/projects/${projectId}/generate`);
+    mutationFn: async (params: { projectId: number; instructions?: string }) => {
+      // First save instructions if provided
+      if (params.instructions) {
+        await saveArchitectInstructionsMutation.mutateAsync({
+          projectId: params.projectId,
+          instructions: params.instructions,
+        });
+      }
+      const response = await apiRequest("POST", `/api/projects/${params.projectId}/generate`);
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       addLog("info", "Generación iniciada");
+      setShowArchitectDialog(false);
+      setArchitectInstructions("");
     },
     onError: (error) => {
       toast({
@@ -416,7 +439,18 @@ export default function Dashboard() {
 
   const handleStartGeneration = () => {
     if (currentProject && currentProject.status === "idle") {
-      startGenerationMutation.mutate(currentProject.id);
+      // Load existing instructions if any
+      setArchitectInstructions(currentProject.architectInstructions || "");
+      setShowArchitectDialog(true);
+    }
+  };
+
+  const handleConfirmGeneration = () => {
+    if (currentProject) {
+      startGenerationMutation.mutate({
+        projectId: currentProject.id,
+        instructions: architectInstructions.trim() || undefined,
+      });
     }
   };
 
@@ -1005,6 +1039,56 @@ export default function Dashboard() {
           setConfirmDialog(null);
         }}
       />
+
+      {/* Architect Instructions Dialog */}
+      <Dialog open={showArchitectDialog} onOpenChange={setShowArchitectDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Instrucciones para el Arquitecto</DialogTitle>
+            <DialogDescription>
+              Proporciona instrucciones específicas que guiarán la planificación de la trama y estructura de tu novela. Estas instrucciones serán utilizadas por el Arquitecto antes de generar los capítulos.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="architect-instructions">Instrucciones (opcional)</Label>
+              <Textarea
+                id="architect-instructions"
+                placeholder="Escribe las instrucciones para el Arquitecto. Ejemplos:&#10;&#10;- Quiero que cada capítulo termine con un gancho fuerte&#10;- El villano debe aparecer sutilmente en los primeros capítulos&#10;- Incluir escenas de tensión romántica entre X e Y&#10;- El giro principal debe ocurrir en el capítulo 8&#10;- Mantener un ritmo acelerado en la segunda mitad"
+                value={architectInstructions}
+                onChange={(e) => setArchitectInstructions(e.target.value)}
+                className="min-h-[200px]"
+                data-testid="input-architect-instructions"
+              />
+            </div>
+            <div className="text-sm text-muted-foreground">
+              <p><strong>Nota:</strong> Estas instrucciones son opcionales. Puedes iniciar la generación sin ellas.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowArchitectDialog(false)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={handleConfirmGeneration}
+              disabled={startGenerationMutation.isPending}
+              data-testid="button-confirm-generation"
+            >
+              {startGenerationMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Iniciando...
+                </>
+              ) : (
+                <>
+                  <Play className="h-4 w-4 mr-2" />
+                  Iniciar Generación
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
