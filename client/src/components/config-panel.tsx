@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/form";
 import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
-import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked, Plus, Trash2 } from "lucide-react";
+import { Play, RotateCcw, BookOpen, FileText, ScrollText, User, Library, BookMarked, Plus, Trash2, Zap } from "lucide-react";
 import type { Pseudonym, StyleGuide, Series, ExtendedGuide } from "@shared/schema";
 
 const genres = [
@@ -89,6 +89,7 @@ const configSchema = z.object({
   minWordCount: z.number().min(0).nullable().optional(),
   minWordsPerChapter: z.number().min(500).max(10000).default(1500),
   maxWordsPerChapter: z.number().min(500).max(15000).default(3500),
+  kindleUnlimitedOptimized: z.boolean().default(false),
   bookboxStructure: bookboxStructureSchema,
 });
 
@@ -123,6 +124,7 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
       minWordCount: (defaultValues as any)?.minWordCount || null,
       minWordsPerChapter: (defaultValues as any)?.minWordsPerChapter || 1500,
       maxWordsPerChapter: (defaultValues as any)?.maxWordsPerChapter || 3500,
+      kindleUnlimitedOptimized: (defaultValues as any)?.kindleUnlimitedOptimized || false,
       bookboxStructure: (defaultValues as any)?.bookboxStructure || null,
     },
   });
@@ -744,6 +746,31 @@ export function ConfigPanel({ onSubmit, onReset, isLoading, defaultValues, isEdi
             )}
           />
         </div>
+
+        <FormField
+          control={form.control}
+          name="kindleUnlimitedOptimized"
+          render={({ field }) => (
+            <FormItem className="flex items-center gap-3 space-y-0 rounded-md border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30 p-3">
+              <FormControl>
+                <Checkbox
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                  data-testid="checkbox-kindle-unlimited"
+                />
+              </FormControl>
+              <div className="flex items-center gap-2 flex-1">
+                <Zap className="h-4 w-4 text-orange-500" />
+                <div>
+                  <FormLabel className="font-medium cursor-pointer">Optimizar para Kindle Unlimited</FormLabel>
+                  <FormDescription className="text-xs">
+                    Capítulos cortos con cliffhangers, ritmo rápido y técnicas page-turner para maximizar páginas leídas
+                  </FormDescription>
+                </div>
+              </div>
+            </FormItem>
+          )}
+        />
 
         <div className="space-y-4 pt-2">
           <FormLabel className="text-base">Secciones Adicionales</FormLabel>
