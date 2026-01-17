@@ -295,6 +295,40 @@ export class Orchestrator {
     const FULL_CONTEXT_CHAPTERS = 2;
     const SUMMARY_CONTEXT_CHAPTERS = 5;
 
+    // Build accumulated character state from all completed chapters
+    const characterStates: Map<string, { alive: boolean; location: string; injuries: string[]; lastSeen: number }> = new Map();
+    const keyEvents: string[] = [];
+
+    for (const chapter of sortedChapters) {
+      const state = chapter.continuityState as any;
+      if (state?.character_states) {
+        for (const char of state.character_states) {
+          characterStates.set(char.name || char.personaje, {
+            alive: char.alive !== false && char.status !== "dead" && char.estado !== "muerto",
+            location: char.location || char.ubicacion || "desconocida",
+            injuries: char.injuries || char.heridas || [],
+            lastSeen: chapter.chapterNumber,
+          });
+        }
+      }
+      if (state?.key_events) {
+        keyEvents.push(...state.key_events.slice(-2));
+      }
+    }
+
+    // Build mandatory constraints from character states
+    const mandatoryConstraints: string[] = [];
+    characterStates.forEach((state, name) => {
+      if (!state.alive) {
+        mandatoryConstraints.push(`⛔ ${name}: MUERTO (Cap ${state.lastSeen}) - NO puede aparecer activo`);
+      } else if (state.injuries.length > 0) {
+        mandatoryConstraints.push(`⚠️ ${name}: Heridas activas [${state.injuries.join(", ")}] - DEBEN mencionarse`);
+      }
+      if (state.location && state.alive) {
+        mandatoryConstraints.push(`📍 ${name}: Última ubicación = ${state.location}`);
+      }
+    });
+
     for (let i = sortedChapters.length - 1; i >= 0; i--) {
       const chapter = sortedChapters[i];
       const distanceFromCurrent = sortedChapters.length - 1 - i;
@@ -319,12 +353,21 @@ Estado de continuidad: ${continuityState || "No disponible"}
       }
     }
 
-    return `
+    // Build the context with mandatory constraints at the top
+    let result = `
 ═══════════════════════════════════════════════════════════════════
-CONTEXTO DE CAPÍTULOS ANTERIORES (SLIDING WINDOW):
+🚨🚨🚨 RESTRICCIONES DE CONTINUIDAD OBLIGATORIAS 🚨🚨🚨
 ═══════════════════════════════════════════════════════════════════
+${mandatoryConstraints.length > 0 ? mandatoryConstraints.join("\n") : "Sin restricciones especiales"}
+
+VIOLACIONES DE ESTAS RESTRICCIONES = RECHAZO AUTOMÁTICO DEL CAPÍTULO
+═══════════════════════════════════════════════════════════════════
+
+CONTEXTO DE CAPÍTULOS ANTERIORES:
 ${contextParts.join("\n")}
 ═══════════════════════════════════════════════════════════════════`;
+
+    return result;
   }
 
   async generateNovel(project: Project): Promise<void> {
