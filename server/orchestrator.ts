@@ -48,7 +48,7 @@ interface SectionData {
   beats: string[];
   continuidad_salida?: string;
   continuidad_entrada?: string;
-  tipo?: "prologue" | "chapter" | "epilogue" | "author_note";
+  tipo?: "prologue" | "chapter" | "epilogue" | "author_note" | "book_prologue" | "book_epilogue";
   funcion_estructural?: string;
   informacion_nueva?: string;
   pregunta_dramatica?: string;
@@ -69,6 +69,9 @@ interface SectionData {
     de?: string;
     a?: string;
   }>;
+  // Bookbox-specific fields
+  bookNumber?: number;
+  bookTitle?: string;
   riesgos_de_verosimilitud?: {
     posibles_deus_ex_machina?: string[];
     setup_requerido?: string[];
@@ -2781,6 +2784,118 @@ ${chapterSummaries || "Sin capítulos disponibles"}
     const findChapterByNumero = (numero: number) => 
       escaleta.find((c: any) => c.numero === numero) || {};
 
+    // Check if this is a bookbox project with structure defined
+    const bookboxStructure = (project as any).bookboxStructure as {
+      books: Array<{
+        bookNumber: number;
+        title: string;
+        startChapter: number;
+        endChapter: number;
+        hasPrologue: boolean;
+        hasEpilogue: boolean;
+      }>;
+    } | null;
+
+    const isBookbox = (project as any).workType === "bookbox" && bookboxStructure?.books && bookboxStructure.books.length > 0;
+
+    if (isBookbox) {
+      // BOOKBOX MODE: Generate sections for each book in the structure
+      let sectionCounter = 0;
+      
+      for (const book of bookboxStructure!.books) {
+        // Add book prologue if it has one
+        if (book.hasPrologue) {
+          const prologueNumero = -(1000 + book.bookNumber * 10); // Unique negative number for book prologues
+          const prologueData = findChapterByNumero(prologueNumero);
+          sections.push({
+            numero: prologueNumero,
+            titulo: prologueData.titulo || `Prólogo - ${book.title}`,
+            cronologia: prologueData.cronologia || `Antes del inicio de ${book.title}`,
+            ubicacion: prologueData.ubicacion || "",
+            elenco_presente: prologueData.elenco_presente || [],
+            objetivo_narrativo: prologueData.objetivo_narrativo || `Establecer el tono para ${book.title}`,
+            beats: prologueData.beats || ["Gancho inicial", "Presentación del contexto", "Sembrar intriga"],
+            tipo: "book_prologue",
+            bookNumber: book.bookNumber,
+            bookTitle: book.title,
+            continuidad_salida: prologueData.continuidad_salida,
+            funcion_estructural: prologueData.funcion_estructural,
+            riesgos_de_verosimilitud: prologueData.riesgos_de_verosimilitud,
+          });
+          sectionCounter++;
+        }
+
+        // Add chapters for this book
+        for (let chapterNum = book.startChapter; chapterNum <= book.endChapter; chapterNum++) {
+          const chapterData = findChapterByNumero(chapterNum);
+          sections.push({
+            numero: chapterNum,
+            titulo: chapterData.titulo || `Capítulo ${chapterNum}`,
+            cronologia: chapterData.cronologia || "",
+            ubicacion: chapterData.ubicacion || "",
+            elenco_presente: chapterData.elenco_presente || [],
+            objetivo_narrativo: chapterData.objetivo_narrativo || "",
+            beats: chapterData.beats || [],
+            continuidad_salida: chapterData.continuidad_salida,
+            continuidad_entrada: chapterData.continuidad_entrada,
+            tipo: "chapter",
+            bookNumber: book.bookNumber,
+            bookTitle: book.title,
+            funcion_estructural: chapterData.funcion_estructural,
+            informacion_nueva: chapterData.informacion_nueva,
+            pregunta_dramatica: chapterData.pregunta_dramatica,
+            conflicto_central: chapterData.conflicto_central,
+            giro_emocional: chapterData.giro_emocional,
+            recursos_literarios_sugeridos: chapterData.recursos_literarios_sugeridos,
+            tono_especifico: chapterData.tono_especifico,
+            prohibiciones_este_capitulo: chapterData.prohibiciones_este_capitulo,
+            arcos_que_avanza: chapterData.arcos_que_avanza,
+            riesgos_de_verosimilitud: chapterData.riesgos_de_verosimilitud,
+          });
+          sectionCounter++;
+        }
+
+        // Add book epilogue if it has one
+        if (book.hasEpilogue) {
+          const epilogueNumero = -(2000 + book.bookNumber * 10); // Unique negative number for book epilogues
+          const epilogueData = findChapterByNumero(epilogueNumero);
+          sections.push({
+            numero: epilogueNumero,
+            titulo: epilogueData.titulo || `Epílogo - ${book.title}`,
+            cronologia: epilogueData.cronologia || `Después del final de ${book.title}`,
+            ubicacion: epilogueData.ubicacion || "",
+            elenco_presente: epilogueData.elenco_presente || [],
+            objetivo_narrativo: epilogueData.objetivo_narrativo || `Cerrar los arcos de ${book.title}`,
+            beats: epilogueData.beats || ["Resolución", "Transición", "Cierre emocional"],
+            tipo: "book_epilogue",
+            bookNumber: book.bookNumber,
+            bookTitle: book.title,
+            continuidad_entrada: epilogueData.continuidad_entrada,
+            funcion_estructural: epilogueData.funcion_estructural,
+          });
+          sectionCounter++;
+        }
+      }
+
+      // Add author note at the end if project has one
+      if (project.hasAuthorNote) {
+        sections.push({
+          numero: -2,
+          titulo: "Nota del Autor",
+          cronologia: "",
+          ubicacion: "",
+          elenco_presente: [],
+          objetivo_narrativo: "Reflexiones del autor sobre el proceso creativo y la historia",
+          beats: ["Agradecimientos", "Inspiración de la obra", "Mensaje personal"],
+          tipo: "author_note",
+        });
+      }
+
+      console.log(`[Orchestrator] Bookbox structure built: ${sections.length} sections across ${bookboxStructure!.books.length} books`);
+      return sections;
+    }
+
+    // STANDARD MODE: Original behavior for non-bookbox projects
     if (project.hasPrologue) {
       // Look for prologue data from Architect (numero=0) instead of using synthetic defaults
       const prologueData = findChapterByNumero(0);
@@ -2871,6 +2986,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         return "el Epílogo";
       case "author_note":
         return "la Nota del Autor";
+      case "book_prologue":
+        return section.bookTitle ? `el Prólogo de ${section.bookTitle}` : "el Prólogo del Libro";
+      case "book_epilogue":
+        return section.bookTitle ? `el Epílogo de ${section.bookTitle}` : "el Epílogo del Libro";
       default:
         return `el Capítulo ${section.numero}`;
     }

@@ -3838,11 +3838,42 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       if (chapters.length === 0) {
         return res.status(400).json({ error: "No chapters found in project" });
       }
-      
+
+      // Check if this is a bookbox project
+      const isBookbox = (project as any).workType === "bookbox" && (project as any).bookboxStructure?.books?.length > 0;
+      const bookboxStructure = (project as any).bookboxStructure as {
+        books: Array<{
+          bookNumber: number;
+          title: string;
+          startChapter: number;
+          endChapter: number;
+          hasPrologue: boolean;
+          hasEpilogue: boolean;
+        }>;
+      } | null;
+
       const sortedChapters = [...chapters].sort((a, b) => {
-        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
-        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
-        return orderA - orderB;
+        // Enhanced sorting for bookbox: book prologues/epilogues use special negative numbers
+        // Use asymmetric offsets to ensure epilogues always come before next book's prologue
+        const getOrder = (num: number) => {
+          if (num === 0) return -1000; // Main prologue
+          if (num === -1) return 100000; // Main epilogue
+          if (num === -2) return 100001; // Author note
+          if (isBookbox && num <= -1000 && num > -2000) {
+            // Book prologue: -1010, -1020, etc -> place just before their book's chapters
+            const bookNum = Math.floor((-num - 1000) / 10);
+            const bookStartChapter = bookboxStructure?.books?.find(b => b.bookNumber === bookNum)?.startChapter || 0;
+            return bookStartChapter - 0.9; // Use 0.9 offset so prologue comes before chapter 1 of the book
+          }
+          if (isBookbox && num <= -2000) {
+            // Book epilogue: -2010, -2020, etc -> place just after their book's chapters
+            const bookNum = Math.floor((-num - 2000) / 10);
+            const bookEndChapter = bookboxStructure?.books?.find(b => b.bookNumber === bookNum)?.endChapter || 0;
+            return bookEndChapter + 0.1; // Use 0.1 offset so epilogue comes right after last chapter but before next book's prologue
+          }
+          return num;
+        };
+        return getOrder(a.chapterNumber) - getOrder(b.chapterNumber);
       });
       
       // Robust function to clean chapter content for export
@@ -3905,9 +3936,46 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const lines: string[] = [];
       lines.push(`# ${project.title}`);
       lines.push("");
+
+      // Helper to find which book a chapter belongs to
+      const findBookForChapter = (chapterNum: number) => {
+        if (!isBookbox || !bookboxStructure?.books) return null;
+        return bookboxStructure.books.find(b => 
+          chapterNum >= b.startChapter && chapterNum <= b.endChapter
+        );
+      };
+
+      let currentBook: number | null = null;
       
       for (const chapter of sortedChapters) {
         if (!chapter.content) continue;
+        
+        // For bookbox: add book separator when transitioning to a new book
+        if (isBookbox && bookboxStructure?.books) {
+          let bookForThisChapter: { bookNumber: number; title: string } | null = null;
+          
+          // Determine which book this chapter belongs to
+          if (chapter.chapterNumber > 0) {
+            bookForThisChapter = findBookForChapter(chapter.chapterNumber) || null;
+          } else if (chapter.chapterNumber <= -1000 && chapter.chapterNumber > -2000) {
+            // Book prologue
+            const bookNum = Math.floor((-chapter.chapterNumber - 1000) / 10);
+            bookForThisChapter = bookboxStructure.books.find(b => b.bookNumber === bookNum) || null;
+          } else if (chapter.chapterNumber <= -2000) {
+            // Book epilogue
+            const bookNum = Math.floor((-chapter.chapterNumber - 2000) / 10);
+            bookForThisChapter = bookboxStructure.books.find(b => b.bookNumber === bookNum) || null;
+          }
+
+          if (bookForThisChapter && bookForThisChapter.bookNumber !== currentBook) {
+            currentBook = bookForThisChapter.bookNumber;
+            lines.push("");
+            lines.push("---");
+            lines.push("");
+            lines.push(`# ${bookForThisChapter.title}`);
+            lines.push("");
+          }
+        }
         
         let heading: string;
         if (chapter.chapterNumber === 0) {
@@ -3916,8 +3984,25 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           heading = `Epílogo${chapter.title ? `: ${chapter.title}` : ''}`;
         } else if (chapter.chapterNumber === -2) {
           heading = `Nota del Autor`;
+        } else if (chapter.chapterNumber <= -1000 && chapter.chapterNumber > -2000) {
+          // Book prologue
+          heading = `Prólogo${chapter.title ? `: ${chapter.title}` : ''}`;
+        } else if (chapter.chapterNumber <= -2000) {
+          // Book epilogue
+          heading = `Epílogo${chapter.title ? `: ${chapter.title}` : ''}`;
         } else {
-          heading = `Capítulo ${chapter.chapterNumber}${chapter.title ? `: ${chapter.title}` : ''}`;
+          // For bookbox, use relative chapter number within the book
+          if (isBookbox) {
+            const book = findBookForChapter(chapter.chapterNumber);
+            if (book) {
+              const relativeChapter = chapter.chapterNumber - book.startChapter + 1;
+              heading = `Capítulo ${relativeChapter}${chapter.title ? `: ${chapter.title}` : ''}`;
+            } else {
+              heading = `Capítulo ${chapter.chapterNumber}${chapter.title ? `: ${chapter.title}` : ''}`;
+            }
+          } else {
+            heading = `Capítulo ${chapter.chapterNumber}${chapter.title ? `: ${chapter.title}` : ''}`;
+          }
         }
         
         lines.push(`## ${heading}`);
