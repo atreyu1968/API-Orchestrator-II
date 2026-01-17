@@ -9,7 +9,7 @@ import type { WorldBible } from "@shared/schema";
 export default function WorldBiblePage() {
   const { currentProject, isLoading: projectsLoading } = useProject();
 
-  const { data: worldBible, isLoading: worldBibleLoading } = useQuery<WorldBible>({
+  const { data: worldBible, isLoading: worldBibleLoading, error } = useQuery<WorldBible>({
     queryKey: ["/api/projects", currentProject?.id, "world-bible"],
     enabled: !!currentProject?.id,
   });
@@ -37,6 +37,21 @@ export default function WorldBiblePage() {
     );
   }
 
+  // Show generating state when project is in progress
+  const isGenerating = currentProject.status === "generating" || currentProject.status === "pending";
+  
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center p-6">
+        <Globe className="h-16 w-16 text-muted-foreground/20 mb-4" />
+        <h2 className="text-xl font-semibold mb-2">Error al cargar</h2>
+        <p className="text-muted-foreground max-w-md">
+          No se pudo cargar la biblia del mundo. Intenta recargar la página.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6" data-testid="world-bible-page">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -58,6 +73,19 @@ export default function WorldBiblePage() {
         <div className="flex items-center justify-center py-12">
           <Globe className="h-8 w-8 text-muted-foreground/30 animate-pulse" />
         </div>
+      ) : isGenerating && !worldBible ? (
+        <Card>
+          <CardContent className="py-12">
+            <div className="flex flex-col items-center justify-center text-center">
+              <Globe className="h-12 w-12 text-muted-foreground/30 mb-4 animate-pulse" />
+              <h3 className="text-lg font-medium mb-2">Generando biblia del mundo...</h3>
+              <p className="text-muted-foreground text-sm max-w-md">
+                El agente arquitecto está creando el universo narrativo. 
+                Esto puede tardar unos minutos.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       ) : (
         <Card>
           <CardHeader className="pb-2">
