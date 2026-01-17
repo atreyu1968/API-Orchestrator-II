@@ -287,6 +287,9 @@ export class Orchestrator {
     const contentLower = chapterContent.toLowerCase();
 
     characterStates.forEach((state, name) => {
+      // Defensive guard: skip entries without valid name
+      if (!name || typeof name !== 'string' || name.trim().length === 0) return;
+      
       const nameLower = name.toLowerCase();
       const nameInContent = contentLower.includes(nameLower);
 
