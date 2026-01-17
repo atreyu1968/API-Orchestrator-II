@@ -2721,7 +2721,7 @@ export class ReeditOrchestrator {
         });
 
         const continuityResult = await this.continuitySentinel.auditContinuity(
-          block.map(c => c.originalContent),
+          block.map(c => c.editedContent || c.originalContent),
           startChap,
           endChap
         );
@@ -2760,7 +2760,7 @@ export class ReeditOrchestrator {
         });
 
         const voiceResult = await this.voiceRhythmAuditor.auditVoiceRhythm(
-          block.map(c => c.originalContent),
+          block.map(c => c.editedContent || c.originalContent),
           startChap,
           endChap
         );
@@ -2821,7 +2821,7 @@ export class ReeditOrchestrator {
       });
 
       const anachronismResult = await this.anachronismDetector.detectAnachronisms(
-        validChapters.map(c => ({ num: c.chapterNumber, content: c.originalContent })),
+        validChapters.map(c => ({ num: c.chapterNumber, content: c.editedContent || c.originalContent })),
         "",
         project.title || ""
       );
@@ -2912,7 +2912,7 @@ export class ReeditOrchestrator {
             const adjacentContext = this.buildAdjacentChapterContext(validChapters, chapNum);
             
             const rewriteResult = await this.narrativeRewriter.rewriteChapter(
-              chapter.originalContent,
+              chapter.editedContent || chapter.originalContent,
               chapNum,
               chapterProblems.map((p: any, idx: number) => ({
                 id: `${p.source}-${idx + 1}`,
@@ -2929,8 +2929,9 @@ export class ReeditOrchestrator {
             );
             this.trackTokens(rewriteResult);
             
+            const contentToCompare = chapter.editedContent || chapter.originalContent;
             const hasChanges = rewriteResult.cambiosRealizados?.length > 0 || 
-                              (rewriteResult.capituloReescrito && rewriteResult.capituloReescrito !== chapter.originalContent);
+                              (rewriteResult.capituloReescrito && rewriteResult.capituloReescrito !== contentToCompare);
             
             if (rewriteResult.capituloReescrito && hasChanges) {
               // Update originalContent with rewritten version AND set editedContent
