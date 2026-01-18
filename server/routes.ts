@@ -4732,37 +4732,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       const sourceLanguage = existingTranslation.sourceLanguage;
       const targetLanguage = existingTranslation.targetLanguage;
-
-      // Parse existing translated chapters from markdown
       const existingMarkdown = existingTranslation.markdown || "";
-      const translatedChapterNumbers = new Set<number>();
-      
-      // Match chapter headers to find which are already translated
-      const chapterPatterns = [
-        /^#+ *(?:Capítulo|Chapter|Chapitre|Kapitel|Capitolo|Capítol)\s+(\d+)/gmi,
-        /^#+ *(?:Prólogo|Prologue|Prolog|Prologo|Pròleg)/gmi,
-        /^#+ *(?:Epílogo|Epilogue|Epilog|Epilogo|Epíleg)/gmi,
-        /^#+ *(?:Nota del Autor|Author['']?s? Note|Note de l['']Auteur|Anmerkung des Autors|Nota dell['']Autore|Nota de l['']Autor)/gmi,
-      ];
-      
-      let match;
-      for (const pattern of chapterPatterns) {
-        pattern.lastIndex = 0;
-        while ((match = pattern.exec(existingMarkdown)) !== null) {
-          if (match[1]) {
-            translatedChapterNumbers.add(parseInt(match[1]));
-          } else if (pattern.source.includes("Prólogo") || pattern.source.includes("Prologue")) {
-            translatedChapterNumbers.add(0);
-          } else if (pattern.source.includes("Epílogo") || pattern.source.includes("Epilogue")) {
-            translatedChapterNumbers.add(-1);
-          } else if (pattern.source.includes("Nota del Autor") || pattern.source.includes("Author")) {
-            translatedChapterNumbers.add(-2);
-          }
-        }
-      }
 
-      console.log(`[Resume] Found ${translatedChapterNumbers.size} already translated chapters: ${[...translatedChapterNumbers].join(', ')}`);
-
+      // Get all chapters and sort them
       const chapters = await storage.getChaptersByProject(projectId);
       const sortedChapters = [...chapters].sort((a, b) => {
         const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
@@ -4771,9 +4743,26 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       });
 
       const chaptersWithContent = sortedChapters.filter(c => c.content && c.content.trim().length > 0);
-      const remainingChapters = chaptersWithContent.filter(c => !translatedChapterNumbers.has(c.chapterNumber));
       const totalChapters = chaptersWithContent.length;
-      const alreadyTranslated = translatedChapterNumbers.size;
+      
+      // Count chapters in persisted markdown by counting "---" delimiters
+      // Each chapter is separated by "\n\n---\n\n", so delimiters + 1 = chapters
+      // But only if there's actual content
+      let markdownChapterCount = 0;
+      if (existingMarkdown.trim().length > 0) {
+        const delimiterMatches = existingMarkdown.match(/\n\n---\n\n/g);
+        markdownChapterCount = delimiterMatches ? delimiterMatches.length + 1 : 1;
+      }
+      
+      // Use the minimum of: database counter vs actual markdown chapters
+      // This ensures we don't skip a chapter that failed to persist
+      const dbCount = existingTranslation.chaptersTranslated || 0;
+      const alreadyTranslated = Math.min(dbCount, markdownChapterCount);
+      
+      // Skip the first N chapters that were already translated
+      const remainingChapters = chaptersWithContent.slice(alreadyTranslated);
+
+      console.log(`[Resume] DB counter: ${dbCount}, Markdown chapters: ${markdownChapterCount}, Using: ${alreadyTranslated}/${totalChapters}, ${remainingChapters.length} remaining`);
 
       if (remainingChapters.length === 0) {
         await storage.updateTranslation(translationId, { status: "completed" });
