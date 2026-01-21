@@ -142,6 +142,34 @@ export default function Dashboard() {
     queryKey: ["/api/reedit-projects"],
   });
 
+  interface AIProviderInfo {
+    current: "gemini" | "deepseek";
+    available: { gemini: boolean; deepseek: boolean };
+    pricing: {
+      gemini: { description: string; creative: string; analysis: string };
+      deepseek: { description: string; creative: string; analysis: string };
+    };
+  }
+
+  const { data: aiProvider } = useQuery<AIProviderInfo>({
+    queryKey: ["/api/ai-provider"],
+    staleTime: 30000,
+  });
+
+  const switchProviderMutation = useMutation({
+    mutationFn: async (provider: "gemini" | "deepseek") => {
+      const response = await apiRequest("POST", "/api/ai-provider", { provider });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-provider"] });
+      toast({ title: "Proveedor cambiado", description: data.message });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "No se pudo cambiar el proveedor", variant: "destructive" });
+    },
+  });
+
   const activeProject = projects.find(p => p.status === "generating");
 
   const { data: chapters = [] } = useQuery<Chapter[]>({
@@ -792,6 +820,55 @@ export default function Dashboard() {
                     Crear Proyecto
                   </Button>
                 </Link>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* AI Provider Selector */}
+          {aiProvider && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  Proveedor de IA
+                  <Badge variant={aiProvider.current === "deepseek" ? "default" : "secondary"} className="text-xs">
+                    {aiProvider.current === "deepseek" ? "DeepSeek" : "Gemini"}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <div className="flex gap-2">
+                  <Button
+                    variant={aiProvider.current === "gemini" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => switchProviderMutation.mutate("gemini")}
+                    disabled={!aiProvider.available.gemini || switchProviderMutation.isPending || aiProvider.current === "gemini"}
+                    data-testid="button-select-gemini"
+                    className="flex-1"
+                  >
+                    Gemini
+                  </Button>
+                  <Button
+                    variant={aiProvider.current === "deepseek" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => switchProviderMutation.mutate("deepseek")}
+                    disabled={!aiProvider.available.deepseek || switchProviderMutation.isPending || aiProvider.current === "deepseek"}
+                    data-testid="button-select-deepseek"
+                    className="flex-1"
+                  >
+                    DeepSeek
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {aiProvider.current === "deepseek" 
+                    ? "DeepSeek: R1 para creativo, V3 para análisis (~3-5x más barato)"
+                    : "Gemini: Pro para creativo, Flash para análisis"
+                  }
+                </p>
+                {!aiProvider.available.deepseek && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400">
+                    Añade DEEPSEEK_API_KEY para usar DeepSeek
+                  </p>
+                )}
               </CardContent>
             </Card>
           )}

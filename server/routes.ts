@@ -9,6 +9,7 @@ import mammoth from "mammoth";
 import { generateManuscriptDocx } from "./services/docx-exporter";
 import { z } from "zod";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
+import { getAIProvider, type AIProvider } from "./agents/base-agent";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 import { chatService } from "./services/chatService";
 
@@ -4922,6 +4923,82 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       sendEvent("error", { error: "Failed to resume translation" });
       cleanup();
       res.end();
+    }
+  });
+
+  // AI Provider configuration endpoints
+  app.get("/api/ai-provider", async (_req: Request, res: Response) => {
+    try {
+      const provider = getAIProvider();
+      const hasDeepSeekKey = !!process.env.DEEPSEEK_API_KEY;
+      const hasGeminiKey = !!process.env.AI_INTEGRATIONS_GEMINI_API_KEY;
+      
+      res.json({
+        current: provider,
+        available: {
+          gemini: hasGeminiKey,
+          deepseek: hasDeepSeekKey,
+        },
+        models: {
+          gemini: {
+            creative: "gemini-3-pro-preview",
+            analysis: "gemini-2.5-flash",
+            fast: "gemini-2.0-flash",
+          },
+          deepseek: {
+            creative: "deepseek-reasoner (R1)",
+            analysis: "deepseek-chat (V3)",
+            fast: "deepseek-chat (V3)",
+          },
+        },
+        pricing: {
+          gemini: {
+            description: "Gemini (Google AI)",
+            creative: "$1.25/$10.0/M tokens",
+            analysis: "$0.15/$0.60/M tokens",
+          },
+          deepseek: {
+            description: "DeepSeek (más económico)",
+            creative: "$0.55/$2.19/M tokens (R1)",
+            analysis: "$0.27/$1.10/M tokens (V3)",
+          },
+        },
+      });
+    } catch (error) {
+      console.error("Error fetching AI provider info:", error);
+      res.status(500).json({ error: "Failed to fetch AI provider info" });
+    }
+  });
+
+  app.post("/api/ai-provider", async (req: Request, res: Response) => {
+    try {
+      const { provider } = req.body as { provider: AIProvider };
+      
+      if (provider !== "gemini" && provider !== "deepseek") {
+        return res.status(400).json({ error: "Invalid provider. Use 'gemini' or 'deepseek'" });
+      }
+      
+      if (provider === "deepseek" && !process.env.DEEPSEEK_API_KEY) {
+        return res.status(400).json({ error: "DeepSeek API key not configured" });
+      }
+      
+      if (provider === "gemini" && !process.env.AI_INTEGRATIONS_GEMINI_API_KEY) {
+        return res.status(400).json({ error: "Gemini API key not configured" });
+      }
+      
+      // Set the environment variable (this will persist for this process)
+      process.env.AI_PROVIDER = provider;
+      
+      console.log(`[AI Provider] Switched to ${provider}`);
+      
+      res.json({
+        success: true,
+        provider,
+        message: `Switched to ${provider}. All new AI requests will use ${provider}.`,
+      });
+    } catch (error) {
+      console.error("Error setting AI provider:", error);
+      res.status(500).json({ error: "Failed to set AI provider" });
     }
   });
 
