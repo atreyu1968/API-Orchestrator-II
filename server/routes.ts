@@ -4472,8 +4472,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           bodyText = afterNumericRemoval.trim();
         }
         
-        // Remove trailing dividers (---, ***) from the end
-        bodyText = bodyText.replace(/\n*[-*]{3,}\s*$/, '').trim();
+        // Remove ALL dividers (---, ***, ===) from the content - both at end and in the middle
+        // First remove trailing dividers
+        bodyText = bodyText.replace(/\n*[-*=]{3,}\s*$/, '').trim();
+        // Then remove any dividers in the middle of content (standalone lines of --- or *** or ===)
+        bodyText = bodyText.replace(/\n[-*=]{3,}\n/g, '\n\n').trim();
+        // Remove dividers at the start too
+        bodyText = bodyText.replace(/^[-*=]{3,}\n+/, '').trim();
+        
+        // Remove any remaining Spanish chapter headers that weren't translated
+        // Pattern matches: Capítulo X, Prólogo, Epílogo, Nota del Autor at start of lines
+        const spanishHeaderPattern = /^#{1,4}\s*(Capítulo\s*\d+|CAPÍTULO\s*\d+|Prólogo|PRÓLOGO|Epílogo|EPÍLOGO|Nota\s*del\s*Autor|NOTA\s*DEL\s*AUTOR)[^\n]*\n+/gim;
+        const afterSpanishRemoval = bodyText.replace(spanishHeaderPattern, '');
+        if (afterSpanishRemoval.trim().length > 50) {
+          bodyText = afterSpanishRemoval.trim();
+        }
         
         return { heading: extractedHeading, body: bodyText };
       };
@@ -4486,6 +4499,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const chapterLabels: Record<string, { prologue: string; epilogue: string; authorNote: string; chapter: string }> = {
         es: { prologue: "Prólogo", epilogue: "Epílogo", authorNote: "Nota del Autor", chapter: "Capítulo" },
         en: { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
+        "en-US": { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
+        "en-GB": { prologue: "Prologue", epilogue: "Epilogue", authorNote: "Author's Note", chapter: "Chapter" },
         fr: { prologue: "Prologue", epilogue: "Épilogue", authorNote: "Note de l'Auteur", chapter: "Chapitre" },
         de: { prologue: "Prolog", epilogue: "Epilog", authorNote: "Anmerkung des Autors", chapter: "Kapitel" },
         it: { prologue: "Prologo", epilogue: "Epilogo", authorNote: "Nota dell'Autore", chapter: "Capitolo" },

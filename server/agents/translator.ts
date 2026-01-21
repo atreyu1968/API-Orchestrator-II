@@ -273,11 +273,21 @@ CRITICAL OUTPUT RULES
 4. PRESERVE paragraph structure and dialogues exactly.
 5. APPLY correct typographical rules for target language.
 
+CHAPTER HEADER TRANSLATION (MANDATORY):
+- ALWAYS translate chapter headers/titles to target language.
+- "Capítulo 1: El Comienzo" → "Chapter 1: The Beginning" (en-US/en-GB)
+- "Prólogo" → "Prologue" (en), "Prolog" (de), "Prologo" (it)
+- "Epílogo" → "Epilogue" (en), "Epilog" (de), "Epilogo" (it)
+- "Nota del Autor" → "Author's Note" (en), "Note de l'Auteur" (fr)
+- NEVER leave Spanish headers like "Capítulo", "Prólogo", "Epílogo" in non-Spanish translations.
+
 FORBIDDEN IN OUTPUT:
 - Style guides, writing guides, checklists, tips
 - Meta-commentary about style or techniques
 - ANY instructional content about writing
 - Sections titled "Literary Style Guide", "Checklist", etc.
+- Separator lines (---, ***, ===) - NEVER include these
+- Dividers of any kind between sections
 
 OUTPUT FORMAT (JSON ONLY):
 {
