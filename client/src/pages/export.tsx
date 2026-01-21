@@ -36,7 +36,8 @@ interface TranslationProgress {
 
 const SUPPORTED_LANGUAGES = [
   { code: "es", name: "Español" },
-  { code: "en", name: "English" },
+  { code: "en-US", name: "English (US)" },
+  { code: "en-GB", name: "English (UK)" },
   { code: "fr", name: "Français" },
   { code: "de", name: "Deutsch" },
   { code: "it", name: "Italiano" },
@@ -145,11 +146,17 @@ function loadTranslationState(): ActiveTranslationState | null {
   return null;
 }
 
+function clearTranslationState(): void {
+  try {
+    localStorage.removeItem(TRANSLATION_STATE_KEY);
+  } catch {}
+}
+
 export default function ExportPage() {
   const { toast } = useToast();
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [sourceLanguage, setSourceLanguage] = useState("es");
-  const [targetLanguage, setTargetLanguage] = useState("en");
+  const [targetLanguage, setTargetLanguage] = useState("en-US");
   const [eventSourceRef, setEventSourceRef] = useState<EventSource | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
   const [translationSearch, setTranslationSearch] = useState("");

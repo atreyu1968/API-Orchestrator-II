@@ -19,6 +19,8 @@ export interface TranslatorResult {
 const LANGUAGE_NAMES: Record<string, string> = {
   es: "español",
   en: "English",
+  "en-US": "English (US)",
+  "en-GB": "English (UK)",
   fr: "français",
   de: "Deutsch",
   it: "italiano",
@@ -59,6 +61,49 @@ ENGLISH EDITORIAL & FLUENCY STANDARDS:
 - ADVERBS: Use sparingly. Show don't tell: "walked slowly" → "ambled" or "shuffled".
 - RHYTHM: Vary sentence length for natural flow. Mix short punchy sentences with longer ones.
 - IDIOMS: Use natural English idioms and expressions, not literal translations.`,
+
+  "en-US": `
+AMERICAN ENGLISH EDITORIAL & FLUENCY STANDARDS:
+[AMERICAN SPELLING & VOCABULARY]
+- SPELLING: Use American spelling consistently: color (not colour), center (not centre), realize (not realise), traveled (not travelled), defense (not defence), theater (not theatre), gray (not grey), catalog (not catalogue).
+- VOCABULARY: Use American terms: apartment (not flat), elevator (not lift), truck (not lorry), gasoline (not petrol), sidewalk (not pavement), cookie (not biscuit), faucet (not tap), fall (not autumn), mom (not mum), pants (not trousers), sneakers (not trainers), vacation (not holiday).
+- DATES: Use MM/DD/YYYY format in context. Write "March 15" not "15 March".
+- MEASUREMENTS: Use imperial by default (feet, miles, pounds, Fahrenheit) unless context demands metric.
+
+[TYPOGRAPHY]
+- DIALOGUE: Use double quotation marks for dialogue. Example: "Hello," said Mary. "How are you?"
+- QUOTES: Double quotes " " for dialogue. Single quotes ' ' for quotes within quotes.
+- PUNCTUATION: Periods and commas ALWAYS go inside quotation marks. Question marks and exclamation points go inside only if part of the quote.
+- NUMBERS: Spell out one through nine, use numerals for 10 and above.
+
+[FLUENCY & NATURALNESS]
+- SENTENCES: Maximum 35-40 words per sentence. Break long sentences naturally.
+- CONTRACTIONS: Use natural American contractions (don't, can't, won't, gonna, wanna in very casual dialogue).
+- ACTIVE VOICE: Prefer active over passive.
+- IDIOMS: Use American idioms and expressions naturally.
+- RHYTHM: Vary sentence length for natural flow.`,
+
+  "en-GB": `
+BRITISH ENGLISH EDITORIAL & FLUENCY STANDARDS:
+[BRITISH SPELLING & VOCABULARY]
+- SPELLING: Use British spelling consistently: colour (not color), centre (not center), realise (not realize), travelled (not traveled), defence (not defense), theatre (not theater), grey (not gray), catalogue (not catalog), favour (not favor), honour (not honor), behaviour (not behavior).
+- VOCABULARY: Use British terms: flat (not apartment), lift (not elevator), lorry (not truck), petrol (not gasoline), pavement (not sidewalk), biscuit (not cookie), tap (not faucet), autumn (not fall), mum (not mom), trousers (not pants), trainers (not sneakers), holiday (not vacation), queue (not line), boot (car trunk), bonnet (car hood), chemist (pharmacist).
+- DATES: Use DD/MM/YYYY format in context. Write "15 March" not "March 15".
+- MEASUREMENTS: Use metric primarily (metres, kilometres, kilograms, Celsius) with imperial for colloquial uses (stones for weight, miles for distance).
+
+[TYPOGRAPHY]
+- DIALOGUE: Use single quotation marks for dialogue. Example: 'Hello,' said Mary. 'How are you?'
+- QUOTES: Single quotes ' ' for dialogue. Double quotes " " for quotes within quotes.
+- PUNCTUATION: Periods and commas go OUTSIDE quotation marks unless part of the quoted material.
+- NUMBERS: Spell out one through nine, use numerals for 10 and above.
+
+[FLUENCY & NATURALNESS]
+- SENTENCES: Maximum 35-40 words per sentence. Break long sentences naturally.
+- CONTRACTIONS: Use natural British contractions (don't, can't, shan't, won't).
+- COLLECTIVE NOUNS: Can take plural verbs: "The team are playing well."
+- IDIOMS: Use British idioms and expressions naturally (e.g., "spot on", "brilliant", "cheers").
+- FORMAL REGISTER: British English tends slightly more formal. Avoid overly casual Americanisms.
+- RHYTHM: Vary sentence length for natural flow.`,
 
   fr: `
 NORMES ÉDITORIALES ET FLUIDITÉ - FRANÇAIS:
