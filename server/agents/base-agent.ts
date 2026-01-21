@@ -9,8 +9,8 @@ export type AIProvider = "gemini" | "deepseek";
 // Get current AI provider from environment
 export function getAIProvider(): AIProvider {
   const provider = process.env.AI_PROVIDER?.toLowerCase();
-  if (provider === "deepseek") return "deepseek";
-  return "gemini"; // Default to Gemini
+  if (provider === "gemini") return "gemini";
+  return "deepseek"; // Default to DeepSeek (more cost-effective)
 }
 
 // Gemini client
