@@ -455,7 +455,230 @@ export class ArchitectAgent extends BaseAgent {
 
   async execute(input: ArchitectInput): Promise<AgentResponse> {
     console.log(`[Architect] execute() started for "${input.title}"`);
-    console.log(`[Architect] Using GEMINI (65K token limit) for World Bible generation`);
+    console.log(`[Architect] Using GEMINI (65K token limit) - SINGLE CALL generation`);
+    
+    const guiaEstilo = input.guiaEstilo || `Género: ${input.genre}, Tono: ${input.tone}`;
+    const ideaInicial = input.premise || input.title;
+
+    const sectionsInfo = [];
+    if (input.hasPrologue) sectionsInfo.push("PRÓLOGO (número 0)");
+    sectionsInfo.push(`${input.chapterCount} CAPÍTULOS (números 1-${input.chapterCount})`);
+    if (input.hasEpilogue) sectionsInfo.push("EPÍLOGO (número -1)");
+    if (input.hasAuthorNote) sectionsInfo.push("NOTA DEL AUTOR");
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SINGLE CALL: Generate complete World Bible with Gemini (65K tokens)
+    // ═══════════════════════════════════════════════════════════════════
+    const unifiedPrompt = `
+TÍTULO: "${input.title}"
+GÉNERO: ${input.genre}
+TONO: ${input.tone}
+PREMISA: "${ideaInicial}"
+GUÍA DE ESTILO: "${guiaEstilo}"
+ESTRUCTURA REQUERIDA: ${sectionsInfo.join(", ")}
+
+${input.architectInstructions ? `INSTRUCCIONES DEL AUTOR: ${input.architectInstructions}` : ""}
+
+═══════════════════════════════════════════════════════════════════
+GENERA UN WORLD BIBLE COMPLETO EN JSON
+═══════════════════════════════════════════════════════════════════
+
+Responde con un JSON completo que incluya TODAS las secciones:
+
+{
+  "world_bible": {
+    "personajes": [
+      {
+        "nombre": "Nombre completo",
+        "rol": "protagonista/antagonista/aliado/secundario",
+        "perfil_psicologico": "descripción detallada en 2-3 frases",
+        "arco_transformacion": {
+          "estado_inicial": "cómo empieza",
+          "catalizador_cambio": "qué lo transforma",
+          "punto_crisis": "momento crítico",
+          "estado_final": "cómo termina"
+        },
+        "relaciones": [{"con": "nombre", "tipo": "tipo", "evolucion": "cómo cambia"}],
+        "vivo": true,
+        "apariencia_inmutable": {
+          "ojos": "color y descripción",
+          "cabello": "descripción",
+          "piel": "descripción",
+          "altura": "altura aprox",
+          "rasgos_distintivos": ["rasgo1", "rasgo2"],
+          "voz": "descripción"
+        },
+        "vestimenta_habitual": "descripción",
+        "modismos_habla": ["frase típica 1", "frase típica 2"]
+      }
+    ],
+    "lugares": [
+      {
+        "nombre": "Nombre del lugar",
+        "descripcion": "descripción breve",
+        "atmosfera": "ambiente sensorial"
+      }
+    ],
+    "reglas_lore": ["regla 1", "regla 2"],
+    "watchpoints_continuidad": ["punto 1", "punto 2"],
+    "temas_centrales": ["tema 1", "tema 2"],
+    "motivos_literarios": ["motivo 1", "motivo 2"],
+    "vocabulario_prohibido": ["palabra1", "palabra2"],
+    "paleta_sensorial_global": {
+      "olores": ["olor1"],
+      "sonidos": ["sonido1"],
+      "texturas": ["textura1"],
+      "colores": ["color1"]
+    }
+  },
+  "estructura_tres_actos": {
+    "acto_1": {
+      "capitulos": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+      "funcion": "Establecimiento del mundo, personajes, conflicto inicial"
+    },
+    "acto_2": {
+      "capitulos": [13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+      "funcion": "Desarrollo, complicaciones, punto medio"
+    },
+    "acto_3": {
+      "capitulos": [26, 27, 28, 29, 30, 31, 32, 33, 34, 35, -1],
+      "funcion": "Clímax, resolución, cierre"
+    }
+  },
+  "matriz_arcos": {
+    "trama_principal": {
+      "descripcion": "descripción de la trama A",
+      "puntos_giro": ["giro 1", "giro 2", "giro 3"]
+    },
+    "subtramas": [
+      {"nombre": "Subtrama B", "descripcion": "...", "interseccion_capitulos": [5, 15, 25]}
+    ]
+  },
+  "premisa": "premisa refinada y pulida de la historia",
+  "escaleta_capitulos": [
+    {
+      "numero": 0,
+      "titulo": "Título evocador del prólogo",
+      "ubicacion": "lugar donde transcurre",
+      "elenco_presente": ["personaje1", "personaje2"],
+      "funcion_estructural": "función en la trama (hook inicial, establecimiento, etc.)",
+      "informacion_nueva": "qué aprende el lector en este capítulo",
+      "conflicto_central": {
+        "tipo": "interno/externo/interpersonal",
+        "descripcion": "descripción del conflicto",
+        "stakes": "qué está en juego"
+      },
+      "beats": [
+        {"tipo": "apertura", "descripcion": "descripción del beat"},
+        {"tipo": "desarrollo", "descripcion": "..."},
+        {"tipo": "tension", "descripcion": "..."},
+        {"tipo": "reflexion", "descripcion": "..."},
+        {"tipo": "escalada", "descripcion": "..."},
+        {"tipo": "cierre_hook", "descripcion": "..."}
+      ],
+      "giro_emocional": {
+        "emocion_inicio": "emoción del lector al empezar",
+        "emocion_final": "emoción del lector al terminar"
+      },
+      "continuidad_entrada": "estado de personajes/situación al iniciar",
+      "continuidad_salida": "estado al terminar (para el siguiente capítulo)",
+      "bestseller_elements": {
+        "nivel_tension": 7,
+        "tipo_hook_final": "cliffhanger/revelacion/pregunta/amenaza",
+        "hook_descripcion": "descripción del gancho final"
+      }
+    }
+  ]
+}
+
+═══════════════════════════════════════════════════════════════════
+REQUISITOS OBLIGATORIOS
+═══════════════════════════════════════════════════════════════════
+
+1. PERSONAJES: Genera 5-6 personajes principales con todos los campos completos
+2. LUGARES: Genera 3-5 lugares importantes
+3. ESCALETA: Genera TODOS los capítulos requeridos:
+   ${input.hasPrologue ? '- Capítulo 0 = Prólogo' : ''}
+   - Capítulos 1 a ${input.chapterCount}
+   ${input.hasEpilogue ? '- Capítulo -1 = Epílogo' : ''}
+   
+4. CADA CAPÍTULO debe tener:
+   - "numero": número correcto (0=prólogo, 1-${input.chapterCount}, -1=epílogo)
+   - "titulo": título EVOCADOR, nunca "Capítulo 1" ni vacío
+   - Todos los campos del esquema
+
+5. ESTRUCTURA_TRES_ACTOS: Distribuir capítulos en actos 1, 2 y 3
+
+⛔ RESPONDE SOLO CON JSON VÁLIDO
+⛔ NO incluyas comentarios ni texto fuera del JSON
+⛔ GENERA TODOS LOS ${input.chapterCount + (input.hasPrologue ? 1 : 0) + (input.hasEpilogue ? 1 : 0)} CAPÍTULOS
+`;
+
+    console.log(`[Architect] SINGLE CALL: Generating complete World Bible (${unifiedPrompt.length} chars)...`);
+    const response = await this.generateContent(unifiedPrompt, undefined, { forceProvider: "gemini" });
+    
+    if (response.error) {
+      console.error(`[Architect] API Error: ${response.error}`);
+      return { content: JSON.stringify({ error: response.error }), tokenUsage: response.tokenUsage };
+    }
+    
+    console.log(`[Architect] Response received - content length: ${response.content?.length || 0}`);
+    
+    // Parse the response
+    let worldBible: any = null;
+    try {
+      // Remove markdown code fences
+      let content = response.content
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        let cleanedJson = jsonMatch[0]
+          .replace(/,\s*\/\/[^\n]*/g, ',')
+          .replace(/:\s*([^,\n"{\[]+)\s*\/\/[^\n]*/g, ': $1')
+          .replace(/\/\/[^\n]*/g, '')
+          .replace(/,\s*}/g, '}')
+          .replace(/,\s*]/g, ']')
+          .replace(/[\u200B-\u200D\uFEFF]/g, '');
+        
+        worldBible = JSON.parse(cleanedJson);
+      }
+    } catch (e: any) {
+      console.error(`[Architect] JSON parse error: ${e.message}`);
+      return { content: JSON.stringify({ error: `JSON parse error: ${e.message}` }), tokenUsage: response.tokenUsage };
+    }
+    
+    if (!worldBible) {
+      return { content: JSON.stringify({ error: "No valid JSON in response" }), tokenUsage: response.tokenUsage };
+    }
+    
+    // Validate required fields
+    const personajes = worldBible.world_bible?.personajes || [];
+    const escaleta = worldBible.escaleta_capitulos || [];
+    
+    console.log(`[Architect] COMPLETE: ${personajes.length} personajes, ${escaleta.length} capítulos`);
+    
+    if (personajes.length === 0 || escaleta.length === 0) {
+      console.error(`[Architect] Incomplete World Bible: ${personajes.length} personajes, ${escaleta.length} capítulos`);
+      return { 
+        content: JSON.stringify({ 
+          error: `World Bible incompleta: ${personajes.length} personajes, ${escaleta.length} capítulos` 
+        }), 
+        tokenUsage: response.tokenUsage 
+      };
+    }
+    
+    return {
+      content: JSON.stringify(worldBible),
+      tokenUsage: response.tokenUsage,
+    };
+  }
+  
+  // Legacy multi-phase method (kept for reference, not used)
+  async executeLegacyMultiPhase(input: ArchitectInput): Promise<AgentResponse> {
+    console.log(`[Architect] LEGACY execute() started for "${input.title}"`);
     
     const guiaEstilo = input.guiaEstilo || `Género: ${input.genre}, Tono: ${input.tone}`;
     const ideaInicial = input.premise || input.title;
@@ -517,19 +740,68 @@ Responde con JSON:
     let premisa = ideaInicial;
     
     try {
-      const jsonMatch = fase1aResponse.content.match(/\{[\s\S]*\}/);
+      // Remove markdown code fences first
+      let content = fase1aResponse.content
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         console.log(`[Architect] FASE 1A: JSON match found, length: ${jsonMatch[0].length}`);
         let cleanedJson = jsonMatch[0]
+          // Remove comments
           .replace(/,\s*\/\/[^\n]*/g, ',')
           .replace(/:\s*([^,\n"{\[]+)\s*\/\/[^\n]*/g, ': $1')
           .replace(/\/\/[^\n]*/g, '')
+          // Remove trailing commas
           .replace(/,\s*}/g, '}')
-          .replace(/,\s*]/g, ']');
+          .replace(/,\s*]/g, ']')
+          // Fix newlines inside strings
+          .replace(/(?<=:\s*"[^"]*)\n(?=[^"]*")/g, '\\n')
+          // Remove zero-width characters
+          .replace(/[\u200B-\u200D\uFEFF]/g, '');
+        
         console.log(`[Architect] FASE 1A: Cleaned JSON (first 500 chars): ${cleanedJson.substring(0, 500)}`);
-        const data = JSON.parse(cleanedJson);
-        personajes = data.personajes || [];
-        premisa = data.premisa || ideaInicial;
+        
+        try {
+          const data = JSON.parse(cleanedJson);
+          personajes = data.personajes || [];
+          premisa = data.premisa || ideaInicial;
+        } catch (parseError: any) {
+          // Try to find and fix the error position
+          const pos = parseInt(parseError.message.match(/position (\d+)/)?.[1] || "0");
+          if (pos > 0) {
+            console.log(`[Architect] FASE 1A: Parse error at position ${pos}, attempting repair...`);
+            // Try removing problematic character
+            cleanedJson = cleanedJson.substring(0, pos) + cleanedJson.substring(pos + 1);
+            try {
+              const data = JSON.parse(cleanedJson);
+              personajes = data.personajes || [];
+              premisa = data.premisa || ideaInicial;
+              console.log(`[Architect] FASE 1A: Repair successful`);
+            } catch {
+              // Second attempt: truncate to last complete object
+              const lastBrace = cleanedJson.lastIndexOf('}', pos);
+              if (lastBrace > 0) {
+                const truncated = cleanedJson.substring(0, lastBrace + 1) + ']}';
+                try {
+                  const data = JSON.parse(truncated);
+                  personajes = data.personajes || [];
+                  premisa = data.premisa || ideaInicial;
+                  console.log(`[Architect] FASE 1A: Truncation repair successful, got ${personajes.length} personajes`);
+                } catch {
+                  throw parseError;
+                }
+              } else {
+                throw parseError;
+              }
+            }
+          } else {
+            throw parseError;
+          }
+        }
+        
         console.log(`[Architect] FASE 1A: Parsed ${personajes.length} personajes`);
         if (personajes.length > 0) {
           console.log(`[Architect] FASE 1A: First character: ${JSON.stringify(personajes[0]).substring(0, 200)}`);
