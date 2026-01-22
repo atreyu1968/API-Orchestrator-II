@@ -4767,35 +4767,59 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return;
       }
 
+      // Support both regular projects and reedit projects
       const projectId = existingTranslation.projectId;
-      if (!projectId) {
+      const reeditProjectId = (existingTranslation as any).reeditProjectId;
+      
+      if (!projectId && !reeditProjectId) {
         sendEvent("error", { error: "No project associated with this translation" });
         cleanup();
         res.end();
         return;
       }
 
-      const project = await storage.getProject(projectId);
-      if (!project) {
-        sendEvent("error", { error: "Original project not found" });
-        cleanup();
-        res.end();
-        return;
+      let project: any = null;
+      let chaptersWithContent: any[] = [];
+      const isReeditProject = !!reeditProjectId && !projectId;
+
+      if (isReeditProject) {
+        // Handle reedit project
+        project = await storage.getReeditProject(reeditProjectId);
+        if (!project) {
+          sendEvent("error", { error: "Original reedit project not found" });
+          cleanup();
+          res.end();
+          return;
+        }
+        
+        const chapters = await storage.getReeditChaptersByProject(reeditProjectId);
+        const getReeditChapterSortOrder = (n: number) => n === 0 ? -1000 : n === -1 || n === 998 ? 1000 : n === -2 || n === 999 ? 1001 : n;
+        const sortedChapters = [...chapters].sort((a, b) => getReeditChapterSortOrder(a.chapterNumber) - getReeditChapterSortOrder(b.chapterNumber));
+        chaptersWithContent = sortedChapters.filter(c => 
+          (c.editedContent || c.originalContent)?.trim().length > 0
+        );
+      } else {
+        // Handle regular project
+        project = await storage.getProject(projectId!);
+        if (!project) {
+          sendEvent("error", { error: "Original project not found" });
+          cleanup();
+          res.end();
+          return;
+        }
+
+        const chapters = await storage.getChaptersByProject(projectId!);
+        const sortedChapters = [...chapters].sort((a, b) => {
+          const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
+          const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
+          return orderA - orderB;
+        });
+        chaptersWithContent = sortedChapters.filter(c => c.content && c.content.trim().length > 0);
       }
 
       const sourceLanguage = existingTranslation.sourceLanguage;
       const targetLanguage = existingTranslation.targetLanguage;
       const existingMarkdown = existingTranslation.markdown || "";
-
-      // Get all chapters and sort them
-      const chapters = await storage.getChaptersByProject(projectId);
-      const sortedChapters = [...chapters].sort((a, b) => {
-        const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
-        const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
-        return orderA - orderB;
-      });
-
-      const chaptersWithContent = sortedChapters.filter(c => c.content && c.content.trim().length > 0);
       const totalChapters = chaptersWithContent.length;
       
       // Count chapters in persisted markdown by counting "---" delimiters
@@ -4821,7 +4845,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         await storage.updateTranslation(translationId, { status: "completed" });
         sendEvent("complete", {
           id: translationId,
-          projectId,
+          projectId: projectId || reeditProjectId,
           title: project.title,
           sourceLanguage,
           targetLanguage,
@@ -4910,13 +4934,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
         console.log(`[Resume] Translating ${chapterLabel}: ${chapter.title}`);
 
+        // Get content based on project type
+        const chapterContent = isReeditProject 
+          ? ((chapter as any).editedContent || (chapter as any).originalContent || "")
+          : (chapter.content || "");
+
         const result = await translateWithRetry({
-          content: chapter.content || "",
+          content: chapterContent,
           sourceLanguage,
           targetLanguage,
           chapterTitle: chapter.title || undefined,
           chapterNumber: chapter.chapterNumber,
-          projectId,
+          projectId: projectId || reeditProjectId,
         });
 
         if (result.result && result.result.translated_text) {
@@ -4986,7 +5015,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
       sendEvent("complete", {
         id: translationId,
-        projectId,
+        projectId: projectId || reeditProjectId,
         title: project.title,
         sourceLanguage,
         targetLanguage,
