@@ -5004,8 +5004,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       cleanup();
       res.end();
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Error resuming translation:", error);
-      sendEvent("error", { error: "Failed to resume translation" });
+      sendEvent("error", { error: `Error al reanudar traducción: ${errorMessage}` });
       cleanup();
       res.end();
     }
