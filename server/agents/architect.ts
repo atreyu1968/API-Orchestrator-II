@@ -466,7 +466,7 @@ export class ArchitectAgent extends BaseAgent {
     if (input.hasEpilogue) sectionsInfo.push("EPÍLOGO");
     if (input.hasAuthorNote) sectionsInfo.push("NOTA DEL AUTOR");
 
-    let totalTokenUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    let totalTokenUsage = { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 };
     
     // ═══════════════════════════════════════════════════════════════════
     // FASE 1A: Personajes principales (máx 6 personajes detallados)
@@ -528,9 +528,9 @@ Responde con JSON:
     }
     
     if (fase1aResponse.tokenUsage) {
-      totalTokenUsage.promptTokens += fase1aResponse.tokenUsage.promptTokens || 0;
-      totalTokenUsage.completionTokens += fase1aResponse.tokenUsage.completionTokens || 0;
-      totalTokenUsage.totalTokens += fase1aResponse.tokenUsage.totalTokens || 0;
+      totalTokenUsage.inputTokens += fase1aResponse.tokenUsage.inputTokens || 0;
+      totalTokenUsage.outputTokens += fase1aResponse.tokenUsage.outputTokens || 0;
+      totalTokenUsage.thinkingTokens += fase1aResponse.tokenUsage.thinkingTokens || 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -592,9 +592,9 @@ Responde con JSON:
     }
     
     if (fase1bResponse.tokenUsage) {
-      totalTokenUsage.promptTokens += fase1bResponse.tokenUsage.promptTokens || 0;
-      totalTokenUsage.completionTokens += fase1bResponse.tokenUsage.completionTokens || 0;
-      totalTokenUsage.totalTokens += fase1bResponse.tokenUsage.totalTokens || 0;
+      totalTokenUsage.inputTokens += fase1bResponse.tokenUsage.inputTokens || 0;
+      totalTokenUsage.outputTokens += fase1bResponse.tokenUsage.outputTokens || 0;
+      totalTokenUsage.thinkingTokens += fase1bResponse.tokenUsage.thinkingTokens || 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -661,9 +661,9 @@ Responde con JSON:
     }
     
     if (fase1cResponse.tokenUsage) {
-      totalTokenUsage.promptTokens += fase1cResponse.tokenUsage.promptTokens || 0;
-      totalTokenUsage.completionTokens += fase1cResponse.tokenUsage.completionTokens || 0;
-      totalTokenUsage.totalTokens += fase1cResponse.tokenUsage.totalTokens || 0;
+      totalTokenUsage.inputTokens += fase1cResponse.tokenUsage.inputTokens || 0;
+      totalTokenUsage.outputTokens += fase1cResponse.tokenUsage.outputTokens || 0;
+      totalTokenUsage.thinkingTokens += fase1cResponse.tokenUsage.thinkingTokens || 0;
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -756,9 +756,9 @@ Responde con JSON:
       }
       
       if (fase2Response.tokenUsage) {
-        totalTokenUsage.promptTokens += fase2Response.tokenUsage.promptTokens || 0;
-        totalTokenUsage.completionTokens += fase2Response.tokenUsage.completionTokens || 0;
-        totalTokenUsage.totalTokens += fase2Response.tokenUsage.totalTokens || 0;
+        totalTokenUsage.inputTokens += fase2Response.tokenUsage.inputTokens || 0;
+        totalTokenUsage.outputTokens += fase2Response.tokenUsage.outputTokens || 0;
+        totalTokenUsage.thinkingTokens += fase2Response.tokenUsage.thinkingTokens || 0;
       }
     }
 
@@ -786,7 +786,7 @@ Responde con JSON:
     };
     
     console.log(`[Architect] COMBINED: ${personajes.length} personajes, ${worldElements.lugares?.length || 0} lugares, ${allEscaleta.length} capítulos`);
-    console.log(`[Architect] Total tokens used: ${totalTokenUsage.totalTokens}`);
+    console.log(`[Architect] Total tokens used: ${totalTokenUsage.inputTokens + totalTokenUsage.outputTokens}`);
 
     return {
       content: JSON.stringify(finalWorldBible),
