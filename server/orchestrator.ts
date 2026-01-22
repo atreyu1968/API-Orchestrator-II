@@ -570,10 +570,99 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         ? `${project.premise || ""}${extendedGuideContent ? `\n\n--- GUÍA DE ESCRITURA EXTENDIDA ---\n${extendedGuideContent}` : ""}${seriesContextContent}`
         : (project.premise || "");
 
+      const savedWorldBible = await storage.getWorldBibleByProject(project.id);
+      const savedChapters = await storage.getChaptersByProject(project.id);
+      const hasValidWorldBible = savedWorldBible && 
+        (savedWorldBible.characters as any[])?.length > 0 && 
+        (savedWorldBible.plotOutline as any[])?.length > 0;
+      
+      let worldBibleData: ParsedWorldBible | null = null;
+      
+      if (hasValidWorldBible && savedChapters.length > 0) {
+        console.log(`[Orchestrator] RESUME: World Bible already exists with ${(savedWorldBible!.characters as any[]).length} characters and ${savedChapters.length} chapters. Skipping Architect.`);
+        this.callbacks.onAgentStatus("architect", "completed", "Estructura narrativa ya existente - reanudando escritura");
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `Reanudando desde World Bible existente (${(savedWorldBible!.characters as any[]).length} personajes, ${savedChapters.length} capítulos)`,
+          agentRole: "system",
+        });
+        
+        worldBibleData = this.reconstructWorldBibleData(savedWorldBible!, project);
+        
+        const resumeSections = this.buildSectionsListFromChapters(savedChapters, worldBibleData);
+        const pendingChapters = savedChapters.filter(ch => ch.status === "pending" || ch.status === "writing");
+        
+        if (pendingChapters.length > 0) {
+          console.log(`[Orchestrator] Found ${pendingChapters.length} pending chapters to write`);
+          
+          const characterStates = this.initializeCharacterStates(worldBibleData);
+          
+          for (const section of resumeSections) {
+            if (this.isCancelling) {
+              console.log(`[Orchestrator] Cancellation detected during resume`);
+              break;
+            }
+            
+            const chapter = savedChapters.find(ch => ch.chapterNumber === section.numero);
+            if (!chapter || (chapter.status !== "pending" && chapter.status !== "writing")) {
+              if (chapter?.status === "completed" && chapter.content) {
+                this.updateCharacterStatesFromContent(characterStates, chapter.content, worldBibleData.world_bible);
+              }
+              continue;
+            }
+            
+            await storage.updateChapter(chapter.id, { status: "writing" });
+            this.callbacks.onAgentStatus("ghostwriter", "writing", `Escribiendo ${section.titulo}...`);
+            
+            const previousChaptersContent = savedChapters
+              .filter(ch => ch.chapterNumber < section.numero && ch.status === "completed" && ch.content)
+              .sort((a, b) => a.chapterNumber - b.chapterNumber)
+              .map(ch => ch.content)
+              .join("\n\n---\n\n");
+            
+            const writeResult = await this.ghostwriter.execute({
+              title: project.title,
+              chapterNumber: section.numero,
+              chapterTitle: section.titulo,
+              premise: project.premise || "",
+              summary: section.resumen,
+              tone: project.tone,
+              previousChapters: previousChaptersContent,
+              worldBible: worldBibleData.world_bible,
+              styleGuide: styleGuideContent,
+              minWordsPerChapter: project.minWordsPerChapter || 1500,
+              maxWordsPerChapter: project.maxWordsPerChapter || 3500,
+              characterStates,
+            });
+            
+            if (writeResult.error || !writeResult.content) {
+              console.error(`[Orchestrator] Failed to write chapter ${section.numero}: ${writeResult.error}`);
+              continue;
+            }
+            
+            const wordCount = writeResult.content.split(/\s+/).length;
+            await storage.updateChapter(chapter.id, {
+              content: writeResult.content,
+              originalContent: writeResult.content,
+              wordCount,
+              status: "completed",
+            });
+            
+            await this.trackTokenUsage(project.id, writeResult.tokenUsage, "Narrador", "deepseek-chat", section.numero, "chapter_writing");
+            this.updateCharacterStatesFromContent(characterStates, writeResult.content, worldBibleData.world_bible);
+            
+            console.log(`[Orchestrator] Completed chapter ${section.numero}: ${section.titulo} (${wordCount} words)`);
+          }
+          
+          await this.runFinalReview(project, worldBibleData);
+          return;
+        }
+      }
+
       const MAX_ARCHITECT_RETRIES = 3;
       let architectAttempt = 0;
       let architectResult: any = null;
-      let worldBibleData: ParsedWorldBible | null = null;
       let lastArchitectError = "";
 
       while (architectAttempt < MAX_ARCHITECT_RETRIES) {
