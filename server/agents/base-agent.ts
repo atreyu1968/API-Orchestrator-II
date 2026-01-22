@@ -184,10 +184,10 @@ export abstract class BaseAgent {
     return this.config.role;
   }
 
-  protected async generateContent(prompt: string, projectId?: number, options?: { temperature?: number }): Promise<AgentResponse> {
+  protected async generateContent(prompt: string, projectId?: number, options?: { temperature?: number; forceProvider?: AIProvider }): Promise<AgentResponse> {
     console.log(`[${this.config.name}] generateContent() called (prompt: ${prompt.length} chars)`);
-    const provider = getAIProvider();
-    console.log(`[${this.config.name}] AI provider: ${provider}`);
+    const provider = options?.forceProvider || getAIProvider();
+    console.log(`[${this.config.name}] AI provider: ${provider}${options?.forceProvider ? ' (forced)' : ''}`);
     
     if (provider === "deepseek") {
       console.log(`[${this.config.name}] Calling generateWithDeepSeek()...`);

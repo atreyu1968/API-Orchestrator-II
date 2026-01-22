@@ -455,7 +455,7 @@ export class ArchitectAgent extends BaseAgent {
 
   async execute(input: ArchitectInput): Promise<AgentResponse> {
     console.log(`[Architect] execute() started for "${input.title}"`);
-    console.log(`[Architect] Using MULTI-PHASE generation for DeepSeek V3 (8192 token limit)`);
+    console.log(`[Architect] Using GEMINI (65K token limit) for World Bible generation`);
     
     const guiaEstilo = input.guiaEstilo || `Género: ${input.genre}, Tono: ${input.tone}`;
     const ideaInicial = input.premise || input.title;
@@ -504,7 +504,7 @@ Responde con JSON:
 `;
 
     console.log(`[Architect] FASE 1A: Generating characters (${fase1aPrompt.length} chars)...`);
-    const fase1aResponse = await this.generateContent(fase1aPrompt);
+    const fase1aResponse = await this.generateContent(fase1aPrompt, undefined, { forceProvider: "gemini" });
     console.log(`[Architect] FASE 1A: Response received - content length: ${fase1aResponse.content?.length || 0}`);
     console.log(`[Architect] FASE 1A: Raw content (first 2000 chars): ${fase1aResponse.content?.substring(0, 2000) || 'EMPTY'}`);
     
@@ -597,7 +597,7 @@ Responde con JSON:
 `;
 
     console.log(`[Architect] FASE 1B: Generating world elements (${fase1bPrompt.length} chars)...`);
-    const fase1bResponse = await this.generateContent(fase1bPrompt);
+    const fase1bResponse = await this.generateContent(fase1bPrompt, undefined, { forceProvider: "gemini" });
     console.log(`[Architect] FASE 1B: Response received`);
     
     let worldElements: any = {};
@@ -667,7 +667,7 @@ Responde con JSON:
 `;
 
     console.log(`[Architect] FASE 1C: Generating narrative structure (${fase1cPrompt.length} chars)...`);
-    const fase1cResponse = await this.generateContent(fase1cPrompt);
+    const fase1cResponse = await this.generateContent(fase1cPrompt, undefined, { forceProvider: "gemini" });
     console.log(`[Architect] FASE 1C: Response received - content length: ${fase1cResponse.content.length}`);
     console.log(`[Architect] FASE 1C: Raw content (first 2000 chars): ${fase1cResponse.content.substring(0, 2000)}`);
     
@@ -844,7 +844,7 @@ Responde con JSON:
 `;
       
       console.log(`[Architect] FASE 2 (batch ${batch + 1}/${batches}): Generating chapters ${startChapter}-${endChapter} (${fase2Prompt.length} chars)...`);
-      const fase2Response = await this.generateContent(fase2Prompt);
+      const fase2Response = await this.generateContent(fase2Prompt, undefined, { forceProvider: "gemini" });
       console.log(`[Architect] FASE 2 (batch ${batch + 1}/${batches}): Response received`);
       
       try {
