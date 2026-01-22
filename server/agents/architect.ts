@@ -668,24 +668,96 @@ Responde con JSON:
 
     console.log(`[Architect] FASE 1C: Generating narrative structure (${fase1cPrompt.length} chars)...`);
     const fase1cResponse = await this.generateContent(fase1cPrompt);
-    console.log(`[Architect] FASE 1C: Response received`);
+    console.log(`[Architect] FASE 1C: Response received - content length: ${fase1cResponse.content.length}`);
+    console.log(`[Architect] FASE 1C: Raw content (first 2000 chars): ${fase1cResponse.content.substring(0, 2000)}`);
     
     let narrativeStructure: any = {};
     
     try {
       const jsonMatch = fase1cResponse.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
+        console.log(`[Architect] FASE 1C: JSON match found, length: ${jsonMatch[0].length}`);
+        
+        // Enhanced DeepSeek JSON cleaning for FASE 1C - handle all edge cases
         let cleanedJson = jsonMatch[0]
+          // Remove multi-line comments /* ... */
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          // Remove inline comments after values: "value" // comment -> "value"
+          .replace(/("(?:[^"\\]|\\.)*")\s*\/\/[^\n]*/g, '$1')
+          // Remove comments after numbers/booleans: 123 // comment -> 123
+          .replace(/(\d+(?:\.\d+)?|true|false|null)\s*\/\/[^\n]*/g, '$1')
+          // Remove comments after closing brackets: ] // comment or } // comment
+          .replace(/([\]}])\s*\/\/[^\n]*/g, '$1')
+          // Remove standalone line comments: // comment on its own line
+          .replace(/^\s*\/\/[^\n]*\n/gm, '')
+          // Remove any remaining inline comments after commas
           .replace(/,\s*\/\/[^\n]*/g, ',')
-          .replace(/:\s*([^,\n"{\[]+)\s*\/\/[^\n]*/g, ': $1')
+          // Remove hash-style comments (Python-style that DeepSeek might output)
+          .replace(/#[^\n"]*$/gm, '')
+          // Fix ellipsis in values that break parsing
+          .replace(/"\.\.\."/g, '"..."')
+          .replace(/:\s*\.\.\.([,\}\]])/g, ': ""$1')
+          // Remove any remaining // comments not in strings
           .replace(/\/\/[^\n]*/g, '')
+          // Fix trailing commas
           .replace(/,\s*}/g, '}')
-          .replace(/,\s*]/g, ']');
-        narrativeStructure = JSON.parse(cleanedJson);
+          .replace(/,\s*]/g, ']')
+          // Remove control characters except newlines and tabs
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
+          // Fix unescaped quotes inside strings (common DeepSeek issue)
+          .replace(/([^\\])""([^,\}\]])/g, '$1\\"$2')
+          // Collapse multiple spaces (not newlines) to single space
+          .replace(/[^\S\n]+/g, ' ')
+          // Remove zero-width characters
+          .replace(/[\u200B-\u200D\uFEFF]/g, '');
+        
+        console.log(`[Architect] FASE 1C: Cleaned JSON (first 500 chars): ${cleanedJson.substring(0, 500)}`);
+        
+        try {
+          narrativeStructure = JSON.parse(cleanedJson);
+        } catch (firstError: any) {
+          // Second attempt: try to fix common position-specific issues
+          console.log(`[Architect] FASE 1C: First parse failed, attempting recovery...`);
+          const posMatch = firstError.message?.match(/position (\d+)/);
+          if (posMatch) {
+            const pos = parseInt(posMatch[1]);
+            const charAtPos = cleanedJson.charAt(pos);
+            const contextBefore = cleanedJson.substring(Math.max(0, pos - 20), pos);
+            const contextAfter = cleanedJson.substring(pos, pos + 20);
+            console.log(`[Architect] FASE 1C: Error at pos ${pos}, char: '${charAtPos}', context: ...${contextBefore}[HERE]${contextAfter}...`);
+            
+            // Try removing problematic character and nearby whitespace
+            if (charAtPos === '/' || charAtPos === '#') {
+              const beforePos = cleanedJson.substring(0, pos);
+              const afterPos = cleanedJson.substring(pos);
+              cleanedJson = beforePos + afterPos.replace(/^[\/\#][^\n]*/, '');
+              narrativeStructure = JSON.parse(cleanedJson);
+              console.log(`[Architect] FASE 1C: Recovery successful after removing comment at position ${pos}`);
+            } else {
+              throw firstError;
+            }
+          } else {
+            throw firstError;
+          }
+        }
         console.log(`[Architect] FASE 1C: Parsed estructura_tres_actos: ${!!narrativeStructure.estructura_tres_actos}`);
+      } else {
+        console.error(`[Architect] FASE 1C: No JSON match found in response`);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("[Architect] FASE 1C: Failed to parse JSON:", e);
+      // Log the problematic area around the error position
+      if (e.message && e.message.includes('position')) {
+        const posMatch = e.message.match(/position (\d+)/);
+        if (posMatch) {
+          const pos = parseInt(posMatch[1]);
+          const jsonMatch = fase1cResponse.content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            const context = jsonMatch[0].substring(Math.max(0, pos - 100), pos + 100);
+            console.error(`[Architect] FASE 1C: JSON error context around position ${pos}:\n${context}`);
+          }
+        }
+      }
     }
     
     if (!narrativeStructure.estructura_tres_actos) {
