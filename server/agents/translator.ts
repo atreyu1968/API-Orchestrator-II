@@ -75,6 +75,30 @@ NORMAS EDITORIALES Y DE FLUIDEZ - ESPAÑOL LITERARIO PROFESIONAL (OBLIGATORIO)
 - REGISTRO: Mantener un registro literario moderno, ni académico ni demasiado coloquial.
 - EXPRESIONES IDIOMÁTICAS: Traducir el SENTIDO, no las palabras.
 
+[TUTEO / USTED - CRÍTICO]
+- COHERENCIA ABSOLUTA: El tratamiento (tú/usted) entre dos personajes DEBE ser CONSTANTE.
+- REGLA BASE:
+  • Compañeros/amigos/familia cercana → tuteo (tú)
+  • Superiores jerárquicos/desconocidos/respeto → usted
+  • Señor/Señora + apellido → SIEMPRE usted
+- TRANSICIONES: Si un personaje pasa de usted a tú, debe ser un MOMENTO significativo, explícito.
+  ✓ "¿Puedo tutearte?" y transición clara.
+  ✗ Alternar tú/usted sin explicación = ERROR GRAVE.
+- VERIFICACIÓN: Revisar cada par de personajes y verificar coherencia del tratamiento.
+
+[FORMATO DE TÍTULOS DE CAPÍTULOS - OBLIGATORIO]
+- FORMATO: "# Capítulo X: Título" (H1 en Markdown, con dos puntos)
+  ✓ # Capítulo 1: El Comienzo
+  ✓ # Prólogo
+  ✓ # Epílogo
+  ✗ ## Capítulo 1 (no H2)
+  ✗ Capítulo 1 - Título (no usar guion)
+  ✗ CAPÍTULO 1: TÍTULO (no todo en mayúsculas)
+- MAYÚSCULAS DEL TÍTULO: Primera letra mayúscula, resto minúsculas (excepto nombres propios).
+  ✓ # Capítulo 5: La noche cae sobre Madrid
+  ✗ # Capítulo 5: LA NOCHE CAE SOBRE MADRID
+- SIN SEPARADORES: Ninguna línea --- o === entre capítulos.
+
 [VERIFICACIÓN FINAL OBLIGATORIA]
 Releer mentalmente en voz alta. Si suena a traducción, REESCRIBIR.
 El texto DEBE parecer escrito ORIGINALMENTE en español por un autor nativo.`,
@@ -119,6 +143,19 @@ ENGLISH EDITORIAL & FLUENCY STANDARDS - PROFESSIONAL LITERARY (MANDATORY)
 - DIALOGUE: Make it sound like real speech - fragmented, interrupted, natural.
 - TRANSITIONS: Use subtle connectors (then, still, yet, though) not formal ones.
 - REGISTER: Maintain consistent literary register - neither too formal nor too casual.
+
+[CHAPTER TITLES FORMAT - MANDATORY]
+- FORMAT: "# Chapter X: Title" (H1 in Markdown, with colon)
+  ✓ # Chapter 1: The Beginning
+  ✓ # Prologue
+  ✓ # Epilogue
+  ✗ ## Chapter 1 (not H2)
+  ✗ Chapter 1 - Title (no dash)
+  ✗ CHAPTER 1: TITLE (not all caps)
+- TITLE CASE: First letter uppercase, rest lowercase (except proper nouns).
+  ✓ # Chapter 5: The night falls over London
+  ✗ # Chapter 5: THE NIGHT FALLS OVER LONDON
+- NO SEPARATORS: No --- or === lines between chapters.
 
 [FINAL CHECK - MANDATORY]
 Read aloud mentally. If it sounds translated, REWRITE.
@@ -267,6 +304,30 @@ NORMES ÉDITORIALES ET FLUIDITÉ - FRANÇAIS LITTÉRAIRE PROFESSIONNEL (OBLIGATO
 - RYTHME: Alterner phrases courtes (tension) et longues (description).
 - EXPRESSIONS IDIOMATIQUES: Traduire le SENS, utiliser des expressions françaises authentiques.
 
+[TUTOIEMENT / VOUVOIEMENT - CRITIQUE]
+- COHÉRENCE ABSOLUE: Le traitement (tu/vous) entre deux personnages DOIT rester CONSTANT.
+- RÈGLE DE BASE:
+  • Collègues/amis proches → tutoiement (tu)
+  • Supérieurs hiérarchiques/inconnus/respect → vouvoiement (vous)
+  • Monsieur/Madame + nom → TOUJOURS vouvoiement
+- TRANSITIONS: Si un personnage passe du vous au tu, cela doit être un MOMENT significatif, explicite.
+  ✓ « Je peux te tutoyer ? » puis transition claire.
+  ✗ Alterner tu/vous sans explication = ERREUR GRAVE.
+- VÉRIFICATION: Tracer chaque paire de personnages et vérifier la cohérence du traitement.
+
+[FORMAT DES TITRES DE CHAPITRES - OBLIGATOIRE]
+- FORMAT: "# Chapitre X : Titre" (H1 en Markdown, avec deux-points et espace)
+  ✓ # Chapitre 1 : Le Commencement
+  ✓ # Prologue
+  ✓ # Épilogue
+  ✗ ## Chapitre 1 (pas H2)
+  ✗ Chapitre 1 - Titre (pas de tiret)
+  ✗ CHAPITRE 1 : TITRE (pas tout en majuscules)
+- CASSE DU TITRE: Première lettre majuscule, reste en minuscules (sauf noms propres).
+  ✓ # Chapitre 5 : La nuit tombe sur Paris
+  ✗ # Chapitre 5 : LA NUIT TOMBE SUR PARIS
+- PAS DE SÉPARATEURS: Aucune ligne --- ou === entre les chapitres.
+
 [VÉRIFICATION FINALE OBLIGATOIRE]
 Relire mentalement à haute voix. Si cela sonne comme une traduction, RÉÉCRIRE.
 Le texte DOIT sembler écrit ORIGINELLEMENT en français par un auteur francophone.`,
@@ -317,6 +378,30 @@ DEUTSCHE REDAKTIONS- UND STILSTANDARDS - PROFESSIONELL LITERARISCH (PFLICHT)
 - RHYTHMUS: Kurze Sätze für Spannung, längere für Beschreibung.
 - REGISTER: Literarisch modern, weder zu formell noch zu umgangssprachlich.
 
+[DU / SIE - KRITISCH]
+- ABSOLUTE KONSISTENZ: Die Anrede (du/Sie) zwischen zwei Figuren MUSS KONSTANT bleiben.
+- GRUNDREGEL:
+  • Kollegen/Freunde/Familie → Duzen (du)
+  • Vorgesetzte/Fremde/Respekt → Siezen (Sie)
+  • Herr/Frau + Nachname → IMMER Sie
+- ÜBERGÄNGE: Wenn eine Figur vom Sie zum Du wechselt, muss es ein BEDEUTSAMER, expliziter Moment sein.
+  ✓ „Wollen wir uns duzen?" dann klarer Übergang.
+  ✗ Zwischen du/Sie wechseln ohne Erklärung = SCHWERER FEHLER.
+- ÜBERPRÜFUNG: Jedes Figurenpaar durchgehen und Konsistenz der Anrede prüfen.
+
+[KAPITELÜBERSCHRIFTEN-FORMAT - PFLICHT]
+- FORMAT: "# Kapitel X: Titel" (H1 in Markdown, mit Doppelpunkt)
+  ✓ # Kapitel 1: Der Anfang
+  ✓ # Prolog
+  ✓ # Epilog
+  ✗ ## Kapitel 1 (nicht H2)
+  ✗ Kapitel 1 - Titel (kein Bindestrich)
+  ✗ KAPITEL 1: TITEL (nicht alles Großbuchstaben)
+- TITELSCHREIBUNG: Erster Buchstabe groß, Rest klein (außer Eigennamen).
+  ✓ # Kapitel 5: Die Nacht fällt über Berlin
+  ✗ # Kapitel 5: DIE NACHT FÄLLT ÜBER BERLIN
+- KEINE TRENNLINIEN: Keine --- oder === zwischen Kapiteln.
+
 [ENDKONTROLLE - PFLICHT]
 Mental laut lesen. Wenn es wie eine Übersetzung klingt, UMSCHREIBEN.
 Der Text MUSS klingen, als wäre er URSPRÜNGLICH von einem deutschen Muttersprachler geschrieben.`,
@@ -365,6 +450,30 @@ NORME EDITORIALI E FLUIDITÀ - ITALIANO LETTERARIO PROFESSIONALE (OBBLIGATORIO)
 - REGISTRO: Mantenere un registro letterario moderno, non accademico né troppo colloquiale.
 - ESPRESSIONI IDIOMATICHE: Tradurre il SENSO, non le parole. Usare espressioni italiane equivalenti.
 
+[TU / LEI - CRITICO]
+- COERENZA ASSOLUTA: Il trattamento (tu/Lei) tra due personaggi DEVE essere COSTANTE.
+- REGOLA BASE:
+  • Colleghi/amici/famiglia → dare del tu
+  • Superiori/sconosciuti/rispetto → dare del Lei
+  • Signor/Signora + cognome → SEMPRE Lei
+- TRANSIZIONI: Se un personaggio passa dal Lei al tu, deve essere un MOMENTO significativo, esplicito.
+  ✓ "Possiamo darci del tu?" poi transizione chiara.
+  ✗ Alternare tu/Lei senza spiegazione = ERRORE GRAVE.
+- VERIFICA: Controllare ogni coppia di personaggi per coerenza del trattamento.
+
+[FORMATO TITOLI CAPITOLI - OBBLIGATORIO]
+- FORMATO: "# Capitolo X: Titolo" (H1 in Markdown, con due punti)
+  ✓ # Capitolo 1: L'inizio
+  ✓ # Prologo
+  ✓ # Epilogo
+  ✗ ## Capitolo 1 (non H2)
+  ✗ Capitolo 1 - Titolo (non usare trattino)
+  ✗ CAPITOLO 1: TITOLO (non tutto maiuscolo)
+- MAIUSCOLE DEL TITOLO: Prima lettera maiuscola, resto minuscolo (eccetto nomi propri).
+  ✓ # Capitolo 5: La notte cala su Roma
+  ✗ # Capitolo 5: LA NOTTE CALA SU ROMA
+- NESSUN SEPARATORE: Nessuna linea --- o === tra capitoli.
+
 [VERIFICA FINALE OBBLIGATORIA]
 Prima di consegnare, rileggere ad alta voce mentalmente. Se suona come una traduzione, RISCRIVERE.
 Il testo DEVE sembrare scritto ORIGINARIAMENTE in italiano da un autore madrelingua.`,
@@ -407,6 +516,32 @@ NORMAS EDITORIAIS E FLUIDEZ - PORTUGUÊS LITERÁRIO PROFISSIONAL (OBRIGATÓRIO)
 - CONECTORES: Usar "depois", "então", "assim", "por isso" naturalmente.
 - REGISTO: Literário moderno, nem demasiado formal nem coloquial.
 - EXPRESSÕES IDIOMÁTICAS: Traduzir o SENTIDO, usar expressões portuguesas autênticas.
+
+[TU / VOCÊ / O SENHOR - CRÍTICO]
+- COERÊNCIA ABSOLUTA: O tratamento entre dois personagens DEVE ser CONSTANTE.
+- REGRA BASE (pt-PT):
+  • Colegas/amigos/família → tu
+  • Superiores/desconhecidos/respeito → você ou o senhor/a senhora
+  • Senhor/Senhora + apelido → SEMPRE o senhor/a senhora
+- REGRA BASE (pt-BR):
+  • Informal/amigos → você (mais comum)
+  • Formal/respeito → o senhor/a senhora
+- TRANSIÇÕES: Se um personagem muda de tratamento, deve ser um MOMENTO significativo.
+  ✓ "Podemos tratar-nos por tu?" e transição clara.
+  ✗ Alternar tratamentos sem explicação = ERRO GRAVE.
+
+[FORMATO TÍTULOS CAPÍTULOS - OBRIGATÓRIO]
+- FORMATO: "# Capítulo X: Título" (H1 em Markdown, com dois pontos)
+  ✓ # Capítulo 1: O Começo
+  ✓ # Prólogo
+  ✓ # Epílogo
+  ✗ ## Capítulo 1 (não H2)
+  ✗ Capítulo 1 - Título (não usar travessão)
+  ✗ CAPÍTULO 1: TÍTULO (não tudo maiúsculas)
+- MAIÚSCULAS DO TÍTULO: Primeira letra maiúscula, resto minúsculas (exceto nomes próprios).
+  ✓ # Capítulo 5: A noite cai sobre Lisboa
+  ✗ # Capítulo 5: A NOITE CAI SOBRE LISBOA
+- SEM SEPARADORES: Nenhuma linha --- ou === entre capítulos.
 
 [VERIFICAÇÃO FINAL OBRIGATÓRIA]
 Reler mentalmente em voz alta. Se soar como tradução, REESCREVER.
@@ -453,6 +588,29 @@ NORMES EDITORIALS I FLUÏDESA - CATALÀ LITERARI PROFESSIONAL (OBLIGATORI)
 - REGISTRE: Literari modern, ni massa formal ni col·loquial.
 - EXPRESSIONS IDIOMÀTIQUES: Traduir el SENTIT, usar expressions catalanes autèntiques.
 - VARIETAT: Usar vocabulari català genuí, no catalanitzacions del castellà.
+
+[TU / VOSTÈ - CRÍTIC]
+- COHERÈNCIA ABSOLUTA: El tractament (tu/vostè) entre dos personatges HA DE ser CONSTANT.
+- REGLA BASE:
+  • Companys/amics/família → tuteig (tu)
+  • Superiors/desconeguts/respecte → vostè
+  • Senyor/Senyora + cognom → SEMPRE vostè
+- TRANSICIONS: Si un personatge passa del vostè al tu, ha de ser un MOMENT significatiu, explícit.
+  ✓ "Podem tutejar-nos?" i transició clara.
+  ✗ Alternar tu/vostè sense explicació = ERROR GREU.
+
+[FORMAT TÍTOLS CAPÍTOLS - OBLIGATORI]
+- FORMAT: "# Capítol X: Títol" (H1 en Markdown, amb dos punts)
+  ✓ # Capítol 1: El Començament
+  ✓ # Pròleg
+  ✓ # Epíleg
+  ✗ ## Capítol 1 (no H2)
+  ✗ Capítol 1 - Títol (no usar guió)
+  ✗ CAPÍTOL 1: TÍTOL (no tot en majúscules)
+- MAJÚSCULES DEL TÍTOL: Primera lletra majúscula, resta minúscules (excepte noms propis).
+  ✓ # Capítol 5: La nit cau sobre Barcelona
+  ✗ # Capítol 5: LA NIT CAU SOBRE BARCELONA
+- SENSE SEPARADORS: Cap línia --- o === entre capítols.
 
 [VERIFICACIÓ FINAL OBLIGATÒRIA]
 Rellegir mentalment en veu alta. Si sona com una traducció, REESCRIURE.
@@ -739,6 +897,65 @@ export class TranslatorAgent extends BaseAgent {
     return result;
   }
 
+  private normalizeChapterHeaders(text: string, targetLanguage: string): string {
+    let result = text;
+    
+    // Language-specific chapter labels
+    const chapterLabels: Record<string, { chapter: string, prologue: string, epilogue: string }> = {
+      es: { chapter: 'Capítulo', prologue: 'Prólogo', epilogue: 'Epílogo' },
+      en: { chapter: 'Chapter', prologue: 'Prologue', epilogue: 'Epilogue' },
+      'en-US': { chapter: 'Chapter', prologue: 'Prologue', epilogue: 'Epilogue' },
+      'en-GB': { chapter: 'Chapter', prologue: 'Prologue', epilogue: 'Epilogue' },
+      fr: { chapter: 'Chapitre', prologue: 'Prologue', epilogue: 'Épilogue' },
+      de: { chapter: 'Kapitel', prologue: 'Prolog', epilogue: 'Epilog' },
+      it: { chapter: 'Capitolo', prologue: 'Prologo', epilogue: 'Epilogo' },
+      pt: { chapter: 'Capítulo', prologue: 'Prólogo', epilogue: 'Epílogo' },
+      'pt-PT': { chapter: 'Capítulo', prologue: 'Prólogo', epilogue: 'Epílogo' },
+      'pt-BR': { chapter: 'Capítulo', prologue: 'Prólogo', epilogue: 'Epílogo' },
+      ca: { chapter: 'Capítol', prologue: 'Pròleg', epilogue: 'Epíleg' },
+    };
+    
+    const labels = chapterLabels[targetLanguage] || chapterLabels['en'];
+    
+    // 1. Remove separator lines (---, ===, ***)
+    result = result.replace(/^[-=*]{3,}\s*$/gm, '');
+    
+    // 2. Convert H2/H3 chapter headers to H1
+    // Match: ## Capítulo 1: Title or ### Chapter 1 - Title etc.
+    const chapterPatterns = [
+      // Multi-hash to single hash
+      /^#{2,}\s*((?:Capítulo|Chapter|Chapitre|Kapitel|Capitolo|Capítol)\s+\d+)/gmi,
+      /^#{2,}\s*((?:Prólogo|Prologue|Prolog|Prologo|Pròleg))/gmi,
+      /^#{2,}\s*((?:Epílogo|Epilogue|Epilog|Epilogo|Epíleg|Épilogue))/gmi,
+    ];
+    
+    for (const pattern of chapterPatterns) {
+      result = result.replace(pattern, '# $1');
+    }
+    
+    // 3. Normalize chapter format: "# Chapter X: Title" (with colon, not dash)
+    // Pattern: # Capítulo 1 - Título -> # Capítulo 1: Título
+    result = result.replace(/^#\s*((?:Capítulo|Chapter|Chapitre|Kapitel|Capitolo|Capítol)\s+\d+)\s*[-–—]\s*/gmi, 
+      '# $1: ');
+    
+    // 4. Fix all-caps titles after chapter number
+    // Match: # Capítulo 1: TÍTULO EN MAYÚSCULAS and convert to Title Case
+    result = result.replace(/^(#\s*(?:Capítulo|Chapter|Chapitre|Kapitel|Capitolo|Capítol)\s+\d+:\s*)([A-ZÁÉÍÓÚÀÈÌÒÙÄÖÜÂÊÎÔÛÑÇ\s]+)$/gm,
+      (match, prefix, title) => {
+        // Convert to sentence case (first letter uppercase, rest lowercase)
+        const titleLower = title.toLowerCase();
+        const titleCase = titleLower.charAt(0).toUpperCase() + titleLower.slice(1);
+        return prefix + titleCase;
+      }
+    );
+    
+    // 5. Remove empty lines created by separator removal
+    result = result.replace(/\n{3,}/g, '\n\n');
+    
+    console.log(`[Translator] Normalized chapter headers for ${targetLanguage}`);
+    return result;
+  }
+
   private cleanTranslatedText(content: string, targetLanguage?: string): string {
     let cleaned = content.trim();
     
@@ -813,6 +1030,9 @@ export class TranslatorAgent extends BaseAgent {
           cleaned = this.applyGermanTypography(cleaned);
           break;
       }
+      
+      // Always normalize chapter headers for all languages
+      cleaned = this.normalizeChapterHeaders(cleaned, targetLanguage);
     }
     
     return cleaned.trim();
