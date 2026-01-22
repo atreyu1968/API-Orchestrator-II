@@ -225,6 +225,8 @@ export abstract class BaseAgent {
           { role: "user", content: prompt },
         ];
 
+        console.log(`[${this.config.name}] Creating DeepSeek request (messages: ${messages.length}, model: ${deepseekModel})...`);
+        
         const generatePromise = deepseek.chat.completions.create({
           model: deepseekModel,
           messages,
@@ -232,6 +234,8 @@ export abstract class BaseAgent {
           max_tokens: 16384, // Increased for longer outputs like World Bible
           stream: false,
         });
+
+        console.log(`[${this.config.name}] DeepSeek request created, awaiting response (timeout: ${this.timeoutMs}ms)...`);
 
         const response = await withTimeout(
           generatePromise,
