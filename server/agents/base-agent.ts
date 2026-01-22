@@ -239,13 +239,27 @@ export abstract class BaseAgent {
 
         console.log(`[${this.config.name}] Creating DeepSeek request (messages: ${messages.length}, model: ${deepseekModel})...`);
         
-        const generatePromise = deepseek.chat.completions.create({
+        // DeepSeek R1 (reasoner) uses different parameters than V3 (chat)
+        // R1: max_completion_tokens (16000 limit), no temperature support
+        // V3: max_tokens (8192 limit), temperature 0-2
+        const isReasonerModel = deepseekModel === "deepseek-reasoner";
+        
+        const requestParams: any = {
           model: deepseekModel,
           messages,
-          temperature: Math.min(temperature, 2.0), // DeepSeek max is 2.0
-          max_tokens: 8192, // DeepSeek max is 8192
           stream: false,
-        });
+        };
+        
+        if (isReasonerModel) {
+          // R1 uses max_completion_tokens and doesn't support temperature
+          requestParams.max_completion_tokens = 16000;
+        } else {
+          // V3 uses max_tokens and supports temperature
+          requestParams.max_tokens = 8192;
+          requestParams.temperature = Math.min(temperature, 2.0);
+        }
+        
+        const generatePromise = deepseek.chat.completions.create(requestParams);
 
         console.log(`[${this.config.name}] DeepSeek request created, awaiting response (timeout: ${this.timeoutMs}ms)...`);
 
