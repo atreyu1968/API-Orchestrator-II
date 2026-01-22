@@ -177,9 +177,12 @@ export abstract class BaseAgent {
   }
 
   protected async generateContent(prompt: string, projectId?: number, options?: { temperature?: number }): Promise<AgentResponse> {
+    console.log(`[${this.config.name}] generateContent() called (prompt: ${prompt.length} chars)`);
     const provider = getAIProvider();
+    console.log(`[${this.config.name}] AI provider: ${provider}`);
     
     if (provider === "deepseek") {
+      console.log(`[${this.config.name}] Calling generateWithDeepSeek()...`);
       return this.generateWithDeepSeek(prompt, projectId, options);
     }
     

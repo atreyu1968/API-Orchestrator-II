@@ -454,6 +454,7 @@ export class ArchitectAgent extends BaseAgent {
   }
 
   async execute(input: ArchitectInput): Promise<AgentResponse> {
+    console.log(`[Architect] execute() started for "${input.title}"`);
     const guiaEstilo = input.guiaEstilo || `Género: ${input.genre}, Tono: ${input.tone}`;
     const ideaInicial = input.premise || input.title;
 
@@ -562,7 +563,9 @@ export class ArchitectAgent extends BaseAgent {
     Responde ÚNICAMENTE con el JSON estructurado según las instrucciones.
     `;
 
+    console.log(`[Architect] Prompt built (${prompt.length} chars), calling generateContent()...`);
     const response = await this.generateContent(prompt);
+    console.log(`[Architect] generateContent() returned`);
     
     try {
       const jsonMatch = response.content.match(/\{[\s\S]*\}/);
