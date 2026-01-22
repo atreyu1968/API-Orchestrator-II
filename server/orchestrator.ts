@@ -621,6 +621,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
             }
             
             await storage.updateChapter(chapter.id, { status: "writing" });
+            this.callbacks.onChapterStatusChange(section.numero, "writing");
             this.callbacks.onAgentStatus("ghostwriter", "writing", `Escribiendo ${section.titulo}...`);
             
             const previousChaptersContent = savedChapters
@@ -929,6 +930,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         const sectionData = allSections[i];
 
         await storage.updateChapter(chapter.id, { status: "writing" });
+        this.callbacks.onChapterStatusChange(sectionData.numero, "writing");
         await storage.updateProject(project.id, { currentChapter: i + 1 });
 
         const sectionLabel = this.getSectionLabel(sectionData);
@@ -1514,6 +1516,7 @@ ${chapterSummaries || "Sin capítulos disponibles"}
         const sectionData = this.buildSectionDataFromChapter(chapter, worldBibleData);
         
         await storage.updateChapter(chapter.id, { status: "writing" });
+        this.callbacks.onChapterStatusChange(chapter.chapterNumber, "writing");
 
         const sectionLabel = this.getSectionLabel(sectionData);
         this.callbacks.onAgentStatus("ghostwriter", "writing", `El Narrador está escribiendo ${sectionLabel}...`);
@@ -2789,6 +2792,7 @@ Responde SOLO con un JSON válido con la estructura:
         const sectionData = this.buildSectionDataFromChapter(chapter, worldBibleData);
         
         await storage.updateChapter(chapter.id, { status: "writing" });
+        this.callbacks.onChapterStatusChange(chapter.chapterNumber, "writing");
 
         const sectionLabel = this.getSectionLabel(sectionData);
         this.callbacks.onAgentStatus("ghostwriter", "writing", `El Narrador está escribiendo ${sectionLabel}...`);
