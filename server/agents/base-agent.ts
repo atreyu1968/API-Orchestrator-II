@@ -226,7 +226,7 @@ export abstract class BaseAgent {
           model: deepseekModel,
           messages,
           temperature: Math.min(temperature, 2.0), // DeepSeek max is 2.0
-          max_tokens: 8192,
+          max_tokens: 16384, // Increased for longer outputs like World Bible
           stream: false,
         });
 
@@ -326,9 +326,21 @@ export abstract class BaseAgent {
       }
     }
     
+    // Fallback to Gemini when DeepSeek fails after all retries
+    console.log(`[${this.config.name}] DeepSeek failed after all retries. Falling back to Gemini...`);
+    try {
+      const geminiResult = await this.generateWithGemini(prompt, projectId, options);
+      if (geminiResult.content && !geminiResult.error) {
+        console.log(`[${this.config.name}] Gemini fallback successful`);
+        return geminiResult;
+      }
+    } catch (geminiError) {
+      console.error(`[${this.config.name}] Gemini fallback also failed:`, geminiError);
+    }
+    
     return {
       content: "",
-      error: lastError?.message || "Unknown error after all retries",
+      error: lastError?.message || "Unknown error after all retries (including Gemini fallback)",
       timedOut: false,
     };
   }
