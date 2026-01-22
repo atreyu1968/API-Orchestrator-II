@@ -247,6 +247,26 @@ export abstract class BaseAgent {
         if ((choice?.message as any)?.reasoning_content) {
           thoughtSignature = (choice.message as any).reasoning_content;
         }
+        
+        // DEBUG: Log content length and preview for architect debugging
+        console.log(`[${this.config.name}] DeepSeek response - content length: ${content.length}, reasoning length: ${thoughtSignature.length}`);
+        if (content.length > 0) {
+          console.log(`[${this.config.name}] DeepSeek content preview (first 500): ${content.substring(0, 500)}`);
+        } else if (thoughtSignature.length > 0) {
+          // If content is empty but reasoning has JSON, try to extract it
+          const jsonMatch = thoughtSignature.match(/```(?:json)?\s*([\s\S]*?)```/);
+          if (jsonMatch) {
+            console.log(`[${this.config.name}] Found JSON in reasoning_content, extracting...`);
+            content = jsonMatch[1].trim();
+          } else {
+            // Try to find raw JSON object in reasoning
+            const rawJsonMatch = thoughtSignature.match(/(\{[\s\S]*"world_bible"[\s\S]*\})/);
+            if (rawJsonMatch) {
+              console.log(`[${this.config.name}] Found raw JSON in reasoning_content, extracting...`);
+              content = rawJsonMatch[1];
+            }
+          }
+        }
 
         const usage = response.usage;
         const tokenUsage: TokenUsage = {
@@ -326,21 +346,9 @@ export abstract class BaseAgent {
       }
     }
     
-    // Fallback to Gemini when DeepSeek fails after all retries
-    console.log(`[${this.config.name}] DeepSeek failed after all retries. Falling back to Gemini...`);
-    try {
-      const geminiResult = await this.generateWithGemini(prompt, projectId, options);
-      if (geminiResult.content && !geminiResult.error) {
-        console.log(`[${this.config.name}] Gemini fallback successful`);
-        return geminiResult;
-      }
-    } catch (geminiError) {
-      console.error(`[${this.config.name}] Gemini fallback also failed:`, geminiError);
-    }
-    
     return {
       content: "",
-      error: lastError?.message || "Unknown error after all retries (including Gemini fallback)",
+      error: lastError?.message || "Unknown error after all retries",
       timedOut: false,
     };
   }
