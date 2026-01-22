@@ -20,19 +20,26 @@ export interface CopyEditorResult {
 
 const LANGUAGE_EDITORIAL_RULES: Record<string, string> = {
   es: `
-NORMAS EDITORIALES ESPAÑOL:
-- DIÁLOGOS: Usar raya (—) para introducir diálogos. Ejemplo: —Hola —dijo María—. ¿Cómo estás?
-- COMILLAS: Usar comillas angulares « » para citas textuales. Comillas inglesas " " solo para citas dentro de citas.
-- PUNTUACIÓN: Los signos de interrogación y exclamación van al principio (¿?) y al final (?).
-- NÚMEROS: Escribir con letras del uno al nueve, cifras del 10 en adelante.`,
+NORMAS EDITORIALES ESPAÑOL (OBLIGATORIO):
+- DIÁLOGOS: EXCLUSIVAMENTE raya (—) para diálogos. NUNCA comillas.
+  ✓ —Hola —dijo María—. ¿Cómo estás?
+  ✗ "Hola" dijo María. (incorrecto)
+  ✗ «Hola» dijo María. (incorrecto)
+  ✗ - Hola (guion corto incorrecto)
+- INCISOS: La raya cierra el inciso, el punto va DESPUÉS de la raya de cierre.
+  ✓ —No sé —respondió él—. Quizá mañana.
+- COMILLAS: SOLO « » para citas textuales o pensamientos. " " para citas dentro de citas.
+- PUNTUACIÓN: Signos de apertura ¿¡ SIEMPRE obligatorios.
+- NÚMEROS: Letras del uno al nueve, cifras del 10 en adelante.`,
 
   en: `
-ENGLISH EDITORIAL STANDARDS:
-- DIALOGUE: Use quotation marks for dialogue. Example: "Hello," said Mary. "How are you?"
-- QUOTES: Use double quotes " " for dialogue and direct speech. Single quotes ' ' for quotes within quotes.
-- PUNCTUATION: Periods and commas go inside quotation marks. Question marks and exclamation points go inside only if part of the quote.
-- NUMBERS: Spell out one through nine, use numerals for 10 and above.
-- CONTRACTIONS: Preserve natural contractions (don't, can't, won't) in dialogue.`,
+ENGLISH EDITORIAL STANDARDS (MANDATORY):
+- DIALOGUE: Double quotation marks " " EXCLUSIVELY for dialogue.
+  ✓ "Hello," said Mary. "How are you?"
+  ✗ 'Hello,' said Mary. (single quotes wrong for US English)
+- PUNCTUATION: Periods and commas ALWAYS inside quotation marks.
+- NUMBERS: Spell out one through nine, numerals for 10+.
+- CONTRACTIONS: Use natural contractions in dialogue (don't, can't, won't, I'm).`,
 
   fr: `
 NORMES ÉDITORIALES FRANÇAIS (OBLIGATOIRE):
@@ -45,41 +52,61 @@ NORMES ÉDITORIALES FRANÇAIS (OBLIGATOIRE):
 - PONCTUATION FRANÇAISE: Espace insécable AVANT : ; ! ? et APRÈS « et AVANT ».
   ✓ Comment vas-tu ? (espace avant ?)
   ✓ Attention : voici (espace avant :)
-- NOMBRES: Écrire en lettres de un à neuf, chiffres à partir de 10.
-- MAJUSCULES: Les noms de langues, nationalités s'écrivent en minuscules (français, anglais).`,
+- NOMBRES: Écrire en lettres de un à neuf, chiffres à partir de 10.`,
 
   de: `
-DEUTSCHE REDAKTIONSSTANDARDS:
-- DIALOGE: Anführungszeichen „..." oder »...« verwenden. Beispiel: „Hallo", sagte Maria.
-- ZITATE: Doppelte Anführungszeichen für direkte Rede. Einfache ‚...' für Zitate im Zitat.
-- KOMPOSITA: Bindestriche bei zusammengesetzten Wörtern korrekt verwenden.
-- ZAHLEN: Eins bis neun ausschreiben, ab 10 Ziffern verwenden.`,
+DEUTSCHE REDAKTIONSSTANDARDS (PFLICHT):
+- DIALOGE: AUSSCHLIESSLICH Anführungszeichen „..." (unten-oben). NICHT »...«.
+  ✓ KORREKT: „Hallo", sagte Maria. „Wie geht es dir?"
+  ✗ FALSCH: »Hallo«, sagte Maria. (Chevrons nicht für Dialoge)
+  ✗ FALSCH: "Hallo", sagte Maria. (englische Anführungszeichen)
+- ZITAT IM ZITAT: Einfache Anführungszeichen ‚...' innerhalb von „...".
+  ✓ „Er sagte: ‚Komm her!' und ging."
+- KOMMA BEI DIALOGEN: Komma VOR der Zuschreibung, Punkt NACH Abschluss.
+  ✓ „Ich komme", sagte er.
+  ✓ „Ich komme", sagte er, „aber später."
+- ZAHLEN: Eins bis neun ausschreiben, ab 10 Ziffern.
+- KOMPOSITA: Natürlich verwenden (Handschuh, Krankenhaus).`,
 
   it: `
 NORME EDITORIALI ITALIANO (OBBLIGATORIO):
-- DIALOGHI: Usare ESCLUSIVAMENTE il trattino lungo (—) per introdurre i dialoghi. MAI usare virgolette di nessun tipo ("", «», <<>>).
-  Esempio corretto: —Ciao —disse Maria—. Come stai?
-  Esempio SBAGLIATO: «Ciao» disse Maria. / "Ciao" disse Maria. / <<Ciao>> disse Maria.
-- INCISI NEL DIALOGO: Il trattino lungo chiude l'inciso e ne apre un altro dopo l'attribuzione.
-  Esempio: —Non so —rispose lui scrollando le spalle—. Forse domani.
-- PUNTEGGIATURA: Il punto finale va DOPO il trattino di chiusura inciso, non dentro il dialogo.
-- NUMERI: Scrivere in lettere da uno a nove, cifre da 10 in poi.
-- ACCENTI: Attenzione agli accenti gravi (è, à) e acuti (é, perché).
-- CONSISTENZA: Tutto il testo DEVE usare lo stesso sistema. Se trovi "«»", '""', o '<<>>', convertili TUTTI a trattini lunghi (—).`,
+- DIALOGHI: ESCLUSIVAMENTE trattino lungo (—) per i dialoghi. MAI virgolette.
+  ✓ —Ciao —disse Maria—. Come stai?
+  ✗ «Ciao» disse Maria. (virgolette vietate)
+  ✗ "Ciao" disse Maria. (virgolette vietate)
+  ✗ - Ciao (trattino corto vietato)
+- INCISI: Il trattino chiude l'inciso, il punto va DOPO.
+  ✓ —Non so —rispose lui—. Forse domani.
+- VIRGOLETTE « »: SOLO per citazioni testuali o pensieri.
+- NUMERI: Lettere da uno a nove, cifre da 10 in poi.
+- ACCENTI: è (verbo essere) vs e (congiunzione), perché con accento acuto.`,
 
   pt: `
-NORMAS EDITORIAIS PORTUGUÊS:
-- DIÁLOGOS: Usar travessão (—) para introduzir diálogos. Exemplo: — Olá — disse Maria.
-- ASPAS: Usar aspas curvas " " para citações. Aspas simples ' ' para citações dentro de citações.
-- PONTUAÇÃO: Vírgula e ponto fora das aspas, exceto se fizerem parte da citação.
-- NÚMEROS: Escrever por extenso de um a nove, algarismos a partir de 10.`,
+NORMAS EDITORIAIS PORTUGUÊS (OBRIGATÓRIO):
+- DIÁLOGOS: EXCLUSIVAMENTE travessão (—) para diálogos. NUNCA aspas.
+  ✓ — Olá — disse Maria. — Como estás?
+  ✗ "Olá" disse Maria. (aspas proibidas)
+  ✗ - Olá (travessão curto proibido)
+- INCISOS: O travessão fecha o inciso, ponto DEPOIS.
+  ✓ — Não sei — respondeu ele. — Talvez amanhã.
+- ASPAS " ": APENAS para citações textuais ou pensamentos.
+- NÚMEROS: Por extenso de um a nove, algarismos a partir de 10.
+- COLOCAÇÃO PRONOMINAL: Atenção à próclise/ênclise.
+  ✓ Disse-me (início de frase) / Não me disse (palavra atrativa).`,
 
   ca: `
-NORMES EDITORIALS CATALÀ:
-- DIÀLEGS: Usar guió llarg (—) per introduir diàlegs. Exemple: —Hola —va dir Maria—. Com estàs?
-- COMETES: Usar cometes baixes « » per a citacions. Cometes altes " " per a citacions dins de citacions.
-- PUNTUACIÓ: Els signes d'interrogació i exclamació van al principi (¿?) i al final (?).
-- NÚMEROS: Escriure amb lletres de l'u al nou, xifres del 10 endavant.`,
+NORMES EDITORIALS CATALÀ (OBLIGATORI):
+- DIÀLEGS: EXCLUSIVAMENT guió llarg (—) per als diàlegs. MAI cometes.
+  ✓ —Hola —va dir Maria—. Com estàs?
+  ✗ «Hola» va dir Maria. (cometes prohibides)
+  ✗ - Hola (guió curt prohibit)
+- INCISOS: El guió tanca l'incís, el punt va DESPRÉS.
+  ✓ —No ho sé —va respondre ell—. Potser demà.
+- COMETES « »: NOMÉS per a citacions textuals o pensaments.
+- PUNTUACIÓ: Sense signes d'obertura (NO ¿ ni ¡ com en castellà).
+  ✓ Què vols? / Quina sorpresa!
+- NÚMEROS: Lletres de l'u al nou, xifres del 10 endavant.
+- PRONOMS FEBLES: Apostrofar correctament (l'he, m'ha, n'hi).`,
 };
 
 const LANGUAGE_FLUENCY_RULES: Record<string, string> = {

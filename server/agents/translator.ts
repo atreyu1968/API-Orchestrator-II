@@ -276,11 +276,19 @@ Le texte DOIT sembler écrit ORIGINELLEMENT en français par un auteur francopho
 DEUTSCHE REDAKTIONS- UND STILSTANDARDS - PROFESSIONELL LITERARISCH (PFLICHT)
 ══════════════════════════════════════════════════════════════════════════════
 
-[TYPOGRAFIE - KRITISCH]
-- DIALOGE: Anführungszeichen „..." oder »...« verwenden.
+[TYPOGRAFIE - KRITISCH - PFLICHT]
+- DIALOGE: AUSSCHLIESSLICH Anführungszeichen „..." (unten-oben) verwenden. NICHT »...«.
   ✓ KORREKT: „Hallo", sagte Maria. „Wie geht es dir?"
-  ✓ KORREKT: »Hallo«, sagte Maria.
-- ZITATE: Doppelte Anführungszeichen für direkte Rede. Einfache ‚...' für Zitate im Zitat.
+  ✓ KORREKT: „Ich weiß nicht", sagte er. „Vielleicht morgen."
+  ✗ FALSCH: »Hallo«, sagte Maria. (Chevrons NICHT für Dialoge)
+  ✗ FALSCH: "Hallo", sagte Maria. (englische Anführungszeichen)
+  ✗ FALSCH: «Hallo», sagte Maria. (französische Guillemets)
+- ZITAT IM ZITAT: Einfache Anführungszeichen ‚...' innerhalb von „...".
+  ✓ „Er sagte: ‚Komm her!' und ging weiter."
+- KOMMA BEI DIALOGEN: Komma VOR der Zuschreibung, Punkt NACH Abschluss.
+  ✓ „Ich komme", sagte er.
+  ✓ „Ich komme", sagte er, „aber erst später."
+  ✓ „Ich komme." Er stand auf.
 - ZAHLEN: Eins bis neun ausschreiben, ab 10 Ziffern.
 
 [SATZSTRUKTUR - KRITISCH]
@@ -590,14 +598,12 @@ export class TranslatorAgent extends BaseAgent {
     let result = text;
     
     // 1. Normalize dialogue dashes: convert short dashes and double dashes to em dash
-    // At line start after optional whitespace
     result = result.replace(/^(\s*)(?:--|[-–])(\s*)/gm, '$1— ');
     
     // 2. Ensure em dash at dialogue start has single space after
     result = result.replace(/^(\s*)—\s*/gm, '$1— ');
     
     // 3. French punctuation: add non-breaking space BEFORE : ; ? !
-    // First remove any existing spaces before these marks, then add proper spacing
     result = result.replace(/\s*([;:?!])/g, '\u00A0$1');
     
     // 4. French guillemets: space AFTER « and BEFORE »
@@ -605,7 +611,6 @@ export class TranslatorAgent extends BaseAgent {
     result = result.replace(/\s*»/g, ' »');
     
     // 5. Convert dialogue guillemets to em dashes at line start
-    // Pattern: line starts with « followed by dialogue
     result = result.replace(/^(\s*)«\s*([^»]+?)\s*»\s*,?\s*(dit|répondit|demanda|murmura|cria|chuchota|s'exclama|ajouta|reprit|interrompit|souffla|gémit|hurla|supplia)/gm, 
       '$1— $2, $3');
     
@@ -616,6 +621,121 @@ export class TranslatorAgent extends BaseAgent {
     result = result.replace(/^—\s{2,}/gm, '— ');
     
     console.log(`[Translator] Applied French typography rules`);
+    return result;
+  }
+
+  private applySpanishTypography(text: string): string {
+    let result = text;
+    
+    // 1. Normalize dialogue dashes to em dash (—) without space after
+    result = result.replace(/^(\s*)(?:--|[-–])\s*/gm, '$1—');
+    
+    // 2. Ensure em dash at dialogue start has NO space after (Spanish style)
+    result = result.replace(/^(\s*)—\s+/gm, '$1—');
+    
+    // 3. Convert dialogue with quotes to em dashes
+    // «Hola» dijo María → —Hola —dijo María
+    result = result.replace(/^(\s*)«([^»]+)»\s*,?\s*(dijo|respondió|preguntó|murmuró|gritó|susurró|exclamó|añadió|replicó|interrumpió)/gm,
+      '$1—$2 —$3');
+    // "Hola" dijo María → —Hola —dijo María
+    result = result.replace(/^(\s*)"([^"]+)"\s*,?\s*(dijo|respondió|preguntó|murmuró|gritó|susurró|exclamó|añadió|replicó|interrumpió)/gm,
+      '$1—$2 —$3');
+    
+    // 4. Fix double spaces
+    result = result.replace(/  +/g, ' ');
+    
+    console.log(`[Translator] Applied Spanish typography rules`);
+    return result;
+  }
+
+  private applyItalianTypography(text: string): string {
+    let result = text;
+    
+    // 1. Normalize dialogue dashes to em dash (—) without space after
+    result = result.replace(/^(\s*)(?:--|[-–])\s*/gm, '$1—');
+    
+    // 2. Ensure em dash at dialogue start has NO space after (Italian style like Spanish)
+    result = result.replace(/^(\s*)—\s+/gm, '$1—');
+    
+    // 3. Convert dialogue with guillemets/quotes to em dashes
+    result = result.replace(/^(\s*)«([^»]+)»\s*,?\s*(disse|rispose|domandò|mormorò|gridò|sussurrò|esclamò|aggiunse|replicò|interruppe)/gm,
+      '$1—$2 —$3');
+    result = result.replace(/^(\s*)"([^"]+)"\s*,?\s*(disse|rispose|domandò|mormorò|gridò|sussurrò|esclamò|aggiunse|replicò|interruppe)/gm,
+      '$1—$2 —$3');
+    
+    // 4. Fix double spaces
+    result = result.replace(/  +/g, ' ');
+    
+    console.log(`[Translator] Applied Italian typography rules`);
+    return result;
+  }
+
+  private applyPortugueseTypography(text: string): string {
+    let result = text;
+    
+    // 1. Normalize dialogue dashes to em dash (—) WITH space after (Portuguese style)
+    result = result.replace(/^(\s*)(?:--|[-–])(\s*)/gm, '$1— ');
+    
+    // 2. Ensure em dash at dialogue start has single space after
+    result = result.replace(/^(\s*)—\s*/gm, '$1— ');
+    
+    // 3. Convert dialogue with quotes to em dashes
+    result = result.replace(/^(\s*)"([^"]+)"\s*,?\s*(disse|respondeu|perguntou|murmurou|gritou|sussurrou|exclamou|acrescentou|replicou|interrompeu)/gm,
+      '$1— $2 — $3');
+    
+    // 4. Fix double spaces
+    result = result.replace(/  +/g, ' ');
+    
+    // 5. Fix spacing after em dash (ensure exactly one space)
+    result = result.replace(/^—\s{2,}/gm, '— ');
+    
+    console.log(`[Translator] Applied Portuguese typography rules`);
+    return result;
+  }
+
+  private applyCatalanTypography(text: string): string {
+    let result = text;
+    
+    // 1. Normalize dialogue dashes to em dash (—) without space after
+    result = result.replace(/^(\s*)(?:--|[-–])\s*/gm, '$1—');
+    
+    // 2. Ensure em dash at dialogue start has NO space after (like Spanish)
+    result = result.replace(/^(\s*)—\s+/gm, '$1—');
+    
+    // 3. Convert dialogue with guillemets/quotes to em dashes
+    result = result.replace(/^(\s*)«([^»]+)»\s*,?\s*(va dir|va respondre|va preguntar|va murmurar|va cridar|va xiuxiuejar|va exclamar|va afegir|va replicar|va interrompre)/gm,
+      '$1—$2 —$3');
+    
+    // 4. Remove opening ¿ and ¡ (Catalan doesn't use them)
+    result = result.replace(/¿/g, '');
+    result = result.replace(/¡/g, '');
+    
+    // 5. Fix double spaces
+    result = result.replace(/  +/g, ' ');
+    
+    console.log(`[Translator] Applied Catalan typography rules`);
+    return result;
+  }
+
+  private applyGermanTypography(text: string): string {
+    let result = text;
+    
+    // 1. Convert English straight quotes to German quotes „..."
+    // Opening quote at start of dialogue
+    result = result.replace(/"([^"]+)"/g, '„$1"');
+    
+    // 2. Convert French guillemets to German quotes
+    result = result.replace(/«([^»]+)»/g, '„$1"');
+    result = result.replace(/»([^«]+)«/g, '„$1"');
+    
+    // 3. Fix any chevrons used incorrectly
+    result = result.replace(/»/g, '"');
+    result = result.replace(/«/g, '„');
+    
+    // 4. Fix double spaces
+    result = result.replace(/  +/g, ' ');
+    
+    console.log(`[Translator] Applied German typography rules`);
     return result;
   }
 
@@ -670,8 +790,29 @@ export class TranslatorAgent extends BaseAgent {
     cleaned = cleaned.replace(/"\s*,?\s*"notes"\s*:\s*"[^"]*"\s*\}\s*$/m, '');
     
     // Apply language-specific typography rules
-    if (targetLanguage === 'fr') {
-      cleaned = this.applyFrenchTypography(cleaned);
+    if (targetLanguage) {
+      switch (targetLanguage) {
+        case 'fr':
+          cleaned = this.applyFrenchTypography(cleaned);
+          break;
+        case 'es':
+          cleaned = this.applySpanishTypography(cleaned);
+          break;
+        case 'it':
+          cleaned = this.applyItalianTypography(cleaned);
+          break;
+        case 'pt':
+        case 'pt-PT':
+        case 'pt-BR':
+          cleaned = this.applyPortugueseTypography(cleaned);
+          break;
+        case 'ca':
+          cleaned = this.applyCatalanTypography(cleaned);
+          break;
+        case 'de':
+          cleaned = this.applyGermanTypography(cleaned);
+          break;
+      }
     }
     
     return cleaned.trim();
