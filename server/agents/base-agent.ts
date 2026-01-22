@@ -77,6 +77,8 @@ export const AGENT_DEEPSEEK_MODELS: Record<string, DeepSeekModel> = {
   "world_bible_extractor": "deepseek-chat", // V3 for extraction
   "narrative_rewriter": "deepseek-chat", // V3 for rewriting
   "manuscript-analyzer": "deepseek-reasoner", // R1 for deep manuscript analysis
+  "arc-validator": "deepseek-reasoner", // R1 for series arc validation
+  "series-thread-fixer": "deepseek-chat", // V3 for series thread fixes
 };
 
 export type AIModel = GeminiModel | DeepSeekModel;
