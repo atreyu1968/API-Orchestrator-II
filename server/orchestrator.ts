@@ -1299,6 +1299,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                     );
                   }
                 }
+                
+                this.callbacks.onAgentStatus("voice-auditor", "completed", 
+                  `Correcciones de voz/ritmo completadas para ${voiceResult.chaptersToRevise.length} capítulos`
+                );
               }
             }
           }
@@ -1389,6 +1393,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 }
               }
             }
+            
+            this.callbacks.onAgentStatus("semantic-detector", "completed", 
+              `Correcciones semánticas completadas para ${semanticResult.chaptersToRevise.length} capítulos`
+            );
           }
         }
       }
@@ -1849,6 +1857,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                     );
                   }
                 }
+                
+                this.callbacks.onAgentStatus("voice-auditor", "completed", 
+                  `Correcciones de voz/ritmo completadas para ${voiceResult.chaptersToRevise.length} capítulos`
+                );
               }
             }
           }
@@ -1944,6 +1956,10 @@ ${chapterSummaries || "Sin capítulos disponibles"}
                 }
               }
             }
+            
+            this.callbacks.onAgentStatus("semantic-detector", "completed", 
+              `Correcciones semánticas completadas para ${semanticResult.chaptersToRevise.length} capítulos`
+            );
           }
         }
       }
