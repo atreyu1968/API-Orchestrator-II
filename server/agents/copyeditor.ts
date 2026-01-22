@@ -275,7 +275,7 @@ export class CopyEditorAgent extends BaseAgent {
       name: "El Estilista",
       role: "copyeditor",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-chat",
       useThinking: false,
     });
   }

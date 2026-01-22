@@ -168,7 +168,7 @@ export class ChapterExpansionAnalyzer extends BaseAgent {
       name: "Expansion Analyzer",
       role: "expansion_analyzer",
       systemPrompt: ANALYSIS_SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-reasoner",
       useThinking: true,
     });
   }

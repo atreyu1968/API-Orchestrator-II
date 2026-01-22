@@ -104,7 +104,7 @@ export class RestructurerAgent extends BaseAgent {
       name: "El Reestructurador",
       role: "restructurer",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-reasoner",
       useThinking: true,
     });
   }

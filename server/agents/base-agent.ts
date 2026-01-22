@@ -79,6 +79,13 @@ export const AGENT_DEEPSEEK_MODELS: Record<string, DeepSeekModel> = {
   "manuscript-analyzer": "deepseek-reasoner", // R1 for deep manuscript analysis
   "arc-validator": "deepseek-reasoner", // R1 for series arc validation
   "series-thread-fixer": "deepseek-chat", // V3 for series thread fixes
+  "editor": "deepseek-reasoner", // R1 for editorial analysis
+  "copyeditor": "deepseek-chat", // V3 for creative polish
+  "continuity-sentinel": "deepseek-reasoner", // R1 for continuity analysis
+  "voice-rhythm-auditor": "deepseek-reasoner", // R1 for voice/rhythm analysis
+  "semantic-repetition-detector": "deepseek-reasoner", // R1 for semantic analysis
+  "restructurer": "deepseek-reasoner", // R1 for structural analysis
+  "expansion_analyzer": "deepseek-reasoner", // R1 for expansion analysis
 };
 
 export type AIModel = GeminiModel | DeepSeekModel;

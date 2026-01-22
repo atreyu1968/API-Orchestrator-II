@@ -149,7 +149,7 @@ export class SemanticRepetitionDetectorAgent extends BaseAgent {
       name: "El Detector Semántico",
       role: "semantic-repetition-detector",
       systemPrompt: SYSTEM_PROMPT,
-      model: "gemini-2.5-flash",
+      model: "deepseek-reasoner",
       useThinking: false,
     });
   }
