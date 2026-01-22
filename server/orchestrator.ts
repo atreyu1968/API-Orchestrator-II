@@ -3497,6 +3497,18 @@ Responde SOLO con un JSON válido con la estructura:
     // Método 1: Parse directo
     try {
       const parsed = JSON.parse(cleanContent);
+      
+      // Normalize: if personajes is at root level, wrap it in world_bible
+      if (parsed.personajes && !parsed.world_bible) {
+        console.log(`[Orchestrator] Normalizing flat format to world_bible structure`);
+        parsed.world_bible = {
+          personajes: parsed.personajes,
+          lugares: parsed.lugares || [],
+          temas_centrales: parsed.temas_centrales || [],
+          premisa: parsed.premisa || "",
+        };
+      }
+      
       console.log(`[Orchestrator] Direct JSON parse SUCCESS - Characters: ${parsed.world_bible?.personajes?.length || 0}, Chapters: ${parsed.escaleta_capitulos?.length || 0}`);
       return this.sanitizeChapterTitles(parsed);
     } catch (e1) {

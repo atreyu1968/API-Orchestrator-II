@@ -455,9 +455,121 @@ export class ArchitectAgent extends BaseAgent {
 
   async execute(input: ArchitectInput): Promise<AgentResponse> {
     console.log(`[Architect] execute() started for "${input.title}"`);
-    // Use batched generation: characters first, then chapters in small batches
-    console.log(`[Architect] Using BATCHED generation (characters + chapter batches)`);
-    return this.executeBatchedGeneration(input);
+    // Use unified generation: single call for entire World Bible
+    console.log(`[Architect] Using UNIFIED generation (single call)`);
+    return this.executeUnifiedGeneration(input);
+  }
+  
+  /**
+   * UNIFIED GENERATION STRATEGY:
+   * Generate the complete World Bible including chapters in a single AI call.
+   * This approach worked reliably before the batched implementation.
+   */
+  async executeUnifiedGeneration(input: ArchitectInput): Promise<AgentResponse> {
+    console.log(`[Architect] executeUnifiedGeneration() started for "${input.title}"`);
+    
+    const guiaEstilo = input.guiaEstilo || `Género: ${input.genre}, Tono: ${input.tone}`;
+    const ideaInicial = input.premise || input.title;
+    
+    const sectionsInfo = [];
+    if (input.hasPrologue) sectionsInfo.push("PRÓLOGO (capítulo 0)");
+    sectionsInfo.push(`${input.chapterCount} CAPÍTULOS (1-${input.chapterCount})`);
+    if (input.hasEpilogue) sectionsInfo.push("EPÍLOGO (capítulo -1)");
+    if (input.hasAuthorNote) sectionsInfo.push("NOTA DEL AUTOR");
+    
+    // Calculate total chapters for explicit instruction
+    const totalChapters = input.chapterCount + (input.hasPrologue ? 1 : 0) + (input.hasEpilogue ? 1 : 0) + (input.hasAuthorNote ? 1 : 0);
+    
+    const prompt = `
+TÍTULO: "${input.title}"
+GÉNERO: ${input.genre}
+TONO: ${input.tone}
+PREMISA: "${ideaInicial}"
+GUÍA DE ESTILO: "${guiaEstilo}"
+ESTRUCTURA: ${sectionsInfo.join(" + ")} = ${totalChapters} CAPÍTULOS EN TOTAL
+
+${input.architectInstructions ? `INSTRUCCIONES DEL AUTOR: ${input.architectInstructions}` : ""}
+
+═══════════════════════════════════════════════════════════════════
+GENERA EXACTAMENTE ${totalChapters} CAPÍTULOS - NI UNO MÁS, NI UNO MENOS
+═══════════════════════════════════════════════════════════════════
+
+Responde con un JSON:
+
+{
+  "personajes": [
+    {"nombre": "...", "rol": "protagonista/antagonista/aliado", "perfil_psicologico": "...", "vivo": true, "ojos": "color", "cabello": "color"}
+  ],
+  "lugares": [{"nombre": "...", "descripcion": "..."}],
+  "temas_centrales": ["tema1"],
+  "premisa": "premisa refinada",
+  "escaleta_capitulos": [
+    {"numero": 0, "titulo": "...", "resumen": "qué pasa en 2-3 frases", "tension": 7}
+  ]
+}
+
+⚠️ CRÍTICO - DEBES GENERAR EXACTAMENTE ${totalChapters} CAPÍTULOS:
+${input.hasPrologue ? '• Capítulo 0 (Prólogo)\n' : ''}• Capítulos 1 a ${input.chapterCount}
+${input.hasEpilogue ? '• Capítulo -1 (Epílogo)\n' : ''}${input.hasAuthorNote ? '• Capítulo -2 (Nota del Autor)\n' : ''}
+- Máximo 6 personajes
+- Cada capítulo: numero, titulo, resumen (2-3 frases), tension (1-10)
+- SOLO JSON, sin explicaciones
+`;
+
+    console.log(`[Architect] Prompt built (${prompt.length} chars), calling generateContent()...`);
+    const response = await this.generateContent(prompt, undefined, { forceProvider: "gemini" });
+    
+    if (response.error) {
+      console.error(`[Architect] Generation failed: ${response.error}`);
+      return { content: JSON.stringify({ error: response.error }), tokenUsage: response.tokenUsage };
+    }
+    
+    console.log(`[Architect] Response length: ${response.content?.length || 0}`);
+    
+    // Parse the response
+    try {
+      let content = response.content
+        .replace(/```json\s*/gi, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error("No JSON object found in response");
+      }
+      
+      let jsonStr = jsonMatch[0];
+      let worldBible: any;
+      
+      // Try direct parse first
+      try {
+        worldBible = JSON.parse(jsonStr);
+      } catch (parseError) {
+        console.log(`[Architect] Direct parse failed, attempting repair...`);
+        
+        // Repair common JSON issues
+        let repaired = jsonStr
+          .replace(/,(\s*[}\]])/g, '$1')  // Remove trailing commas
+          .replace(/}(\s*){/g, '},{')     // Add missing commas
+          .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');  // Remove control chars
+        
+        worldBible = JSON.parse(repaired);
+      }
+      
+      const personajes = worldBible.personajes?.length || 0;
+      const capitulos = worldBible.escaleta_capitulos?.length || 0;
+      
+      console.log(`[Architect] SUCCESS: ${personajes} characters, ${capitulos} chapters`);
+      
+      return {
+        content: JSON.stringify(worldBible, null, 2),
+        tokenUsage: response.tokenUsage
+      };
+      
+    } catch (e) {
+      console.error(`[Architect] Parse error: ${e}`);
+      return { content: JSON.stringify({ error: `Parse error: ${e}` }), tokenUsage: response.tokenUsage };
+    }
   }
   
   /**
@@ -670,7 +782,7 @@ Responde con un JSON array con EXACTAMENTE ${batch.length} capítulos:
       
       console.log(`[Architect] STEP 2.${batchIdx + 1}: Response length: ${batchResponse.content?.length || 0}`);
       
-      // Parse batch chapters
+      // Parse batch chapters with robust JSON repair
       try {
         let content = batchResponse.content
           .replace(/```json\s*/gi, '')
@@ -679,13 +791,67 @@ Responde con un JSON array con EXACTAMENTE ${batch.length} capítulos:
         
         const jsonMatch = content.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
-          const batchChapters = JSON.parse(jsonMatch[0]);
-          if (Array.isArray(batchChapters)) {
-            allChapters.push(...batchChapters);
-            console.log(`[Architect] STEP 2.${batchIdx + 1} SUCCESS: Added ${batchChapters.length} chapters (total: ${allChapters.length})`);
+          let jsonStr = jsonMatch[0];
+          
+          // Try direct parse first
+          try {
+            const batchChapters = JSON.parse(jsonStr);
+            if (Array.isArray(batchChapters)) {
+              allChapters.push(...batchChapters);
+              console.log(`[Architect] STEP 2.${batchIdx + 1} SUCCESS: Added ${batchChapters.length} chapters (total: ${allChapters.length})`);
+            }
+          } catch (parseError) {
+            console.log(`[Architect] STEP 2.${batchIdx + 1}: Direct parse failed, attempting repair...`);
+            
+            // Repair common JSON issues
+            let repaired = jsonStr
+              // Fix trailing commas
+              .replace(/,(\s*[}\]])/g, '$1')
+              // Fix missing commas between objects
+              .replace(/}(\s*){/g, '},{')
+              // Remove control characters
+              .replace(/[\x00-\x1F\x7F]/g, (match) => {
+                if (match === '\n' || match === '\r' || match === '\t') return match;
+                return '';
+              })
+              // Fix unescaped newlines in strings (between quotes)
+              .replace(/"([^"]*)\n([^"]*)"/g, '"$1\\n$2"');
+            
+            try {
+              const batchChapters = JSON.parse(repaired);
+              if (Array.isArray(batchChapters)) {
+                allChapters.push(...batchChapters);
+                console.log(`[Architect] STEP 2.${batchIdx + 1} SUCCESS (repaired): Added ${batchChapters.length} chapters (total: ${allChapters.length})`);
+              }
+            } catch (repairError) {
+              // Last resort: try to extract valid objects up to error point
+              console.log(`[Architect] STEP 2.${batchIdx + 1}: Repair failed, attempting partial extraction...`);
+              
+              // Find all complete chapter objects
+              const objectMatches = repaired.matchAll(/\{[^{}]*"numero"\s*:\s*(-?\d+)[^{}]*\}/g);
+              const partialChapters: any[] = [];
+              
+              for (const objMatch of objectMatches) {
+                try {
+                  const obj = JSON.parse(objMatch[0]);
+                  if (obj.numero !== undefined) {
+                    partialChapters.push(obj);
+                  }
+                } catch {
+                  // Skip malformed objects
+                }
+              }
+              
+              if (partialChapters.length > 0) {
+                allChapters.push(...partialChapters);
+                console.log(`[Architect] STEP 2.${batchIdx + 1} PARTIAL SUCCESS: Extracted ${partialChapters.length} chapters (total: ${allChapters.length})`);
+              } else {
+                console.error(`[Architect] STEP 2.${batchIdx + 1} FAILED: Could not parse any chapters`);
+              }
+            }
           }
         } else {
-          console.error(`[Architect] STEP 2.${batchIdx + 1}: No JSON array found`);
+          console.error(`[Architect] STEP 2.${batchIdx + 1}: No JSON array found in response`);
         }
       } catch (e) {
         console.error(`[Architect] STEP 2.${batchIdx + 1} parse error: ${e}`);
