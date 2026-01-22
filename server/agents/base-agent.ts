@@ -69,9 +69,9 @@ export interface AgentConfig {
   useThinking?: boolean;
 }
 
-const DEFAULT_TIMEOUT_MS = 12 * 60 * 1000;
-const MAX_RETRIES = 2;
-const RETRY_DELAY_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes for DeepSeek R1
+const MAX_RETRIES = 4; // Increased retries for production stability
+const RETRY_DELAY_MS = 8000; // Longer delay between retries
 
 const RATE_LIMIT_MAX_RETRIES = 5;
 const RATE_LIMIT_DELAYS_MS = [30000, 60000, 90000, 120000, 180000];
@@ -82,6 +82,18 @@ function isRateLimitError(error: any): boolean {
          errorStr.includes("429") || 
          errorStr.includes("Rate limit") ||
          errorStr.includes("rate limit");
+}
+
+function isConnectionError(error: any): boolean {
+  const errorStr = String(error?.message || error || "");
+  return errorStr.includes("ECONNRESET") || 
+         errorStr.includes("ETIMEDOUT") ||
+         errorStr.includes("ECONNREFUSED") ||
+         errorStr.includes("socket hang up") ||
+         errorStr.includes("network") ||
+         errorStr.includes("fetch failed") ||
+         errorStr.includes("Connection") ||
+         errorStr.includes("ENOTFOUND");
 }
 
 const activeAbortControllers = new Map<number, AbortController>();
@@ -334,8 +346,9 @@ export abstract class BaseAgent {
         
         if (errorMessage.startsWith("TIMEOUT:")) {
           if (attempt < MAX_RETRIES) {
-            console.log(`[${this.config.name}] Retrying DeepSeek after timeout...`);
-            await sleep(RETRY_DELAY_MS);
+            const delayMs = RETRY_DELAY_MS * (attempt + 1);
+            console.log(`[${this.config.name}] Retrying DeepSeek after timeout (waiting ${delayMs/1000}s)...`);
+            await sleep(delayMs);
             continue;
           }
           return {
@@ -345,9 +358,25 @@ export abstract class BaseAgent {
           };
         }
         
+        if (isConnectionError(error)) {
+          if (attempt < MAX_RETRIES) {
+            const delayMs = RETRY_DELAY_MS * (attempt + 2);
+            console.log(`[${this.config.name}] Connection error detected. Retrying in ${delayMs/1000}s (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+            await sleep(delayMs);
+            continue;
+          }
+          console.error(`[${this.config.name}] DeepSeek connection failed after ${MAX_RETRIES} retries`);
+          return {
+            content: "",
+            error: `CONNECTION_ERROR: ${errorMessage}`,
+            timedOut: false,
+          };
+        }
+        
         if (attempt < MAX_RETRIES) {
-          console.log(`[${this.config.name}] Retrying DeepSeek after error...`);
-          await sleep(RETRY_DELAY_MS * (attempt + 1));
+          const delayMs = RETRY_DELAY_MS * (attempt + 1);
+          console.log(`[${this.config.name}] Retrying DeepSeek after error (waiting ${delayMs/1000}s)...`);
+          await sleep(delayMs);
           continue;
         }
       }
