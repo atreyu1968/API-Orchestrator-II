@@ -151,6 +151,7 @@ export class SemanticRepetitionDetectorAgent extends BaseAgent {
       systemPrompt: SYSTEM_PROMPT,
       model: "deepseek-reasoner",
       useThinking: false,
+      useReeditorClient: true, // Use dedicated API key for parallel re-editing
     });
   }
 

@@ -43,7 +43,18 @@ function getDeepSeekTranslatorClient(): OpenAI | null {
   });
 }
 
-export { getDeepSeekTranslatorClient };
+// DeepSeek client for Re-editor (separate API key for parallel operations)
+function getDeepSeekReeditorClient(): OpenAI | null {
+  // Use dedicated re-editor key if available, fallback to main key
+  const apiKey = process.env.DEEPSEEK_REEDITOR_API_KEY || process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({
+    apiKey,
+    baseURL: "https://api.deepseek.com",
+  });
+}
+
+export { getDeepSeekTranslatorClient, getDeepSeekReeditorClient };
 
 export interface TokenUsage {
   inputTokens: number;
@@ -116,6 +127,7 @@ export interface AgentConfig {
   model?: AIModel;
   useThinking?: boolean;
   useTranslatorClient?: boolean; // Use dedicated DeepSeek API key for translator
+  useReeditorClient?: boolean; // Use dedicated DeepSeek API key for re-editor
 }
 
 const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes for DeepSeek R1
@@ -251,13 +263,22 @@ export abstract class BaseAgent {
   }
 
   private async generateWithDeepSeek(prompt: string, projectId?: number, options?: { temperature?: number }): Promise<AgentResponse> {
-    // Use dedicated translator client if configured
-    const deepseek = this.config.useTranslatorClient 
-      ? getDeepSeekTranslatorClient() 
-      : getDeepSeekClient();
+    // Use dedicated client if configured (translator or re-editor)
+    let deepseek: OpenAI | null;
+    let keyName: string;
+    
+    if (this.config.useTranslatorClient) {
+      deepseek = getDeepSeekTranslatorClient();
+      keyName = "DEEPSEEK_TRANSLATOR_API_KEY";
+    } else if (this.config.useReeditorClient) {
+      deepseek = getDeepSeekReeditorClient();
+      keyName = "DEEPSEEK_REEDITOR_API_KEY";
+    } else {
+      deepseek = getDeepSeekClient();
+      keyName = "DEEPSEEK_API_KEY";
+    }
     
     if (!deepseek) {
-      const keyName = this.config.useTranslatorClient ? "DEEPSEEK_TRANSLATOR_API_KEY" : "DEEPSEEK_API_KEY";
       return {
         content: "",
         error: `DeepSeek API key not configured. Please add ${keyName}.`,
