@@ -427,27 +427,35 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
       console.error("[FinalReviewer] Failed to parse JSON response");
     }
 
+    console.error("[FinalReviewer] FALLBACK ACTIVADO - forzando REQUIERE_REVISION para reintento");
     return { 
       ...response, 
       result: { 
-        veredicto: "APROBADO",
-        resumen_general: "Revisión completada automáticamente",
-        puntuacion_global: 8,
+        veredicto: "REQUIERE_REVISION",
+        resumen_general: "ERROR: No se pudo parsear la respuesta del revisor. Se requiere reintento.",
+        puntuacion_global: 0,
         justificacion_puntuacion: {
           puntuacion_desglosada: {
-            enganche: 8,
-            personajes: 8,
-            trama: 8,
-            atmosfera: 8,
-            ritmo: 8,
-            cumplimiento_genero: 8
+            enganche: 0,
+            personajes: 0,
+            trama: 0,
+            atmosfera: 0,
+            ritmo: 0,
+            cumplimiento_genero: 0
           },
-          fortalezas_principales: ["Manuscrito completado"],
-          debilidades_principales: [],
-          comparacion_mercado: "Evaluación automática por fallo de parsing",
-          recomendaciones_proceso: []
+          fortalezas_principales: [],
+          debilidades_principales: ["Error de parsing - respuesta de IA malformada"],
+          comparacion_mercado: "ERROR: Fallo de parsing - requiere reintento automático",
+          recomendaciones_proceso: ["Reintentar revisión final"]
         },
-        issues: [],
+        issues: [{
+          categoria: "otro",
+          severidad: "critica",
+          descripcion: "Error de parsing en la respuesta del revisor final. Se requiere reintento.",
+          capitulos_afectados: [1],
+          instrucciones_correccion: "Reintentar la revisión final automáticamente",
+          elementos_a_preservar: "Todo el contenido existente"
+        }],
         capitulos_para_reescribir: []
       } 
     };
