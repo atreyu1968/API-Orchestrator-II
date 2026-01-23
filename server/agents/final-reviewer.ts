@@ -419,8 +419,7 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     Responde ÚNICAMENTE con el JSON estructurado según el formato especificado.
     `;
 
-    // Use Gemini for FinalReviewer - it has 2M token context and works reliably for full manuscripts
-    const response = await this.generateContent(prompt, undefined, { forceProvider: "gemini" });
+    const response = await this.generateContent(prompt);
     
     // DEBUG: Save raw response to file for diagnosis
     const fs = await import('fs');
