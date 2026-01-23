@@ -100,10 +100,10 @@ export function ChapterList({ chapters, selectedChapterId, onSelectChapter, onRe
                 )}
               </button>
               
-              {isEmpty && onResetChapter && (
+              {onResetChapter && chapter.status === "completed" && (
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={isEmpty ? "destructive" : "outline"}
                   className="w-full mt-2"
                   onClick={(e) => {
                     e.stopPropagation();
@@ -120,7 +120,7 @@ export function ChapterList({ chapters, selectedChapterId, onSelectChapter, onRe
                   ) : (
                     <>
                       <RotateCcw className="h-4 w-4 mr-2" />
-                      Marcar como pendiente
+                      {isEmpty ? "Regenerar (vacío)" : "Marcar para regenerar"}
                     </>
                   )}
                 </Button>
