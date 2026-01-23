@@ -289,9 +289,10 @@ export abstract class BaseAgent {
     const maxAttempts = MAX_RETRIES + RATE_LIMIT_MAX_RETRIES + 1;
     
     // Use agent-specific DeepSeek model if configured, otherwise fallback to V3
-    const agentName = this.config.name.toLowerCase();
-    const deepseekModel = AGENT_DEEPSEEK_MODELS[agentName] || "deepseek-chat";
-    console.log(`[${this.config.name}] Using DeepSeek model: ${deepseekModel} (agent-specific selection)`);
+    // Note: Use role (e.g. "final-reviewer") not name (e.g. "El Revisor Final") for model lookup
+    const agentRole = this.config.role?.toLowerCase() || this.config.name.toLowerCase();
+    const deepseekModel = AGENT_DEEPSEEK_MODELS[agentRole] || "deepseek-chat";
+    console.log(`[${this.config.name}] Using DeepSeek model: ${deepseekModel} (role: ${agentRole})`);
     
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (projectId && isProjectCancelled(projectId)) {

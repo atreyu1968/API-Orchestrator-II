@@ -416,7 +416,12 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     Responde ÚNICAMENTE con el JSON estructurado según el formato especificado.
     `;
 
-    const response = await this.generateContent(prompt);
+    // For large manuscripts (>400K chars ≈ 100K tokens), use Gemini which has 2M token context
+    // DeepSeek has 131K token limit which is insufficient for full manuscripts
+    const useGemini = prompt.length > 400000;
+    console.log(`[FinalReviewer] Prompt size: ${prompt.length} chars, using: ${useGemini ? 'Gemini (large context)' : 'DeepSeek'}`);
+    
+    const response = await this.generateContent(prompt, undefined, useGemini ? { forceProvider: "gemini" } : undefined);
     
     try {
       // Try to find JSON in the response content
