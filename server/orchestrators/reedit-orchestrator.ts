@@ -1229,31 +1229,69 @@ Proporciona tu evaluación en formato JSON, con todos los textos en ESPAÑOL.`;
     let result: any = { bestsellerScore: 7, strengths: [], weaknesses: [], recommendations: [], marketPotential: "moderate" };
     try {
       // Try to find JSON in content first
-      let jsonContent = response.content;
+      let jsonContent = response.content || "";
+      
+      console.log(`[ReeditFinalReviewer] Response received - content length: ${jsonContent.length}, thoughtSignature length: ${response.thoughtSignature?.length || 0}`);
       
       // If content is empty but thoughtSignature has content, try to extract from there
-      if ((!jsonContent || jsonContent.trim().length === 0) && response.thoughtSignature) {
+      if (jsonContent.trim().length === 0 && response.thoughtSignature && response.thoughtSignature.length > 0) {
         console.log("[ReeditFinalReviewer] Content empty, checking thoughtSignature for JSON...");
-        const jsonInThought = response.thoughtSignature.match(/\{[\s\S]*\}/);
-        if (jsonInThought) {
-          jsonContent = jsonInThought[0];
-          console.log("[ReeditFinalReviewer] Found JSON in thoughtSignature");
+        
+        // Try to find JSON with bestsellerScore first
+        const scoreMatch = response.thoughtSignature.match(/(\{[\s\S]*?"bestsellerScore"[\s\S]*?\})/);
+        if (scoreMatch) {
+          try {
+            JSON.parse(scoreMatch[1]);
+            jsonContent = scoreMatch[1];
+            console.log("[ReeditFinalReviewer] Found valid JSON with bestsellerScore in thoughtSignature");
+          } catch {
+            // Not valid, try broader match
+          }
+        }
+        
+        // If still empty, try any JSON
+        if (jsonContent.trim().length === 0) {
+          const jsonInThought = response.thoughtSignature.match(/\{[\s\S]*\}/);
+          if (jsonInThought) {
+            try {
+              JSON.parse(jsonInThought[0]);
+              jsonContent = jsonInThought[0];
+              console.log("[ReeditFinalReviewer] Found valid JSON in thoughtSignature (generic match)");
+            } catch {
+              console.log("[ReeditFinalReviewer] Found JSON-like structure but couldn't parse");
+            }
+          }
+        }
+      }
+      
+      // Also check if content has JSON wrapped in code blocks
+      if (jsonContent.includes("```")) {
+        const codeBlockMatch = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (codeBlockMatch) {
+          jsonContent = codeBlockMatch[1].trim();
+          console.log("[ReeditFinalReviewer] Extracted JSON from code block");
         }
       }
       
       const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        if (parsed.bestsellerScore !== undefined && parsed.bestsellerScore > 0) {
+        // Check multiple possible score field names
+        const score = parsed.bestsellerScore || parsed.puntuacion_global || parsed.score || parsed.puntuacionGlobal;
+        if (score !== undefined && score > 0) {
+          parsed.bestsellerScore = score;
           result = parsed;
           console.log(`[ReeditFinalReviewer] Successfully parsed response: score ${result.bestsellerScore}/10`);
         } else {
-          console.warn(`[ReeditFinalReviewer] Parsed JSON but bestsellerScore is ${parsed.bestsellerScore}`);
+          console.warn(`[ReeditFinalReviewer] Parsed JSON but no valid score found`);
         }
       }
     } catch (e) {
       console.error("[ReeditFinalReviewer] Failed to parse response:", e);
       console.error("[ReeditFinalReviewer] Content preview:", response.content?.substring(0, 500) || "EMPTY");
+      if (response.thoughtSignature) {
+        console.error("[ReeditFinalReviewer] ThoughtSignature preview:", response.thoughtSignature.substring(0, 500));
+      }
     }
     result.tokenUsage = response.tokenUsage;
     return result;

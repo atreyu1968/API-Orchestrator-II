@@ -420,15 +420,47 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     
     try {
       // Try to find JSON in the response content
-      let jsonContent = response.content;
+      let jsonContent = response.content || "";
+      
+      console.log(`[FinalReviewer] Response received - content length: ${jsonContent.length}, thoughtSignature length: ${response.thoughtSignature?.length || 0}`);
       
       // If content is empty but thoughtSignature has content, try to extract from there
-      if ((!jsonContent || jsonContent.trim().length === 0) && response.thoughtSignature) {
+      if (jsonContent.trim().length === 0 && response.thoughtSignature && response.thoughtSignature.length > 0) {
         console.log("[FinalReviewer] Content empty, checking thoughtSignature for JSON...");
-        const jsonInThought = response.thoughtSignature.match(/\{[\s\S]*\}/);
-        if (jsonInThought) {
-          jsonContent = jsonInThought[0];
-          console.log("[FinalReviewer] Found JSON in thoughtSignature");
+        
+        // Try to find JSON with puntuacion_global first
+        const puntuacionMatch = response.thoughtSignature.match(/(\{[\s\S]*?"puntuacion_global"[\s\S]*?\})/);
+        if (puntuacionMatch) {
+          try {
+            JSON.parse(puntuacionMatch[1]);
+            jsonContent = puntuacionMatch[1];
+            console.log("[FinalReviewer] Found valid JSON with puntuacion_global in thoughtSignature");
+          } catch {
+            // Not valid, try broader match
+          }
+        }
+        
+        // If still empty, try any JSON
+        if (jsonContent.trim().length === 0) {
+          const jsonInThought = response.thoughtSignature.match(/\{[\s\S]*\}/);
+          if (jsonInThought) {
+            try {
+              JSON.parse(jsonInThought[0]);
+              jsonContent = jsonInThought[0];
+              console.log("[FinalReviewer] Found valid JSON in thoughtSignature (generic match)");
+            } catch {
+              console.log("[FinalReviewer] Found JSON-like structure but couldn't parse");
+            }
+          }
+        }
+      }
+      
+      // Also check if content has JSON wrapped in code blocks
+      if (jsonContent.includes("```")) {
+        const codeBlockMatch = jsonContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (codeBlockMatch) {
+          jsonContent = codeBlockMatch[1].trim();
+          console.log("[FinalReviewer] Extracted JSON from code block");
         }
       }
       
@@ -440,12 +472,22 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
           console.log(`[FinalReviewer] Successfully parsed response: score ${result.puntuacion_global}/10`);
           return { ...response, result };
         } else {
-          console.warn(`[FinalReviewer] Parsed JSON but puntuacion_global is ${result.puntuacion_global}, treating as parse error`);
+          console.warn(`[FinalReviewer] Parsed JSON but puntuacion_global is ${result.puntuacion_global}, checking for bestsellerScore...`);
+          // Try alternative field names
+          const altScore = (result as any).bestsellerScore || (result as any).score || (result as any).puntuacionGlobal;
+          if (altScore && altScore > 0) {
+            result.puntuacion_global = altScore;
+            console.log(`[FinalReviewer] Used alternative score field: ${altScore}/10`);
+            return { ...response, result };
+          }
         }
       }
     } catch (e) {
       console.error("[FinalReviewer] Failed to parse JSON response:", e);
       console.error("[FinalReviewer] Content preview:", response.content?.substring(0, 500) || "EMPTY");
+      if (response.thoughtSignature) {
+        console.error("[FinalReviewer] ThoughtSignature preview:", response.thoughtSignature.substring(0, 500));
+      }
     }
 
     console.error("[FinalReviewer] FALLBACK ACTIVADO - forzando REQUIERE_REVISION para reintento (sin reescritura de capítulos)");
