@@ -427,12 +427,12 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
       console.error("[FinalReviewer] Failed to parse JSON response");
     }
 
-    console.error("[FinalReviewer] FALLBACK ACTIVADO - forzando REQUIERE_REVISION para reintento");
+    console.error("[FinalReviewer] FALLBACK ACTIVADO - forzando REQUIERE_REVISION para reintento (sin reescritura de capítulos)");
     return { 
       ...response, 
       result: { 
         veredicto: "REQUIERE_REVISION",
-        resumen_general: "ERROR: No se pudo parsear la respuesta del revisor. Se requiere reintento.",
+        resumen_general: "ERROR: No se pudo parsear la respuesta del revisor. Se requiere reintento automático.",
         puntuacion_global: 0,
         justificacion_puntuacion: {
           puntuacion_desglosada: {
@@ -448,14 +448,7 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
           comparacion_mercado: "ERROR: Fallo de parsing - requiere reintento automático",
           recomendaciones_proceso: ["Reintentar revisión final"]
         },
-        issues: [{
-          categoria: "otro",
-          severidad: "critica",
-          descripcion: "Error de parsing en la respuesta del revisor final. Se requiere reintento.",
-          capitulos_afectados: [1],
-          instrucciones_correccion: "Reintentar la revisión final automáticamente",
-          elementos_a_preservar: "Todo el contenido existente"
-        }],
+        issues: [],
         capitulos_para_reescribir: []
       } 
     };

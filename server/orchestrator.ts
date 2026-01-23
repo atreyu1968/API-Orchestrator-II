@@ -2275,28 +2275,21 @@ ${chapterSummaries || "Sin capítulos disponibles"}
       }
       
       // Si el revisor aprobó pero la puntuación es < 9, continuamos refinando
+      // PERO no creamos issues sintéticos con capítulos hardcodeados para evitar bucles infinitos
       if ((result?.veredicto === "APROBADO" || result?.veredicto === "APROBADO_CON_RESERVAS") && currentScore < this.minAcceptableScore) {
         this.callbacks.onAgentStatus("final-reviewer", "editing", 
-          `Puntuación ${currentScore}/10 insuficiente. Objetivo: ${this.minAcceptableScore}+ (${this.requiredConsecutiveHighScores}x consecutivas). Refinando...`
+          `Sin problemas específicos pero puntuación ${currentScore}/10 < ${this.minAcceptableScore}. Continuando refinamiento...`
         );
-        // Create generic issues based on the bestseller analysis if available
-        const genericIssues = result?.analisis_bestseller?.como_subir_a_9 
-          ? [{ 
-              capitulos_afectados: [1], // Will be expanded below
-              categoria: "enganche" as const,
-              descripcion: result.analisis_bestseller.como_subir_a_9,
-              severidad: "mayor" as const,
-              elementos_a_preservar: "Mantener la estructura general y personajes tal como están",
-              instrucciones_correccion: result.analisis_bestseller.como_subir_a_9
-            }]
-          : result?.issues || [];
         
+        // Solo marcamos como REQUIERE_REVISION pero NO creamos issues sintéticos
+        // El sistema re-evaluará sin reescribir capítulos si no hay issues reales
         if (result) {
           result.veredicto = "REQUIERE_REVISION";
-          if (!result.issues?.length && genericIssues.length) {
-            result.issues = genericIssues;
-          }
+          // NO crear issues sintéticos - dejar que el ciclo continúe para re-evaluar
         }
+        
+        revisionCycle++;
+        continue; // Re-evaluar sin reescribir
       }
       
       // LÍMITE MÁXIMO DE CICLOS alcanzado
