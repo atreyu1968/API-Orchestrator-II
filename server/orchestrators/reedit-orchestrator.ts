@@ -988,7 +988,7 @@ FORMATO DE RESPUESTA (JSON):
   },
   "resumenEjecutivo": "Descripción concisa de todas las correcciones realizadas"
 }`,
-      model: "deepseek-chat",
+      model: "deepseek-reasoner",
       useThinking: true,
     });
   }
