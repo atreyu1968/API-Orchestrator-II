@@ -632,6 +632,7 @@ function AuditReportsDisplay({ reports }: { reports: any[] }) {
       semantic_repetition: "Detector de Repetición Semántica",
       anachronism: "Detector de Anacronismos",
       final_review: "Revisión Final",
+      structural_fix: "Corrección Estructural",
     };
     return labels[type] || type;
   };
@@ -644,51 +645,84 @@ function AuditReportsDisplay({ reports }: { reports: any[] }) {
       semantic_repetition: "bg-orange-600",
       anachronism: "bg-amber-600",
       final_review: "bg-green-600",
+      structural_fix: "bg-indigo-600",
     };
     return colors[type] || "bg-gray-600";
   };
 
+  // Filter out any invalid reports to prevent rendering errors
+  const validReports = reports.filter(report => report && typeof report === 'object');
+
+  if (validReports.length === 0) {
+    return <p className="text-muted-foreground text-center py-4">No hay informes de auditoría válidos</p>;
+  }
+
   return (
     <div className="space-y-4" data-testid="display-audit-reports">
-      {reports.map((report, idx) => (
-        <Card key={idx} data-testid={`card-audit-report-${report.id || idx}`}>
-          <CardHeader className="py-3">
-            <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="flex items-center gap-2">
-                <Badge className={getAuditTypeBadgeColor(report.auditType)}>
-                  {getAuditTypeLabel(report.auditType)}
-                </Badge>
-                {report.chapterRange && report.chapterRange !== "all" && (
-                  <Badge variant="outline">Caps. {report.chapterRange}</Badge>
+      {validReports.map((report, idx) => {
+        // Safely extract findings summary
+        const findingsSummary = (() => {
+          try {
+            if (!report.findings) return null;
+            const findings = typeof report.findings === 'string' 
+              ? JSON.parse(report.findings) 
+              : report.findings;
+            return findings?.resumenEjecutivo || findings?.resumen || null;
+          } catch {
+            return null;
+          }
+        })();
+
+        // Safely extract recommendations
+        const recs = (() => {
+          try {
+            if (!report.recommendations) return [];
+            const parsed = typeof report.recommendations === 'string' 
+              ? JSON.parse(report.recommendations) 
+              : report.recommendations;
+            return Array.isArray(parsed) ? parsed.slice(0, 3) : [];
+          } catch {
+            return [];
+          }
+        })();
+
+        return (
+          <Card key={report.id || idx} data-testid={`card-audit-report-${report.id || idx}`}>
+            <CardHeader className="py-3">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Badge className={getAuditTypeBadgeColor(report.auditType || 'unknown')}>
+                    {getAuditTypeLabel(report.auditType || 'unknown')}
+                  </Badge>
+                  {report.chapterRange && report.chapterRange !== "all" && (
+                    <Badge variant="outline">Caps. {report.chapterRange}</Badge>
+                  )}
+                </div>
+                {report.score !== undefined && report.score !== null && (
+                  <ScoreDisplay score={report.score} />
                 )}
               </div>
-              {report.score !== undefined && report.score !== null && (
-                <ScoreDisplay score={report.score} />
+            </CardHeader>
+            <CardContent className="py-2">
+              {findingsSummary && (
+                <p className="text-sm mb-2">{findingsSummary}</p>
               )}
-            </div>
-          </CardHeader>
-          <CardContent className="py-2">
-            {report.findings?.resumenEjecutivo && (
-              <p className="text-sm mb-2">{report.findings.resumenEjecutivo}</p>
-            )}
-            {report.findings?.resumen && (
-              <p className="text-sm mb-2">{report.findings.resumen}</p>
-            )}
-            {report.recommendations && Array.isArray(report.recommendations) && report.recommendations.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs text-muted-foreground mb-1">Recomendaciones:</p>
-                <ul className="text-sm list-disc list-inside space-y-1">
-                  {report.recommendations.slice(0, 3).map((rec: any, i: number) => (
-                    <li key={i} className="text-muted-foreground">
-                      {typeof rec === 'string' ? rec : (rec.descripcion || rec.description || JSON.stringify(rec))}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+              {recs.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-xs text-muted-foreground mb-1">Recomendaciones:</p>
+                  <ul className="text-sm list-disc list-inside space-y-1">
+                    {recs.map((rec: any, i: number) => (
+                      <li key={i} className="text-muted-foreground">
+                        {typeof rec === 'string' ? rec : (rec?.descripcion || rec?.description || JSON.stringify(rec))}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
   );
 }
