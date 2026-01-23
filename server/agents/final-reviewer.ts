@@ -422,6 +422,12 @@ El objetivo es alcanzar 9+ puntos. No apruebes con puntuación inferior.`;
     // Use Gemini for FinalReviewer - it has 2M token context and works reliably for full manuscripts
     const response = await this.generateContent(prompt, undefined, { forceProvider: "gemini" });
     
+    // DEBUG: Save raw response to file for diagnosis
+    const fs = await import('fs');
+    const debugPath = `/tmp/final_reviewer_debug_${Date.now()}.txt`;
+    fs.writeFileSync(debugPath, `=== CONTENT (${response.content?.length || 0} chars) ===\n${response.content || 'NULL'}\n\n=== THOUGHT SIGNATURE (${response.thoughtSignature?.length || 0} chars) ===\n${response.thoughtSignature || 'NULL'}`);
+    console.log(`[FinalReviewer] DEBUG: Saved raw response to ${debugPath}`);
+    
     try {
       // Simple parsing like original pre-DeepSeek implementation
       const jsonMatch = response.content.match(/\{[\s\S]*\}/);

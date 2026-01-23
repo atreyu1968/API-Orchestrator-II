@@ -137,9 +137,7 @@ export class SemanticRepetitionDetectorAgent extends BaseAgent {
       name: "El Detector Semántico",
       role: "semantic-repetition-detector",
       systemPrompt: SYSTEM_PROMPT,
-      model: "deepseek-reasoner",
-      useThinking: false,
-      useReeditorClient: true,
+      useThinking: true,
     });
   }
 
