@@ -3840,11 +3840,23 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "No data provided. Send { data: {...} } or { sourceUrl: '...' }" });
       }
 
-      // Helper to remove id/createdAt before insert
-      const prepareForInsert = (item: any) => {
-        const { id, createdAt, ...rest } = item;
-        return rest;
+      // Helper to remove auto-generated fields before insert
+      const prepareForInsert = (item: any, omitFields: string[] = ['id', 'createdAt']) => {
+        const result = { ...item };
+        for (const field of omitFields) {
+          delete result[field];
+        }
+        return result;
       };
+      
+      // Fields to omit for different entity types (matches their insertSchema.omit)
+      const projectOmitFields = ['id', 'createdAt', 'status', 'currentChapter'];
+      const reeditProjectOmitFields = [
+        'id', 'createdAt', 'status', 'currentStage', 'processedChapters',
+        'currentChapter', 'totalInputTokens', 'totalOutputTokens', 'totalThinkingTokens'
+      ];
+      const continuitySnapshotOmitFields = ['id', 'createdAt', 'updatedAt'];
+      const worldBibleOmitFields = ['id', 'updatedAt'];
 
       const results: any = { imported: {}, errors: [] };
       
@@ -3921,7 +3933,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         for (const item of importData.projects) {
           try {
             const oldId = item.id;
-            const data = prepareForInsert(item);
+            const data = prepareForInsert(item, projectOmitFields);
             // Map seriesId and pseudonymId to new IDs
             if (data.seriesId && seriesIdMap.has(data.seriesId)) {
               data.seriesId = seriesIdMap.get(data.seriesId);
@@ -3961,7 +3973,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       if (importData.worldBibles?.length) {
         for (const item of importData.worldBibles) {
           try {
-            const data = prepareForInsert(item);
+            const data = prepareForInsert(item, worldBibleOmitFields);
             // Map projectId to new ID
             if (data.projectId && projectIdMap.has(data.projectId)) {
               data.projectId = projectIdMap.get(data.projectId);
@@ -4000,7 +4012,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         for (const item of importData.reeditProjects) {
           try {
             const oldId = item.id;
-            const data = prepareForInsert(item);
+            const data = prepareForInsert(item, reeditProjectOmitFields);
             const created = await storage.createReeditProject(data);
             reeditProjectIdMap.set(oldId, created.id);
             results.imported.reeditProjects = (results.imported.reeditProjects || 0) + 1;
