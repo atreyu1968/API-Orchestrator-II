@@ -21,6 +21,31 @@ function getChapterSortOrder(chapterNumber: number): number {
   return chapterNumber;
 }
 
+/**
+ * Makes correction instructions more aggressive for retry attempts.
+ * On second attempt, instructions are emphasized with caps, warnings, and repetition
+ * to ensure the AI applies the correction properly.
+ */
+function makeAggressiveInstructions(instruction: string, attemptNumber: number): string {
+  if (attemptNumber < 1) return instruction;
+  
+  // Second attempt: make instructions more emphatic
+  const warnings = [
+    "⚠️ ATENCIÓN: ESTE ES UN REINTENTO. LA CORRECCIÓN ANTERIOR NO SE APLICÓ CORRECTAMENTE.",
+    "🚨 ES OBLIGATORIO aplicar esta corrección. NO la ignores.",
+    "❌ El intento anterior FALLÓ. Debes corregir EXACTAMENTE lo indicado.",
+  ];
+  
+  const emphasis = instruction.toUpperCase();
+  
+  return `${warnings.join("\n")}\n\n` +
+    `📋 INSTRUCCIÓN ORIGINAL:\n${instruction}\n\n` +
+    `📋 INSTRUCCIÓN ENFATIZADA:\n${emphasis}\n\n` +
+    `⚠️ RECORDATORIO FINAL: DEBES aplicar esta corrección. ` +
+    `Si no la aplicas, el proyecto se pausará y requerirá intervención manual. ` +
+    `APLICA EL CAMBIO EXACTAMENTE COMO SE INDICA.`;
+}
+
 function sortChaptersByNarrativeOrder<T extends { chapterNumber: number }>(chapters: T[]): T[] {
   return [...chapters].sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
 }
@@ -3576,13 +3601,25 @@ export class ReeditOrchestrator {
             });
 
             try {
+              // Get current correction count for aggressive retry logic
+              const currentCorrectionCount = chapterCorrectionCounts.get(chapter.chapterNumber) || 0;
+              const isRetry = currentCorrectionCount > 0;
+              
+              if (isRetry) {
+                console.log(`[ReeditOrchestrator] Chapter ${chapter.chapterNumber}: RETRY ATTEMPT ${currentCorrectionCount + 1} - using aggressive instructions`);
+              }
+              
               // Convert FinalReviewIssues to problem format for NarrativeRewriter
+              // On retry attempts, make instructions more aggressive
               const problems = chapterIssues.map((issue, idx) => ({
                 id: `issue-${idx}`,
                 tipo: issue.categoria || "otro",
                 descripcion: issue.descripcion,
                 severidad: issue.severidad || "media",
-                accionSugerida: issue.instrucciones_correccion || "Corregir según indicación"
+                accionSugerida: makeAggressiveInstructions(
+                  issue.instrucciones_correccion || "Corregir según indicación",
+                  currentCorrectionCount
+                )
               }));
 
               // Build adjacent context
@@ -4110,13 +4147,25 @@ export class ReeditOrchestrator {
           });
 
           try {
+            // Get current correction count for aggressive retry logic
+            const currentCorrectionCountFRO = chapterCorrectionCountsFRO.get(chapter.chapterNumber) || 0;
+            const isRetryFRO = currentCorrectionCountFRO > 0;
+            
+            if (isRetryFRO) {
+              console.log(`[ReeditOrchestrator] FRO Chapter ${chapter.chapterNumber}: RETRY ATTEMPT ${currentCorrectionCountFRO + 1} - using aggressive instructions`);
+            }
+            
             // Convert FinalReviewIssues to problem format for NarrativeRewriter
+            // On retry attempts, make instructions more aggressive
             const problems = chapterIssuesFRO.map((issue, idx) => ({
               id: `issue-${idx}`,
               tipo: issue.categoria || "otro",
               descripcion: issue.descripcion,
               severidad: issue.severidad || "media",
-              accionSugerida: issue.instrucciones_correccion || "Corregir según indicación"
+              accionSugerida: makeAggressiveInstructions(
+                issue.instrucciones_correccion || "Corregir según indicación",
+                currentCorrectionCountFRO
+              )
             }));
 
             // Build adjacent context
