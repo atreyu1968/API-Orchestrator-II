@@ -3707,6 +3707,12 @@ export class ReeditOrchestrator {
         });
         
         for (let i = 0; i < chaptersNeedingFix.length; i++) {
+          // Check cancellation before each chapter fix
+          if (await this.checkCancellation(projectId)) {
+            console.log(`[ReeditOrchestrator] Cancelled during pre-correction (resumeFinalReview) ${i + 1}/${chaptersNeedingFix.length}`);
+            return;
+          }
+          
           const chapter = chaptersNeedingFix[i];
           
           // Get issues specific to this chapter
@@ -3765,9 +3771,9 @@ export class ReeditOrchestrator {
               }
               
               // Update local validChapters array
-              const idx = validChapters.findIndex(c => c.id === chapter.id);
-              if (idx !== -1) {
-                validChapters[idx].editedContent = rewriteResult.rewrittenContent;
+              const localIdx = validChapters.findIndex(c => c.id === chapter.id);
+              if (localIdx !== -1) {
+                validChapters[localIdx].editedContent = rewriteResult.rewrittenContent;
               }
             }
           } catch (err) {
