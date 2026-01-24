@@ -13,7 +13,7 @@ interface QueueEvent {
   error?: string;
 }
 
-const HEARTBEAT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes without activity = frozen (matches max API timeout)
+const HEARTBEAT_TIMEOUT_MS = 8 * 60 * 1000; // 8 minutes without activity = frozen (reduced for faster recovery during generation)
 const HEARTBEAT_CHECK_INTERVAL_MS = 30 * 1000; // Check every 30 seconds
 
 export class QueueManager {
