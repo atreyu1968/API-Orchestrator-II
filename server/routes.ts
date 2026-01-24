@@ -3775,6 +3775,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         series,
         continuitySnapshots,
         thoughtLogs,
+        translations,
+        reeditProjects,
+        reeditChapters,
+        aiUsageEvents,
       ] = await Promise.all([
         storage.getAllProjects(),
         storage.getAllChapters(),
@@ -3785,10 +3789,15 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         storage.getAllSeries(),
         storage.getAllContinuitySnapshots(),
         storage.getAllThoughtLogs(),
+        storage.getAllTranslations(),
+        storage.getAllReeditProjects(),
+        storage.getAllReeditChapters(),
+        storage.getAllAiUsageEvents(),
       ]);
 
       res.json({
         exportedAt: new Date().toISOString(),
+        version: "2.0",
         data: {
           pseudonyms,
           styleGuides,
@@ -3799,6 +3808,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           worldBibles,
           continuitySnapshots,
           thoughtLogs,
+          translations,
+          reeditProjects,
+          reeditChapters,
+          aiUsageEvents,
         }
       });
     } catch (error) {
@@ -3958,6 +3971,78 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           } catch (e: any) {
             if (!e.message?.includes('duplicate')) {
               results.errors.push({ table: 'worldBibles', error: e.message });
+            }
+          }
+        }
+      }
+
+      // Import translations (depends on projects)
+      if (importData.translations?.length) {
+        for (const item of importData.translations) {
+          try {
+            const data = prepareForInsert(item);
+            if (data.projectId && projectIdMap.has(data.projectId)) {
+              data.projectId = projectIdMap.get(data.projectId);
+            }
+            await storage.createTranslation(data);
+            results.imported.translations = (results.imported.translations || 0) + 1;
+          } catch (e: any) {
+            if (!e.message?.includes('duplicate')) {
+              results.errors.push({ table: 'translations', error: e.message });
+            }
+          }
+        }
+      }
+
+      // Import reedit projects
+      const reeditProjectIdMap = new Map<number, number>();
+      if (importData.reeditProjects?.length) {
+        for (const item of importData.reeditProjects) {
+          try {
+            const oldId = item.id;
+            const data = prepareForInsert(item);
+            const created = await storage.createReeditProject(data);
+            reeditProjectIdMap.set(oldId, created.id);
+            results.imported.reeditProjects = (results.imported.reeditProjects || 0) + 1;
+          } catch (e: any) {
+            if (!e.message?.includes('duplicate')) {
+              results.errors.push({ table: 'reeditProjects', error: e.message });
+            }
+          }
+        }
+      }
+
+      // Import reedit chapters (depends on reedit projects)
+      if (importData.reeditChapters?.length) {
+        for (const item of importData.reeditChapters) {
+          try {
+            const data = prepareForInsert(item);
+            if (data.projectId && reeditProjectIdMap.has(data.projectId)) {
+              data.projectId = reeditProjectIdMap.get(data.projectId);
+            }
+            await storage.createReeditChapter(data);
+            results.imported.reeditChapters = (results.imported.reeditChapters || 0) + 1;
+          } catch (e: any) {
+            if (!e.message?.includes('duplicate')) {
+              results.errors.push({ table: 'reeditChapters', error: e.message });
+            }
+          }
+        }
+      }
+
+      // Import AI usage events (depends on projects)
+      if (importData.aiUsageEvents?.length) {
+        for (const item of importData.aiUsageEvents) {
+          try {
+            const data = prepareForInsert(item);
+            if (data.projectId && projectIdMap.has(data.projectId)) {
+              data.projectId = projectIdMap.get(data.projectId);
+            }
+            await storage.createAiUsageEvent(data);
+            results.imported.aiUsageEvents = (results.imported.aiUsageEvents || 0) + 1;
+          } catch (e: any) {
+            if (!e.message?.includes('duplicate')) {
+              results.errors.push({ table: 'aiUsageEvents', error: e.message });
             }
           }
         }

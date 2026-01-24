@@ -13,11 +13,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, Edit3, ExternalLink, Loader2 } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, ExternalLink, Loader2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
-import type { Project, AgentStatus, Chapter, ReeditProject } from "@shared/schema";
+import type { Project, AgentStatus, Chapter } from "@shared/schema";
 
 import type { AgentRole } from "@/components/process-flow";
 
@@ -136,38 +136,6 @@ export default function Dashboard() {
   const { data: agentStatuses = [] } = useQuery<AgentStatus[]>({
     queryKey: ["/api/agent-statuses"],
     refetchInterval: 2000,
-  });
-
-  const { data: reeditProjects = [] } = useQuery<ReeditProject[]>({
-    queryKey: ["/api/reedit-projects"],
-  });
-
-  interface AIProviderInfo {
-    current: "gemini" | "deepseek";
-    available: { gemini: boolean; deepseek: boolean };
-    pricing: {
-      gemini: { description: string; creative: string; analysis: string };
-      deepseek: { description: string; creative: string; analysis: string };
-    };
-  }
-
-  const { data: aiProvider } = useQuery<AIProviderInfo>({
-    queryKey: ["/api/ai-provider"],
-    staleTime: 30000,
-  });
-
-  const switchProviderMutation = useMutation({
-    mutationFn: async (provider: "gemini" | "deepseek") => {
-      const response = await apiRequest("POST", "/api/ai-provider", { provider });
-      return response.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/ai-provider"] });
-      toast({ title: "Proveedor cambiado", description: data.message });
-    },
-    onError: (error: any) => {
-      toast({ title: "Error", description: error.message || "No se pudo cambiar el proveedor", variant: "destructive" });
-    },
   });
 
   const activeProject = projects.find(p => p.status === "generating");
@@ -824,55 +792,6 @@ export default function Dashboard() {
             </Card>
           )}
 
-          {/* AI Provider Selector */}
-          {aiProvider && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  Proveedor de IA
-                  <Badge variant={aiProvider.current === "deepseek" ? "default" : "secondary"} className="text-xs">
-                    {aiProvider.current === "deepseek" ? "DeepSeek" : "Gemini"}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex gap-2">
-                  <Button
-                    variant={aiProvider.current === "gemini" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => switchProviderMutation.mutate("gemini")}
-                    disabled={!aiProvider.available.gemini || switchProviderMutation.isPending || aiProvider.current === "gemini"}
-                    data-testid="button-select-gemini"
-                    className="flex-1"
-                  >
-                    Gemini
-                  </Button>
-                  <Button
-                    variant={aiProvider.current === "deepseek" ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => switchProviderMutation.mutate("deepseek")}
-                    disabled={!aiProvider.available.deepseek || switchProviderMutation.isPending || aiProvider.current === "deepseek"}
-                    data-testid="button-select-deepseek"
-                    className="flex-1"
-                  >
-                    DeepSeek
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {aiProvider.current === "deepseek" 
-                    ? "DeepSeek: R1 para creativo, V3 para análisis (~3-5x más barato)"
-                    : "Gemini: Pro para creativo, Flash para análisis"
-                  }
-                </p>
-                {!aiProvider.available.deepseek && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400">
-                    Añade DEEPSEEK_API_KEY para usar DeepSeek
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
           {currentProject && currentProject.status === "idle" && (
             <Card>
               <CardContent className="pt-6 space-y-3">
@@ -1008,50 +927,6 @@ export default function Dashboard() {
             </Card>
           )}
 
-          {reeditProjects.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Edit3 className="h-5 w-5" />
-                  Manuscritos Importados
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {reeditProjects.slice(0, 5).map((project) => (
-                  <Link key={project.id} href={`/reedit?project=${project.id}`}>
-                    <div 
-                      className="flex items-center justify-between p-2 rounded-md hover-elevate cursor-pointer border border-border/50"
-                      data-testid={`reedit-project-${project.id}`}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm truncate">{project.title}</p>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{project.totalChapters} capítulos</span>
-                          <Badge 
-                            variant={project.status === "completed" ? "default" : "secondary"}
-                            className="text-xs"
-                          >
-                            {project.status === "completed" ? "Completado" : 
-                             project.status === "processing" ? "Procesando" : 
-                             project.status === "editing" ? "Editando" : "Pendiente"}
-                          </Badge>
-                        </div>
-                      </div>
-                      <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                  </Link>
-                ))}
-                {reeditProjects.length > 5 && (
-                  <Link href="/reedit">
-                    <Button variant="ghost" size="sm" className="w-full">
-                      Ver todos ({reeditProjects.length})
-                    </Button>
-                  </Link>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -1100,7 +975,7 @@ export default function Dashboard() {
             </CardContent>
           </Card>
 
-          <DuplicateManager />
+          <DuplicateManager projectId={currentProject?.id} />
         </div>
       </div>
 

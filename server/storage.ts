@@ -159,6 +159,7 @@ export interface IStorage {
   // Reedit Chapters
   createReeditChapter(data: InsertReeditChapter): Promise<ReeditChapter>;
   createReeditChapterIfNotExists(data: InsertReeditChapter): Promise<ReeditChapter>;
+  getAllReeditChapters(): Promise<ReeditChapter[]>;
   getReeditChaptersByProject(projectId: number): Promise<ReeditChapter[]>;
   getReeditChapter(id: number): Promise<ReeditChapter | undefined>;
   getReeditChapterByOriginalNumber(projectId: number, originalChapterNumber: number): Promise<ReeditChapter | undefined>;
@@ -933,6 +934,10 @@ export class DatabaseStorage implements IStorage {
       return existingByNumber[0];
     }
     return this.createReeditChapter(data);
+  }
+
+  async getAllReeditChapters(): Promise<ReeditChapter[]> {
+    return db.select().from(reeditChapters).orderBy(asc(reeditChapters.id));
   }
 
   async getReeditChaptersByProject(projectId: number): Promise<ReeditChapter[]> {

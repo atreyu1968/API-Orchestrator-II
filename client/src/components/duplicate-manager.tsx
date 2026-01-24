@@ -32,7 +32,11 @@ interface ProjectDuplicates {
   duplicateGroups: DuplicateGroup[];
 }
 
-export function DuplicateManager() {
+interface DuplicateManagerProps {
+  projectId?: number;
+}
+
+export function DuplicateManager({ projectId }: DuplicateManagerProps) {
   const { toast } = useToast();
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   const [confirmPurge, setConfirmPurge] = useState<{
@@ -42,9 +46,14 @@ export function DuplicateManager() {
     keepGeneration: boolean;
   } | null>(null);
 
-  const { data: duplicates, isLoading, refetch } = useQuery<ProjectDuplicates[]>({
+  const { data: allDuplicates, isLoading, refetch } = useQuery<ProjectDuplicates[]>({
     queryKey: ["/api/projects/duplicate-chapters"],
   });
+  
+  // Filter to show only the selected project's duplicates
+  const duplicates = projectId 
+    ? allDuplicates?.filter(p => p.projectId === projectId) 
+    : allDuplicates;
 
   const purgeMutation = useMutation({
     mutationFn: async (params: {

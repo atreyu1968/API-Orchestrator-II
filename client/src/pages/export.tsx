@@ -981,7 +981,7 @@ export default function ExportPage() {
               <p className="text-sm">Las traducciones aparecerán aquí cuando las generes</p>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
               {filteredTranslations.map((translation) => (
                 <div
                   key={translation.id}
