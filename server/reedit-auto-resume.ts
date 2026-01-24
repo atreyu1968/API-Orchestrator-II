@@ -7,6 +7,49 @@ const activeReeditOrchestrators = new Map<number, ReeditOrchestrator>();
 const WATCHDOG_INTERVAL_MS = 2 * 60 * 1000;
 // Projects without heartbeat for more than 8 minutes are considered frozen
 const FROZEN_THRESHOLD_MS = 8 * 60 * 1000;
+// Cooldown between recovery attempts for same project (10 minutes)
+const RECOVERY_COOLDOWN_MS = 10 * 60 * 1000;
+// Maximum recovery attempts before giving up
+const MAX_RECOVERY_ATTEMPTS = 3;
+
+// Track recovery attempts in memory (projectId -> { count, lastAttempt })
+const recoveryTracker = new Map<number, { count: number; lastAttempt: Date }>();
+
+function canAttemptRecovery(projectId: number): boolean {
+  const tracker = recoveryTracker.get(projectId);
+  if (!tracker) return true;
+  
+  const now = new Date();
+  const timeSinceLastAttempt = now.getTime() - tracker.lastAttempt.getTime();
+  
+  // Check cooldown
+  if (timeSinceLastAttempt < RECOVERY_COOLDOWN_MS) {
+    console.log(`[ReeditWatchdog] Project ${projectId} in cooldown (${Math.round((RECOVERY_COOLDOWN_MS - timeSinceLastAttempt) / 60000)} min remaining)`);
+    return false;
+  }
+  
+  // Check max attempts
+  if (tracker.count >= MAX_RECOVERY_ATTEMPTS) {
+    console.log(`[ReeditWatchdog] Project ${projectId} exceeded max recovery attempts (${tracker.count}/${MAX_RECOVERY_ATTEMPTS})`);
+    return false;
+  }
+  
+  return true;
+}
+
+function recordRecoveryAttempt(projectId: number): void {
+  const tracker = recoveryTracker.get(projectId);
+  if (tracker) {
+    tracker.count++;
+    tracker.lastAttempt = new Date();
+  } else {
+    recoveryTracker.set(projectId, { count: 1, lastAttempt: new Date() });
+  }
+}
+
+function resetRecoveryTracker(projectId: number): void {
+  recoveryTracker.delete(projectId);
+}
 
 let watchdogInterval: NodeJS.Timeout | null = null;
 
@@ -34,18 +77,69 @@ export async function watchdogCheck(): Promise<void> {
       const timeSinceActivity = now.getTime() - lastActivity.getTime();
       
       if (timeSinceActivity > FROZEN_THRESHOLD_MS) {
-        console.log(`[ReeditWatchdog] Project ${project.id} frozen - no heartbeat for ${Math.round(timeSinceActivity / 60000)} minutes`);
+        // Check if orchestrator is still in active map (might be slow but not dead)
+        if (activeReeditOrchestrators.has(project.id)) {
+          console.log(`[ReeditWatchdog] Project ${project.id} has stale heartbeat but orchestrator still in memory - skipping recovery`);
+          continue;
+        }
         
-        // Remove from active orchestrators (it's probably stuck)
-        activeReeditOrchestrators.delete(project.id);
+        // Check recovery limits
+        if (!canAttemptRecovery(project.id)) {
+          // Exceeded max attempts - mark as error permanently
+          const tracker = recoveryTracker.get(project.id);
+          if (tracker && tracker.count >= MAX_RECOVERY_ATTEMPTS) {
+            await storage.updateReeditProject(project.id, {
+              status: "error",
+              errorMessage: `Auto-recovery fallido después de ${tracker.count} intentos. Reanudar manualmente.`,
+            });
+            console.log(`[ReeditWatchdog] Project ${project.id} marked as permanent error after ${tracker.count} recovery attempts`);
+          }
+          continue;
+        }
         
-        // Mark as error so user can resume
+        console.log(`[ReeditWatchdog] Project ${project.id} frozen - no heartbeat for ${Math.round(timeSinceActivity / 60000)} minutes. AUTO-RESTARTING...`);
+        
+        // Record this recovery attempt
+        recordRecoveryAttempt(project.id);
+        const tracker = recoveryTracker.get(project.id);
+        console.log(`[ReeditWatchdog] Recovery attempt ${tracker?.count}/${MAX_RECOVERY_ATTEMPTS} for project ${project.id}`);
+        
+        // Update status to show recovery is happening
         await storage.updateReeditProject(project.id, {
-          status: "error",
-          errorMessage: `Proceso congelado detectado (sin actividad por ${Math.round(timeSinceActivity / 60000)} minutos). Puede reanudar el proceso.`,
+          status: "processing",
+          errorMessage: null,
+          heartbeatAt: new Date(), // Reset heartbeat to prevent immediate re-detection
         });
         
-        console.log(`[ReeditWatchdog] Project ${project.id} marked as error for recovery`);
+        console.log(`[ReeditWatchdog] Project ${project.id} - starting auto-recovery orchestrator`);
+        
+        // AUTO-RESTART: Create new orchestrator and resume processing
+        const orchestrator = new ReeditOrchestrator();
+        activeReeditOrchestrators.set(project.id, orchestrator);
+        
+        orchestrator.processProject(project.id).then(() => {
+          console.log(`[ReeditWatchdog] Project ${project.id} completed successfully after auto-recovery.`);
+          activeReeditOrchestrators.delete(project.id);
+          // Reset recovery tracker on success
+          resetRecoveryTracker(project.id);
+        }).catch(async (error) => {
+          console.error(`[ReeditWatchdog] Project ${project.id} failed after auto-recovery:`, error);
+          activeReeditOrchestrators.delete(project.id);
+          
+          try {
+            await storage.updateReeditProject(project.id, {
+              status: "error",
+              errorMessage: error instanceof Error ? error.message : "Error durante auto-recovery",
+            });
+          } catch (e) {
+            console.error(`[ReeditWatchdog] Failed to update project ${project.id} status:`, e);
+          }
+        });
+        
+        console.log(`[ReeditWatchdog] Project ${project.id} auto-recovery started in background`);
+        
+        // Only handle one frozen project per check cycle to avoid overload
+        break;
       }
     }
   } catch (error) {
