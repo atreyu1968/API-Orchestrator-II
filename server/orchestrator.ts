@@ -894,11 +894,13 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
           const isRewrite = refinementAttempts > 0;
           // Use per-chapter limits if set, otherwise calculate from total novel target
+          // SPECIAL: Author's Note has different word limits (800-1200 words)
+          const isAuthorNote = sectionData.tipo === "author_note" || sectionData.numero === -2;
           const projectMinPerChapter = (project as any).minWordsPerChapter;
           const projectMaxPerChapter = (project as any).maxWordsPerChapter;
           const totalNovelTarget = (project as any).minWordCount;
-          const perChapterTarget = projectMinPerChapter || this.calculatePerChapterTarget(totalNovelTarget, allSections.length);
-          const perChapterMax = projectMaxPerChapter || Math.round(perChapterTarget * 1.15);
+          const perChapterTarget = isAuthorNote ? 800 : (projectMinPerChapter || this.calculatePerChapterTarget(totalNovelTarget, allSections.length));
+          const perChapterMax = isAuthorNote ? 1200 : (projectMaxPerChapter || Math.round(perChapterTarget * 1.15));
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -1533,10 +1535,12 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
           const isRewrite = refinementAttempts > 0;
           // Use project's per-chapter settings, fallback to calculated from total
+          // SPECIAL: Author's Note has different word limits (800-1200 words)
+          const isAuthorNoteResume = sectionData.tipo === "author_note" || sectionData.numero === -2;
           const totalChaptersResume = existingChapters.length || project.chapterCount || 1;
           const calculatedTarget = this.calculatePerChapterTarget((project as any).minWordCount, totalChaptersResume);
-          const perChapterMinResume = (project as any).minWordsPerChapter || calculatedTarget;
-          const perChapterMaxResume = (project as any).maxWordsPerChapter || Math.round(perChapterMinResume * 1.15);
+          const perChapterMinResume = isAuthorNoteResume ? 800 : ((project as any).minWordsPerChapter || calculatedTarget);
+          const perChapterMaxResume = isAuthorNoteResume ? 1200 : ((project as any).maxWordsPerChapter || Math.round(perChapterMinResume * 1.15));
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
             chapterData: sectionData,
@@ -2495,10 +2499,12 @@ ${chapterSummaries || "Sin capítulos disponibles"}
           : "";
 
         // Use project's per-chapter settings, fallback to calculated from total
+        // SPECIAL: Author's Note has different word limits (800-1200 words)
+        const isAuthorNoteQA = sectionData.tipo === "author_note" || sectionData.numero === -2;
         const totalChaptersQA = updatedChapters.length || project.chapterCount || 1;
         const calculatedTargetQA = this.calculatePerChapterTarget((project as any).minWordCount, totalChaptersQA);
-        const perChapterMinQA = (project as any).minWordsPerChapter || calculatedTargetQA;
-        const perChapterMaxQA = (project as any).maxWordsPerChapter || Math.round(perChapterMinQA * 1.15);
+        const perChapterMinQA = isAuthorNoteQA ? 800 : ((project as any).minWordsPerChapter || calculatedTargetQA);
+        const perChapterMaxQA = isAuthorNoteQA ? 1200 : ((project as any).maxWordsPerChapter || Math.round(perChapterMinQA * 1.15));
         const originalChapterContent = chapter.content || "";
         const writerResult = await this.ghostwriter.execute({
           chapterNumber: sectionData.numero,
@@ -3018,8 +3024,10 @@ Responde SOLO con un JSON válido con la estructura:
             : baseStyleGuide;
 
           const isRewrite = refinementAttempts > 0;
-          const perChapterMin = (project as any).minWordsPerChapter || 2500;
-          const perChapterMax = (project as any).maxWordsPerChapter || Math.round(perChapterMin * 1.15);
+          // SPECIAL: Author's Note has different word limits (800-1200 words)
+          const isAuthorNoteExtend = sectionData.tipo === "author_note" || sectionData.numero === -2;
+          const perChapterMin = isAuthorNoteExtend ? 800 : ((project as any).minWordsPerChapter || 2500);
+          const perChapterMax = isAuthorNoteExtend ? 1200 : ((project as any).maxWordsPerChapter || Math.round(perChapterMin * 1.15));
           
           const writerResult = await this.ghostwriter.execute({
             chapterNumber: sectionData.numero,
@@ -3338,9 +3346,11 @@ Responde SOLO con un JSON válido con la estructura:
         // Retry loop for truncated responses
         const MAX_REGENERATION_ATTEMPTS = 3;
         // Use project's per-chapter settings, fallback to calculated from total
+        // SPECIAL: Author's Note has different word limits (800-1200 words)
+        const isAuthorNoteRegen = chapter.chapterNumber === -2;
         const calculatedTargetRegen = this.calculatePerChapterTarget((project as any).minWordCount, chapters.length);
-        const perChapterMinRegen = (project as any).minWordsPerChapter || calculatedTargetRegen;
-        const perChapterMaxRegen = (project as any).maxWordsPerChapter || Math.round(perChapterMinRegen * 1.15);
+        const perChapterMinRegen = isAuthorNoteRegen ? 800 : ((project as any).minWordsPerChapter || calculatedTargetRegen);
+        const perChapterMaxRegen = isAuthorNoteRegen ? 1200 : ((project as any).maxWordsPerChapter || Math.round(perChapterMinRegen * 1.15));
         const MARGIN_REGEN = 0.15; // 15% flexibility
         const TARGET_MIN_WORDS = Math.round(perChapterMinRegen * (1 - MARGIN_REGEN));
         const TARGET_MAX_WORDS = perChapterMaxRegen;
@@ -4317,10 +4327,12 @@ Responde SOLO con un JSON válido con la estructura:
     }
 
     // Use project's per-chapter settings for QA rewrites
+    // SPECIAL: Author's Note has different word limits (800-1200 words)
+    const isAuthorNoteRewrite = sectionData.numero === -2 || sectionData.tipo === "author_note";
     const allChaptersCount = (await storage.getChaptersByProject(project.id)).length || project.chapterCount || 1;
     const calculatedTargetRewrite = this.calculatePerChapterTarget((project as any).minWordCount, allChaptersCount);
-    const perChapterMinRewrite = (project as any).minWordsPerChapter || calculatedTargetRewrite;
-    const perChapterMaxRewrite = (project as any).maxWordsPerChapter || Math.round(perChapterMinRewrite * 1.15);
+    const perChapterMinRewrite = isAuthorNoteRewrite ? 800 : ((project as any).minWordsPerChapter || calculatedTargetRewrite);
+    const perChapterMaxRewrite = isAuthorNoteRewrite ? 1200 : ((project as any).maxWordsPerChapter || Math.round(perChapterMinRewrite * 1.15));
     
     const writerResult = await this.ghostwriter.execute({
       chapterNumber: sectionData.numero,
