@@ -5992,21 +5992,31 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   app.post("/api/reedit-projects/:id/cancel", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
       
-      // Set cancelRequested flag - the orchestrator will check this and gracefully exit
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      console.log(`[ReeditCancel] Cancel requested for project ${projectId}, current status: ${project.status}`);
+      
+      // Remove from active orchestrators immediately
+      const wasActive = activeReeditOrchestrators.has(projectId);
+      if (wasActive) {
+        activeReeditOrchestrators.delete(projectId);
+        console.log(`[ReeditCancel] Removed project ${projectId} from active orchestrators`);
+      }
+      
+      // Set cancelRequested flag AND change status to paused immediately
+      // This ensures the UI shows the project is no longer processing
       await storage.updateReeditProject(projectId, { 
         cancelRequested: true,
-        errorMessage: "Cancelación solicitada por el usuario" 
+        status: "awaiting_instructions",
+        pauseReason: "Cancelado por el usuario. Puedes reanudar cuando quieras.",
       });
 
-      // If there's an active orchestrator, it will pick up the cancellation flag
-      // We also remove it from the active map to allow a new resume
-      if (activeReeditOrchestrators.has(projectId)) {
-        console.log(`[ReeditCancel] Setting cancellation flag for project ${projectId}`);
-        activeReeditOrchestrators.delete(projectId);
-      }
-
-      res.json({ success: true, message: "Cancelación solicitada. El proceso se detendrá pronto." });
+      console.log(`[ReeditCancel] Project ${projectId} cancelled and paused`);
+      res.json({ success: true, message: "Proceso cancelado. Puedes reanudar cuando quieras." });
     } catch (error) {
       console.error("Error cancelling reedit:", error);
       res.status(500).json({ error: "Failed to cancel reedit" });
