@@ -2955,6 +2955,13 @@ export class ReeditOrchestrator {
         const totalProblemsCount = Array.from(consolidatedProblems.values()).reduce((sum, p) => sum + p.length, 0);
         console.log(`[ReeditOrchestrator] OPTIMIZED: Consolidating ${totalProblemsCount} problems (Architect + QA) in ${consolidatedProblems.size} chapters for SINGLE rewriting pass`);
         
+        // Load change history for intelligent resolution tracking (shared with final review)
+        type ChangeEntryNR = { issue: string; fix: string; timestamp: string };
+        const loadedHistoryNR = (project?.chapterChangeHistory as Record<string, ChangeEntryNR[]>) || {};
+        const chapterChangeHistoryNR: Map<number, ChangeEntryNR[]> = new Map(
+          Object.entries(loadedHistoryNR).map(([k, v]) => [parseInt(k), v])
+        );
+        
         this.emitProgress({
           projectId,
           stage: "narrative_rewriting",
@@ -3041,6 +3048,23 @@ export class ReeditOrchestrator {
                 changes: rewriteResult.cambiosRealizados?.length || 0,
                 confidence: rewriteResult.verificacionInterna?.confianzaEnCorreccion || 0,
                 summary: rewriteResult.resumenEjecutivo
+              });
+              
+              // SAVE CHANGE HISTORY for intelligent resolution validation (max 10 entries per chapter)
+              const issuesSummaryNR = chapterProblems.map((p: any) => (p.descripcion || "").substring(0, 300)).join("; ");
+              const changesSummaryNR = (rewriteResult.cambiosRealizados?.join("; ") || "Contenido reescrito").substring(0, 500);
+              let existingHistoryNR = chapterChangeHistoryNR.get(chapNum) || [];
+              existingHistoryNR.push({
+                issue: issuesSummaryNR,
+                fix: changesSummaryNR,
+                timestamp: new Date().toISOString()
+              });
+              if (existingHistoryNR.length > 10) existingHistoryNR = existingHistoryNR.slice(-10);
+              chapterChangeHistoryNR.set(chapNum, existingHistoryNR);
+              
+              // Persist change history to database
+              await storage.updateReeditProject(projectId, {
+                chapterChangeHistory: Object.fromEntries(chapterChangeHistoryNR) as any,
               });
               
               console.log(`[ReeditOrchestrator] Chapter ${chapNum} rewritten (consolidated): ${rewriteResult.cambiosRealizados?.length || 0} changes, confidence: ${rewriteResult.verificacionInterna?.confianzaEnCorreccion || 'N/A'}/10`);
