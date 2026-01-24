@@ -3503,10 +3503,10 @@ export class ReeditOrchestrator {
               this.trackTokens(rewriteResult);
               await this.updateHeartbeat(projectId);
 
-              if (rewriteResult.rewrittenContent) {
-                const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+              if (rewriteResult.capituloReescrito) {
+                const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
                 await storage.updateReeditChapter(chapter.id, {
-                  editedContent: rewriteResult.rewrittenContent,
+                  editedContent: rewriteResult.capituloReescrito,
                   wordCount,
                 });
                 
@@ -3758,10 +3758,10 @@ export class ReeditOrchestrator {
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
             
-            if (rewriteResult.rewrittenContent) {
-              const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+            if (rewriteResult.capituloReescrito) {
+              const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
               await storage.updateReeditChapter(chapter.id, {
-                editedContent: rewriteResult.rewrittenContent,
+                editedContent: rewriteResult.capituloReescrito,
                 wordCount,
               });
               
@@ -3773,7 +3773,7 @@ export class ReeditOrchestrator {
               // Update local validChapters array
               const localIdx = validChapters.findIndex(c => c.id === chapter.id);
               if (localIdx !== -1) {
-                validChapters[localIdx].editedContent = rewriteResult.rewrittenContent;
+                validChapters[localIdx].editedContent = rewriteResult.capituloReescrito;
               }
             }
           } catch (err) {
@@ -4032,10 +4032,10 @@ export class ReeditOrchestrator {
             this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
 
-            if (rewriteResult.rewrittenContent) {
-              const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+            if (rewriteResult.capituloReescrito) {
+              const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
               await storage.updateReeditChapter(chapter.id, {
-                editedContent: rewriteResult.rewrittenContent,
+                editedContent: rewriteResult.capituloReescrito,
                 wordCount,
               });
               
@@ -4232,10 +4232,10 @@ export class ReeditOrchestrator {
         );
         this.trackTokens(rewriteResult);
 
-        if (rewriteResult.rewrittenContent) {
-          const wordCount = rewriteResult.rewrittenContent.split(/\s+/).filter((w: string) => w.length > 0).length;
+        if (rewriteResult.capituloReescrito) {
+          const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
           await storage.updateReeditChapter(chapter.id, {
-            editedContent: rewriteResult.rewrittenContent,
+            editedContent: rewriteResult.capituloReescrito,
             wordCount,
           });
           console.log(`[ReeditOrchestrator] Fixed chapter ${chapter.chapterNumber}: ${wordCount} words`);
