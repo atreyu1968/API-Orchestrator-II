@@ -80,6 +80,8 @@ export const projects = pgTable("projects", {
   currentChapter: integer("current_chapter").default(0),
   revisionCycle: integer("revision_cycle").default(0),
   maxRevisionCycles: integer("max_revision_cycles").default(3),
+  voiceAuditCompleted: boolean("voice_audit_completed").default(false),
+  semanticCheckCompleted: boolean("semantic_check_completed").default(false),
   finalReviewResult: jsonb("final_review_result"),
   finalScore: integer("final_score"),
   totalInputTokens: integer("total_input_tokens").default(0),

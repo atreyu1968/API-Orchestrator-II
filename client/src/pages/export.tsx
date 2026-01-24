@@ -981,7 +981,8 @@ export default function ExportPage() {
               <p className="text-sm">Las traducciones aparecerán aquí cuando las generes</p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+            <ScrollArea className="max-h-[400px] pr-1">
+              <div className="space-y-3">
               {filteredTranslations.map((translation) => (
                 <div
                   key={translation.id}
@@ -1099,7 +1100,8 @@ export default function ExportPage() {
                   </div>
                 </div>
               ))}
-            </div>
+              </div>
+            </ScrollArea>
           )}
         </CardContent>
       </Card>
