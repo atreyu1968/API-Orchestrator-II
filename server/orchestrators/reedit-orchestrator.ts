@@ -1542,6 +1542,150 @@ export class ReeditOrchestrator {
     return created;
   }
 
+  /**
+   * Apply corrections for user-approved issues only. 
+   * This is the LINEAR FLOW - after corrections are applied, the process ends.
+   * Updates resolved hashes, correction counts, and change history to maintain consistent state.
+   */
+  private async applyUserApprovedCorrections(
+    projectId: number,
+    approvedIssues: any[],
+    validChapters: any[],
+    worldBible: any,
+    guiaEstilo: string,
+    userInstructions: string | undefined,
+    resolvedHashes: string[],
+    correctionCounts: Map<number, number>
+  ): Promise<{ correctedCount: number }> {
+    if (approvedIssues.length === 0) {
+      console.log(`[ReeditOrchestrator] No approved issues to apply`);
+      return { correctedCount: 0 };
+    }
+
+    console.log(`[ReeditOrchestrator] Applying ${approvedIssues.length} user-approved corrections`);
+    let correctedCount = 0;
+    
+    // Load existing change history from project
+    const project = await storage.getReeditProject(projectId);
+    const chapterChangeHistory = new Map<number, Array<{ issue: string; fix: string; timestamp: string }>>(
+      Object.entries((project?.chapterChangeHistory as any) || {}).map(([k, v]) => [parseInt(k), v as any])
+    );
+
+    // Group issues by chapter
+    const issuesByChapter = new Map<number, any[]>();
+    for (const issue of approvedIssues) {
+      const chapterNum = issue.chapterNumber;
+      if (!issuesByChapter.has(chapterNum)) {
+        issuesByChapter.set(chapterNum, []);
+      }
+      issuesByChapter.get(chapterNum)!.push(issue);
+    }
+
+    // Apply corrections chapter by chapter
+    for (const [chapterNum, chapterIssues] of issuesByChapter) {
+      const chapter = validChapters.find((c: any) => c.chapterNumber === chapterNum);
+      if (!chapter) {
+        console.log(`[ReeditOrchestrator] Chapter ${chapterNum} not found, skipping`);
+        continue;
+      }
+
+      console.log(`[ReeditOrchestrator] Applying ${chapterIssues.length} corrections to chapter ${chapterNum}`);
+
+      // Map severity from database format to expected format
+      const mapSeverity = (sev: string): string => {
+        if (sev === "critical" || sev === "critica" || sev === "crítica") return "critica";
+        if (sev === "major" || sev === "mayor") return "mayor";
+        return "menor";
+      };
+
+      // Convert database issues to problem format for NarrativeRewriter
+      const problems = chapterIssues.map((issue: any, idx: number) => ({
+        id: `issue-${idx}`,
+        tipo: issue.category || "otro",
+        descripcion: issue.description,
+        severidad: mapSeverity(issue.severity || "mayor"),
+        accionSugerida: issue.correctionInstruction || "Corregir según indicación del usuario"
+      }));
+
+      // Build adjacent context
+      const prevChapter = validChapters.find((c: any) => c.chapterNumber === chapterNum - 1);
+      const nextChapter = validChapters.find((c: any) => c.chapterNumber === chapterNum + 1);
+      const adjacentContext = {
+        previousChapter: prevChapter?.editedContent?.substring(0, 2000),
+        nextChapter: nextChapter?.editedContent?.substring(0, 2000),
+      };
+
+      try {
+        const rewriteResult = await this.narrativeRewriter.rewriteChapter(
+          chapter.editedContent || chapter.originalContent,
+          chapterNum,
+          problems,
+          worldBible || {},
+          adjacentContext,
+          "español",
+          userInstructions || undefined
+        );
+        this.trackTokens(rewriteResult);
+        await this.updateHeartbeat(projectId);
+
+        if (rewriteResult.capituloReescrito) {
+          const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
+          await storage.updateReeditChapter(chapter.id, {
+            editedContent: rewriteResult.capituloReescrito,
+            wordCount,
+          });
+          
+          // Update correction count for this chapter
+          const currentCount = correctionCounts.get(chapterNum) || 0;
+          correctionCounts.set(chapterNum, currentCount + 1);
+          
+          // Add issue hashes to resolved list
+          for (const issue of chapterIssues) {
+            if (issue.issueHash && !resolvedHashes.includes(issue.issueHash)) {
+              resolvedHashes.push(issue.issueHash);
+            }
+          }
+          
+          // Save change history for this chapter (matching main correction pipeline)
+          const issuesSummary = chapterIssues.map((i: any) => i.description?.substring(0, 300) || "").join("; ");
+          const changesSummary = (rewriteResult.cambiosRealizados?.join("; ") || "Contenido reescrito por usuario").substring(0, 500);
+          let existingHistory = chapterChangeHistory.get(chapterNum) || [];
+          existingHistory.push({
+            issue: issuesSummary,
+            fix: changesSummary,
+            timestamp: new Date().toISOString()
+          });
+          // Keep only last 10 entries to prevent bloat
+          if (existingHistory.length > 10) existingHistory = existingHistory.slice(-10);
+          chapterChangeHistory.set(chapterNum, existingHistory);
+          
+          correctedCount++;
+          console.log(`[ReeditOrchestrator] Chapter ${chapterNum} corrected successfully (${wordCount} words)`);
+
+          this.emitProgress({
+            projectId,
+            stage: "correcting",
+            currentChapter: chapterNum,
+            totalChapters: validChapters.length,
+            message: `Capítulo ${chapterNum} corregido (${chapterIssues.length} problema(s))`,
+          });
+        }
+      } catch (err) {
+        console.error(`[ReeditOrchestrator] Error correcting chapter ${chapterNum}:`, err);
+      }
+    }
+    
+    // Persist all state to database to match main correction pipeline
+    await storage.updateReeditProject(projectId, {
+      chapterCorrectionCounts: Object.fromEntries(correctionCounts) as any,
+      chapterChangeHistory: Object.fromEntries(chapterChangeHistory) as any,
+      resolvedIssueHashes: resolvedHashes as any,
+    });
+
+    console.log(`[ReeditOrchestrator] Completed applying ${correctedCount} user-approved corrections (state persisted)`);
+    return { correctedCount };
+  }
+
   private async saveTokenUsage(projectId: number) {
     await storage.updateReeditProject(projectId, {
       totalInputTokens: this.totalInputTokens,
@@ -4028,6 +4172,7 @@ export class ReeditOrchestrator {
       }));
 
       // Call the FULL final reviewer with complete manuscript content
+      // Pass user instructions so they are considered during issue detection
       const fullReviewResult = await this.fullFinalReviewerAgent.execute({
         projectTitle: project.title,
         chapters: chaptersForReview,
@@ -4035,6 +4180,7 @@ export class ReeditOrchestrator {
         guiaEstilo: guiaEstilo,
         pasadaNumero: revisionCycle + 1,
         issuesPreviosCorregidos: correctedIssueDescriptions,
+        userInstructions: userInstructions || undefined,
       });
       this.trackTokens(fullReviewResult);
       await this.updateHeartbeat(projectId);
@@ -4170,6 +4316,66 @@ export class ReeditOrchestrator {
         
         // User has approved some issues - only process those
         console.log(`[ReeditOrchestrator] FRO: User approved ${approvedIssues.length} issues for correction`);
+        
+        // LINEAR FLOW: After applying user-approved corrections, mark as completed and exit
+        // This prevents infinite loops - user explicitly approved what to fix
+        
+        // Apply corrections for approved issues only, tracking all state properly
+        const correctionResults = await this.applyUserApprovedCorrections(
+          projectId, 
+          approvedIssues, 
+          validChapters, 
+          worldBibleForReview, 
+          guiaEstilo, 
+          userInstructions,
+          localResolvedHashesFRO,
+          chapterCorrectionCountsFRO
+        );
+        
+        // Mark all approved issues as resolved in the database
+        for (const issue of approvedIssues) {
+          await storage.resolveReeditIssue(issue.id);
+        }
+        
+        // Refresh chapters to get updated word counts
+        const updatedChapters = await storage.getReeditChaptersByProject(projectId);
+        const totalWords = updatedChapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
+        
+        // Mark project as completed after applying user-approved corrections
+        // Note: We explicitly don't re-run final review - user has accepted the corrections
+        // Get the latest persisted state from applyUserApprovedCorrections
+        const finalProject = await storage.getReeditProject(projectId);
+        
+        await storage.updateReeditProject(projectId, {
+          currentStage: "completed",
+          status: "completed",
+          finalReviewResult: {
+            ...finalResult,
+            nota_usuario: `Usuario aprobó ${approvedIssues.length} correcciones. Manuscrito finalizado sin re-evaluación.`,
+            completed_without_rereview: true,
+            user_approved_count: approvedIssues.length,
+          },
+          bestsellerScore: Math.round(bestsellerScore),
+          revisedWordCount: totalWords,
+          errorMessage: null,
+          pauseReason: null,
+          // Preserve state from applyUserApprovedCorrections
+          resolvedIssueHashes: finalProject?.resolvedIssueHashes || localResolvedHashesFRO as any,
+          chapterCorrectionCounts: finalProject?.chapterCorrectionCounts || Object.fromEntries(chapterCorrectionCountsFRO) as any,
+          chapterChangeHistory: finalProject?.chapterChangeHistory,
+        });
+        
+        this.emitProgress({
+          projectId,
+          stage: "completed",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: `Correcciones aplicadas exitosamente. ${approvedIssues.length} problemas corregidos. Manuscrito finalizado.`,
+        });
+        
+        console.log(`[ReeditOrchestrator] LINEAR FLOW: Completed after applying ${approvedIssues.length} user-approved corrections`);
+        await this.saveTokenUsage(projectId);
+        return; // EXIT - Linear flow complete
       }
       
       if (issues.length > 0 || chaptersToRewrite.length > 0) {

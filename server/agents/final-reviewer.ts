@@ -11,6 +11,7 @@ interface FinalReviewerInput {
   guiaEstilo: string;
   pasadaNumero?: number;
   issuesPreviosCorregidos?: string[];
+  userInstructions?: string;
 }
 
 export interface FinalReviewIssue {
@@ -471,6 +472,17 @@ export class FinalReviewerAgent extends BaseAgent {
     ═══════════════════════════════════════════════════════════════════
     ` : "";
 
+    // Build user instructions section if provided
+    const userInstructionsSection = input.userInstructions ? `
+    ═══════════════════════════════════════════════════════════════════
+    INSTRUCCIONES ESPECÍFICAS DEL USUARIO (PRIORIDAD MÁXIMA):
+    ${input.userInstructions}
+    
+    IMPORTANTE: Las instrucciones del usuario tienen prioridad sobre las reglas generales.
+    Considera estas instrucciones al evaluar y detectar problemas.
+    ═══════════════════════════════════════════════════════════════════
+    ` : "";
+
     const prompt = `
     TÍTULO DE LA NOVELA: ${input.projectTitle}
     
@@ -480,6 +492,7 @@ export class FinalReviewerAgent extends BaseAgent {
     GUÍA DE ESTILO:
     ${input.guiaEstilo}
     ${pasadaInfo}
+    ${userInstructionsSection}
     ${previousContext}
     ═══════════════════════════════════════════════════════════════════
     REVISIÓN POR TRANCHES: TRAMO ${trancheNum}/${totalTranches}
