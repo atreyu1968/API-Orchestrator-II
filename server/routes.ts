@@ -6289,6 +6289,197 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // ===== REEDIT ISSUES API =====
+  // Get all issues for a reedit project
+  app.get("/api/reedit-projects/:id/issues", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const { status, chapter } = req.query;
+      
+      let issues;
+      if (status && typeof status === "string") {
+        issues = await storage.getReeditIssuesByStatus(projectId, status);
+      } else if (chapter && typeof chapter === "string") {
+        issues = await storage.getReeditIssuesByChapter(projectId, parseInt(chapter));
+      } else {
+        issues = await storage.getReeditIssuesByProject(projectId);
+      }
+      
+      res.json(issues);
+    } catch (error) {
+      console.error("Error fetching reedit issues:", error);
+      res.status(500).json({ error: "Failed to fetch issues" });
+    }
+  });
+
+  // Approve a single issue for correction
+  app.post("/api/reedit-issues/:id/approve", async (req: Request, res: Response) => {
+    try {
+      const issueId = parseInt(req.params.id);
+      const updated = await storage.approveReeditIssue(issueId);
+      if (!updated) {
+        return res.status(404).json({ error: "Issue not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error approving reedit issue:", error);
+      res.status(500).json({ error: "Failed to approve issue" });
+    }
+  });
+
+  // Reject a single issue (skip correction)
+  app.post("/api/reedit-issues/:id/reject", async (req: Request, res: Response) => {
+    try {
+      const issueId = parseInt(req.params.id);
+      const { reason } = req.body;
+      const updated = await storage.rejectReeditIssue(issueId, reason);
+      if (!updated) {
+        return res.status(404).json({ error: "Issue not found" });
+      }
+      res.json(updated);
+    } catch (error) {
+      console.error("Error rejecting reedit issue:", error);
+      res.status(500).json({ error: "Failed to reject issue" });
+    }
+  });
+
+  // Bulk approve all pending issues for a project
+  app.post("/api/reedit-projects/:id/issues/approve-all", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const pendingIssues = await storage.getReeditIssuesByStatus(projectId, "pending");
+      
+      for (const issue of pendingIssues) {
+        await storage.approveReeditIssue(issue.id);
+      }
+      
+      res.json({ success: true, approved: pendingIssues.length });
+    } catch (error) {
+      console.error("Error bulk approving issues:", error);
+      res.status(500).json({ error: "Failed to bulk approve issues" });
+    }
+  });
+
+  // Bulk reject all pending issues for a project
+  app.post("/api/reedit-projects/:id/issues/reject-all", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const { reason } = req.body;
+      const pendingIssues = await storage.getReeditIssuesByStatus(projectId, "pending");
+      
+      for (const issue of pendingIssues) {
+        await storage.rejectReeditIssue(issue.id, reason || "Bulk rejected by user");
+      }
+      
+      res.json({ success: true, rejected: pendingIssues.length });
+    } catch (error) {
+      console.error("Error bulk rejecting issues:", error);
+      res.status(500).json({ error: "Failed to bulk reject issues" });
+    }
+  });
+
+  // Get summary of issue counts by status
+  app.get("/api/reedit-projects/:id/issues/summary", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const allIssues = await storage.getReeditIssuesByProject(projectId);
+      
+      const summary = {
+        total: allIssues.length,
+        pending: allIssues.filter(i => i.status === "pending").length,
+        approved: allIssues.filter(i => i.status === "approved").length,
+        rejected: allIssues.filter(i => i.status === "rejected").length,
+        resolved: allIssues.filter(i => i.status === "resolved").length,
+        bySeverity: {
+          critical: allIssues.filter(i => i.severity === "critical").length,
+          major: allIssues.filter(i => i.severity === "major").length,
+          minor: allIssues.filter(i => i.severity === "minor").length,
+          suggestion: allIssues.filter(i => i.severity === "suggestion").length,
+        },
+        byCategory: {} as Record<string, number>
+      };
+      
+      // Count by category
+      for (const issue of allIssues) {
+        const cat = issue.category || "unknown";
+        summary.byCategory[cat] = (summary.byCategory[cat] || 0) + 1;
+      }
+      
+      res.json(summary);
+    } catch (error) {
+      console.error("Error fetching issue summary:", error);
+      res.status(500).json({ error: "Failed to fetch issue summary" });
+    }
+  });
+
+  // Proceed with corrections after user has approved issues
+  app.post("/api/reedit-projects/:id/proceed-corrections", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      if (project.status !== "awaiting_issue_approval") {
+        return res.status(400).json({ 
+          error: "Project is not awaiting issue approval",
+          currentStatus: project.status 
+        });
+      }
+      
+      // Check that user has made decisions on all pending issues
+      const pendingIssues = await storage.getReeditIssuesByStatus(projectId, "pending");
+      if (pendingIssues.length > 0) {
+        return res.status(400).json({
+          error: "There are still pending issues that need approval or rejection",
+          pendingCount: pendingIssues.length
+        });
+      }
+      
+      // Check how many issues were approved for correction
+      const approvedIssues = await storage.getReeditIssuesByStatus(projectId, "approved");
+      
+      // Check if already being processed
+      if (activeReeditOrchestrators.has(projectId)) {
+        return res.status(400).json({ error: "Project is already being processed" });
+      }
+      
+      // Update project status to resume processing
+      await storage.updateReeditProject(projectId, {
+        status: "processing",
+        pauseReason: null,
+      });
+      
+      // Create orchestrator and resume processing
+      const orchestrator = new ReeditOrchestrator();
+      activeReeditOrchestrators.set(projectId, orchestrator);
+      
+      res.json({ 
+        success: true, 
+        message: `Proceeding with ${approvedIssues.length} approved corrections`,
+        approvedCount: approvedIssues.length
+      });
+      
+      console.log(`[ProceedCorrections] Resuming final review for project ${projectId} with ${approvedIssues.length} approved issues`);
+      orchestrator.runFinalReviewOnly(projectId).then(() => {
+        console.log(`[ProceedCorrections] Completed for project ${projectId}`);
+      }).catch((err: any) => {
+        console.error(`[ProceedCorrections] Error:`, err);
+        storage.updateReeditProject(projectId, {
+          status: "error",
+          errorMessage: err instanceof Error ? err.message : "Unknown error",
+        });
+      }).finally(() => {
+        activeReeditOrchestrators.delete(projectId);
+      });
+    } catch (error) {
+      console.error("Error proceeding with corrections:", error);
+      res.status(500).json({ error: "Failed to proceed with corrections" });
+    }
+  });
+
   // Export reedit project as JSON (for frontend compatibility with original projects)
   app.get("/api/reedit-projects/:id/export-markdown", async (req: Request, res: Response) => {
     try {

@@ -1484,6 +1484,64 @@ export class ReeditOrchestrator {
     console.log(`[ReeditOrchestrator] Marked ${newHashes.length} issues as resolved (total: ${allHashes.length})`);
   }
   
+  /**
+   * Create issue records in the database for user review before auto-correction.
+   * Returns the number of issues created.
+   */
+  private async createIssueRecords(
+    projectId: number,
+    issues: FinalReviewIssue[],
+    revisionCycle: number
+  ): Promise<number> {
+    if (issues.length === 0) return 0;
+    
+    // Clear previous pending issues (only keep resolved/rejected)
+    const existingIssues = await storage.getReeditIssuesByProject(projectId);
+    for (const issue of existingIssues) {
+      if (issue.status === "pending" || issue.status === "approved") {
+        // Remove stale pending/approved issues - they'll be recreated from fresh review
+        await storage.updateReeditIssue(issue.id, { status: "rejected", rejectionReason: "Replaced by new review cycle" });
+      }
+    }
+    
+    let created = 0;
+    for (const issue of issues) {
+      const hash = this.generateIssueHash(issue);
+      
+      // Map severity from Spanish to English
+      let severity: "critical" | "major" | "minor" | "suggestion" = "minor";
+      const sev = issue.severidad as string;
+      if (sev === "critica" || sev === "crítica") {
+        severity = "critical";
+      } else if (sev === "mayor") {
+        severity = "major";
+      } else if (sev === "menor") {
+        severity = "minor";
+      }
+      
+      // Get first affected chapter (for chapter-level tracking)
+      const chapterNumber = issue.capitulos_afectados?.[0] || 1;
+      
+      await storage.createReeditIssue({
+        projectId,
+        chapterNumber,
+        category: issue.categoria || "general",
+        severity,
+        description: issue.descripcion || "",
+        textCitation: issue.elementos_a_preservar || null,
+        correctionInstruction: issue.instrucciones_correccion || null,
+        source: "final_reviewer",
+        status: "pending",
+        issueHash: hash,
+        reviewCycle: revisionCycle,
+      });
+      created++;
+    }
+    
+    console.log(`[ReeditOrchestrator] Created ${created} issue records for user review`);
+    return created;
+  }
+
   private async saveTokenUsage(projectId: number) {
     await storage.updateReeditProject(projectId, {
       totalInputTokens: this.totalInputTokens,
@@ -4075,6 +4133,43 @@ export class ReeditOrchestrator {
       
       if (filteredCountFRO > 0) {
         console.log(`[ReeditOrchestrator] FRO: ${filteredCountFRO} issues ya resueltos fueron filtrados, quedan ${issues.length} nuevos`);
+      }
+      
+      // === USER ISSUE APPROVAL FLOW ===
+      // If there are new issues, create records and pause for user approval
+      if (issues.length > 0) {
+        // Check if we have user-approved issues to process
+        const approvedIssues = await storage.getApprovedPendingIssues(projectId);
+        
+        if (approvedIssues.length === 0) {
+          // No approved issues yet - create records and pause for user review
+          await this.createIssueRecords(projectId, issues, revisionCycle);
+          
+          const criticalCount = issues.filter((i: any) => i.severidad === "critica" || i.severidad === "crítica").length;
+          const pauseReason = `Se detectaron ${issues.length} problema(s) (${criticalCount} crítico(s)). Por favor revisa la lista de problemas y aprueba o rechaza cada uno antes de continuar con las correcciones automáticas.`;
+          
+          console.log(`[ReeditOrchestrator] FRO PAUSING: ${issues.length} issues detected, awaiting user approval`);
+          
+          await storage.updateReeditProject(projectId, {
+            status: "awaiting_issue_approval",
+            currentStage: "reviewing",
+            pauseReason,
+            chapterCorrectionCounts: Object.fromEntries(chapterCorrectionCountsFRO) as any,
+          });
+          
+          this.emitProgress({
+            projectId,
+            stage: "awaiting_approval",
+            currentChapter: 0,
+            totalChapters: validChapters.length,
+            message: pauseReason,
+          });
+          
+          return; // Exit and wait for user to approve/reject issues
+        }
+        
+        // User has approved some issues - only process those
+        console.log(`[ReeditOrchestrator] FRO: User approved ${approvedIssues.length} issues for correction`);
       }
       
       if (issues.length > 0 || chaptersToRewrite.length > 0) {
