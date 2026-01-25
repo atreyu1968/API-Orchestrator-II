@@ -322,14 +322,29 @@ export class QueueManager {
               this.currentProjectId = null;
             }
             
-            // Reset queue item to waiting (handle any status that's not already waiting)
+            // Reset queue item to waiting OR CREATE IT if it doesn't exist
             const queueItem = await storage.getQueueItemByProject(project.id);
-            if (queueItem && queueItem.status !== "waiting") {
-              await storage.updateQueueItem(queueItem.id, {
+            if (queueItem) {
+              if (queueItem.status !== "waiting") {
+                await storage.updateQueueItem(queueItem.id, {
+                  status: "waiting",
+                  startedAt: null,
+                  completedAt: null,
+                  errorMessage: `Auto-recovery after ${Math.round(timeSinceActivity / 60000)} min (status was: ${project.status})`,
+                });
+              }
+            } else {
+              // CRITICAL: Create queue item if it doesn't exist - this can happen if generation was started without queue
+              console.log(`[QueueManager] Creating missing queue item for frozen project ${project.id}`);
+              const allQueueItems = await storage.getQueueItems();
+              const maxPosition = allQueueItems.length > 0 
+                ? Math.max(...allQueueItems.map(q => q.position)) 
+                : 0;
+              await storage.addToQueue({
+                projectId: project.id,
+                position: maxPosition + 1,
+                priority: "normal",
                 status: "waiting",
-                startedAt: null,
-                completedAt: null,
-                errorMessage: `Auto-recovery after ${Math.round(timeSinceActivity / 60000)} min (status was: ${project.status})`,
               });
             }
             
