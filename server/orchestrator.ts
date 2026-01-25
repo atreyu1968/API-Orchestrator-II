@@ -1538,11 +1538,39 @@ ${chapterSummaries || "Sin capítulos disponibles"}
 
       for (const chapter of pendingChapters) {
         const sectionData = this.buildSectionDataFromChapter(chapter, worldBibleData);
+        const sectionLabel = this.getSectionLabel(sectionData);
+        
+        // RESUME FIX: Check if chapter already has content (was interrupted during editing)
+        // If it has content, skip writing phase and go directly to editing
+        const hasExistingContent = chapter.content && chapter.content.trim().length > 100;
+        
+        if (hasExistingContent && chapter.status === "editing") {
+          console.log(`[Orchestrator:Resume] Chapter ${chapter.chapterNumber} already has content (${chapter.wordCount} words) and was in editing. Skipping to completion.`);
+          
+          // Mark as completed since it was already edited
+          await storage.updateChapter(chapter.id, { status: "completed" });
+          this.callbacks.onChapterStatusChange(chapter.chapterNumber, "completed");
+          this.callbacks.onAgentStatus("orchestrator", "resuming", 
+            `${sectionLabel} ya tenía contenido editado. Marcado como completado.`
+          );
+          
+          // Update continuity for next chapter
+          previousContinuity = chapter.continuityState 
+            ? JSON.stringify(chapter.continuityState)
+            : `Capítulo anterior completado. Contenido termina con: ${chapter.content!.slice(-500)}`;
+          previousContinuityStateForEditor = chapter.continuityState || null;
+          
+          continue; // Skip to next chapter
+        }
+        
+        // Reset chapters that were left in inconsistent states (editing without content)
+        if (chapter.status === "editing" && !hasExistingContent) {
+          console.log(`[Orchestrator:Resume] Chapter ${chapter.chapterNumber} was in editing state but has no content. Resetting to write.`);
+        }
         
         await storage.updateChapter(chapter.id, { status: "writing" });
         this.callbacks.onChapterStatusChange(chapter.chapterNumber, "writing");
 
-        const sectionLabel = this.getSectionLabel(sectionData);
         this.callbacks.onAgentStatus("ghostwriter", "writing", `El Narrador está escribiendo ${sectionLabel}...`);
 
         let chapterContent = "";
