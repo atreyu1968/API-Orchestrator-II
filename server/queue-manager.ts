@@ -295,6 +295,14 @@ export class QueueManager {
         if (timeSinceActivity > HEARTBEAT_TIMEOUT_MS) {
             console.log(`[QueueManager] FROZEN PROJECT DETECTED: "${project.title}" (ID: ${project.id}) - no activity for ${Math.round(timeSinceActivity / 60000)} minutes`);
             
+            // CRITICAL: Cancel any pending API connections FIRST
+            try {
+              console.log(`[QueueManager] Aborting pending API connections for frozen project ${project.id}...`);
+              cancelProject(project.id);
+            } catch (e) {
+              console.error("[QueueManager] Failed to cancel project connections:", e);
+            }
+            
             // Log the recovery event
             await storage.createActivityLog({
               projectId: project.id,
