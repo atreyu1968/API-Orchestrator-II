@@ -1717,7 +1717,7 @@ export default function ReeditPage() {
                   </TabsContent>
 
                   <TabsContent value="report">
-                    {selectedProjectData.status === "completed" && selectedProjectData.finalReviewResult ? (
+                    {selectedProjectData.finalReviewResult ? (
                       <Card className="mt-4">
                         <CardHeader>
                           <CardTitle className="flex items-center gap-2">
