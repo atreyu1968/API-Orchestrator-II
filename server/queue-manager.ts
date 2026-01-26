@@ -731,9 +731,9 @@ export class QueueManager {
           console.error(`[Queue V2] Failed to save chapter complete log:`, err);
         }
       },
-      onSceneComplete: (chapterNumber, sceneNumber, wordCount) => {
+      onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
         self.updateHeartbeat();
-        console.log(`[Queue V2] ${project.title} - Scene ${sceneNumber} of Chapter ${chapterNumber} complete`);
+        console.log(`[Queue V2] ${project.title} - Scene ${sceneNumber}/${totalScenes} of Chapter ${chapterNumber} complete`);
       },
       onProjectComplete: async () => {
         self.stopHeartbeatMonitor();

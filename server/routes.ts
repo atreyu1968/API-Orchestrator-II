@@ -669,8 +669,8 @@ export async function registerRoutes(
           const label = getSectionLabel(chapterNumber, chapterTitle);
           await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
         },
-        onSceneComplete: async (chapterNumber, sceneNumber, wordCount) => {
-          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+        onSceneComplete: async (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, totalScenes, wordCount });
         },
         onProjectComplete: async () => {
           sendToStreams({ type: "project_complete" });
@@ -734,8 +734,8 @@ export async function registerRoutes(
           const label = getSectionLabel(chapterNumber, chapterTitle);
           await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
         },
-        onSceneComplete: (chapterNumber, sceneNumber, wordCount) => {
-          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+        onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, totalScenes, wordCount });
         },
         onProjectComplete: async () => {
           sendToStreams({ type: "project_complete" });
@@ -842,8 +842,8 @@ export async function registerRoutes(
           const label = getSectionLabel(chapterNumber, chapterTitle);
           await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
         },
-        onSceneComplete: async (chapterNumber, sceneNumber, wordCount) => {
-          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+        onSceneComplete: async (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, totalScenes, wordCount });
         },
         onProjectComplete: async () => {
           sendToStreams({ type: "project_complete" });
@@ -1004,8 +1004,8 @@ export async function registerRoutes(
           sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, title });
           persistActivityLog(id, "success", `Capítulo ${chapterNumber} extendido: "${title}" (${wordCount} palabras)`, "ghostwriter-v2");
         },
-        onSceneComplete: (chapterNumber, sceneNumber, wordCount) => {
-          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+        onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, totalScenes, wordCount });
         },
         onProjectComplete: () => {
           sendToStreams({ type: "project_complete" });
@@ -1127,8 +1127,8 @@ export async function registerRoutes(
           sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, title });
           persistActivityLog(id, "success", `Capítulo ${chapterNumber} regenerado (${wordCount} palabras)`, "ghostwriter-v2");
         },
-        onSceneComplete: (chapterNumber, sceneNumber, wordCount) => {
-          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+        onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, totalScenes, wordCount });
         },
         onProjectComplete: () => {
           sendToStreams({ type: "project_complete" });

@@ -1,6 +1,15 @@
-import { Check, Brain, Pencil, Eye, FileText, ArrowRight, ClipboardCheck, Shield, AudioWaveform, Search } from "lucide-react";
+import { Check, Brain, Pencil, Eye, ArrowRight, Layers, Scissors, Compass } from "lucide-react";
 
-export type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer" | "continuity-sentinel" | "voice-auditor" | "semantic-detector" | "global-architect" | "chapter-architect" | "ghostwriter-v2" | "smart-editor" | "summarizer" | "narrative-director";
+export type AgentRole = 
+  | "global-architect" 
+  | "chapter-architect" 
+  | "ghostwriter-v2" 
+  | "smart-editor" 
+  | "summarizer" 
+  | "narrative-director"
+  | "orchestrator"
+  | "system";
+
 type StageStatus = "pending" | "active" | "completed";
 
 interface ProcessFlowProps {
@@ -9,14 +18,12 @@ interface ProcessFlowProps {
 }
 
 const stages: { role: AgentRole; name: string; icon: React.ReactNode }[] = [
-  { role: "architect", name: "Arquitecto", icon: <Brain className="h-4 w-4" /> },
-  { role: "ghostwriter", name: "Narrador", icon: <Pencil className="h-4 w-4" /> },
-  { role: "editor", name: "Editor", icon: <Eye className="h-4 w-4" /> },
-  { role: "copyeditor", name: "Estilista", icon: <FileText className="h-4 w-4" /> },
-  { role: "continuity-sentinel", name: "Centinela", icon: <Shield className="h-4 w-4" /> },
-  { role: "voice-auditor", name: "Auditor Voz", icon: <AudioWaveform className="h-4 w-4" /> },
-  { role: "semantic-detector", name: "Detector", icon: <Search className="h-4 w-4" /> },
-  { role: "final-reviewer", name: "Revisor Final", icon: <ClipboardCheck className="h-4 w-4" /> },
+  { role: "global-architect", name: "Arquitecto Global", icon: <Brain className="h-4 w-4" /> },
+  { role: "chapter-architect", name: "Diseñador Escenas", icon: <Layers className="h-4 w-4" /> },
+  { role: "ghostwriter-v2", name: "Escritor Escenas", icon: <Pencil className="h-4 w-4" /> },
+  { role: "smart-editor", name: "Editor Inteligente", icon: <Eye className="h-4 w-4" /> },
+  { role: "summarizer", name: "Compresor", icon: <Scissors className="h-4 w-4" /> },
+  { role: "narrative-director", name: "Director Narrativo", icon: <Compass className="h-4 w-4" /> },
 ];
 
 function getStageStatus(role: AgentRole, currentStage: AgentRole | null, completedStages: AgentRole[]): StageStatus {
@@ -27,7 +34,7 @@ function getStageStatus(role: AgentRole, currentStage: AgentRole | null, complet
 
 export function ProcessFlow({ currentStage, completedStages }: ProcessFlowProps) {
   return (
-    <div className="flex items-center justify-center gap-2 p-4" data-testid="process-flow">
+    <div className="flex items-center justify-center gap-2 p-4 flex-wrap" data-testid="process-flow">
       {stages.map((stage, index) => {
         const status = getStageStatus(stage.role, currentStage, completedStages);
         
@@ -35,7 +42,7 @@ export function ProcessFlow({ currentStage, completedStages }: ProcessFlowProps)
           <div key={stage.role} className="flex items-center gap-2">
             <div 
               className={`
-                flex items-center gap-2 px-4 py-2 rounded-md transition-all duration-300
+                flex items-center gap-2 px-3 py-2 rounded-md transition-all duration-300
                 ${status === "active" 
                   ? "bg-primary text-primary-foreground animate-pulse" 
                   : status === "completed"

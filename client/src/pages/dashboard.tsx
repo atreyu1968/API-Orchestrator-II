@@ -133,7 +133,7 @@ export default function Dashboard() {
   const [showExtendDialog, setShowExtendDialog] = useState(false);
   const [targetChapters, setTargetChapters] = useState("");
   const [useV2Pipeline, setUseV2Pipeline] = useState(true);
-  const [sceneProgress, setSceneProgress] = useState<{chapterNumber: number; sceneNumber: number; wordCount: number} | null>(null);
+  const [sceneProgress, setSceneProgress] = useState<{chapterNumber: number; sceneNumber: number; totalScenes: number; wordCount: number} | null>(null);
   const { projects, currentProject, setSelectedProjectId } = useProject();
 
   const handleExportData = async () => {
@@ -396,7 +396,7 @@ export default function Dashboard() {
       toast({ title: "Proyecto completado", description: "El manuscrito ha sido marcado como finalizado" });
       addLog("success", "Proyecto marcado como completado (forzado)");
       setCurrentStage(null);
-      setCompletedStages(["architect", "ghostwriter", "editor", "copyeditor", "final-reviewer"]);
+      setCompletedStages(["global-architect", "chapter-architect", "ghostwriter-v2", "smart-editor", "summarizer", "narrative-director"]);
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo completar el proyecto", variant: "destructive" });
@@ -493,9 +493,10 @@ export default function Dashboard() {
             setSceneProgress({
               chapterNumber: data.chapterNumber,
               sceneNumber: data.sceneNumber,
+              totalScenes: data.totalScenes || 4,
               wordCount: data.wordCount
             });
-            addLog("writing", `Escena ${data.sceneNumber} del capítulo ${data.chapterNumber} completada (${data.wordCount} palabras)`, "ghostwriter-v2" as AgentRole);
+            addLog("writing", `Escena ${data.sceneNumber}/${data.totalScenes || '?'} del capítulo ${data.chapterNumber} completada (${data.wordCount} palabras)`, "ghostwriter-v2" as AgentRole);
           } else if (data.type === "chapter_complete") {
             setSceneProgress(null);
             const sectionName = data.chapterTitle === "Prólogo" ? "Prólogo" :
@@ -577,102 +578,44 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* Agentes v2 - Pipeline por escenas (solo visible si proyecto activo usa v2) */}
-      {(!activeProject || activeProject.pipelineVersion === "v2") && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <Badge variant="secondary" className="text-xs">v2</Badge>
-            Pipeline por Escenas
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-            <AgentCard 
-              name={agentNames["global-architect"]}
-              role="global-architect"
-              {...getAgentStatus("global-architect")}
-            />
-            <AgentCard 
-              name={agentNames["chapter-architect"]}
-              role="chapter-architect"
-              {...getAgentStatus("chapter-architect")}
-            />
-            <AgentCard 
-              name={agentNames["ghostwriter-v2"]}
-              role="ghostwriter-v2"
-              {...getAgentStatus("ghostwriter-v2")}
-            />
-            <AgentCard 
-              name={agentNames["smart-editor"]}
-              role="smart-editor"
-              {...getAgentStatus("smart-editor")}
-            />
-            <AgentCard 
-              name={agentNames["summarizer"]}
-              role="summarizer"
-              {...getAgentStatus("summarizer")}
-            />
-            <AgentCard 
-              name={agentNames["narrative-director"]}
-              role="narrative-director"
-              {...getAgentStatus("narrative-director")}
-            />
-          </div>
+      {/* Agentes v2 - Pipeline por escenas */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          Pipeline por Escenas
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+          <AgentCard 
+            name={agentNames["global-architect"]}
+            role="global-architect"
+            {...getAgentStatus("global-architect")}
+          />
+          <AgentCard 
+            name={agentNames["chapter-architect"]}
+            role="chapter-architect"
+            {...getAgentStatus("chapter-architect")}
+          />
+          <AgentCard 
+            name={agentNames["ghostwriter-v2"]}
+            role="ghostwriter-v2"
+            {...getAgentStatus("ghostwriter-v2")}
+          />
+          <AgentCard 
+            name={agentNames["smart-editor"]}
+            role="smart-editor"
+            {...getAgentStatus("smart-editor")}
+          />
+          <AgentCard 
+            name={agentNames["summarizer"]}
+            role="summarizer"
+            {...getAgentStatus("summarizer")}
+          />
+          <AgentCard 
+            name={agentNames["narrative-director"]}
+            role="narrative-director"
+            {...getAgentStatus("narrative-director")}
+          />
         </div>
-      )}
-
-      {/* Agentes v1 - Pipeline por capítulos (solo visible si proyecto activo usa v1) */}
-      {(!activeProject || activeProject.pipelineVersion !== "v2") && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-            <Badge variant="outline" className="text-xs">v1</Badge>
-            Pipeline por Capítulos
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <AgentCard 
-              name={agentNames.architect}
-              role="architect"
-              {...getAgentStatus("architect")}
-            />
-            <AgentCard 
-              name={agentNames.ghostwriter}
-              role="ghostwriter"
-              {...getAgentStatus("ghostwriter")}
-            />
-            <AgentCard 
-              name={agentNames.editor}
-              role="editor"
-              {...getAgentStatus("editor")}
-            />
-            <AgentCard 
-              name={agentNames.copyeditor}
-              role="copyeditor"
-              {...getAgentStatus("copyeditor")}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <AgentCard 
-              name={agentNames["continuity-sentinel"]}
-              role="continuity-sentinel"
-              {...getAgentStatus("continuity-sentinel")}
-            />
-            <AgentCard 
-              name={agentNames["voice-auditor"]}
-              role="voice-auditor"
-              {...getAgentStatus("voice-auditor")}
-            />
-            <AgentCard 
-              name={agentNames["semantic-detector"]}
-              role="semantic-detector"
-              {...getAgentStatus("semantic-detector")}
-            />
-            <AgentCard 
-              name={agentNames["final-reviewer"]}
-              role="final-reviewer"
-              {...getAgentStatus("final-reviewer")}
-            />
-          </div>
-        </div>
-      )}
+      </div>
 
       {activeProject && (
         <Card>
@@ -714,7 +657,7 @@ export default function Dashboard() {
                   </div>
                   {sceneProgress && currentProject.status === "generating" && (
                     <Badge variant="secondary" className="animate-pulse" data-testid="badge-scene-progress">
-                      Escena {sceneProgress.sceneNumber} - Cap. {sceneProgress.chapterNumber}
+                      Escena {sceneProgress.sceneNumber}/{sceneProgress.totalScenes} - Cap. {sceneProgress.chapterNumber}
                     </Badge>
                   )}
                   {currentProject.status === "completed" && (
@@ -777,7 +720,7 @@ export default function Dashboard() {
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {sceneProgress && sceneProgress.chapterNumber === chapter.chapterNumber && currentProject.status === "generating" && (
                           <Badge variant="outline" className="text-xs animate-pulse bg-primary/10">
-                            Escena {sceneProgress.sceneNumber}
+                            Escena {sceneProgress.sceneNumber}/{sceneProgress.totalScenes}
                           </Badge>
                         )}
                         {chapter.wordCount && chapter.wordCount > 0 && (

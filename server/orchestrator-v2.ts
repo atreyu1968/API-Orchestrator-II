@@ -24,7 +24,7 @@ import { isProjectCancelledFromDb } from "./agents";
 interface OrchestratorV2Callbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
   onChapterComplete: (chapterNumber: number, wordCount: number, chapterTitle: string) => void;
-  onSceneComplete: (chapterNumber: number, sceneNumber: number, wordCount: number) => void;
+  onSceneComplete: (chapterNumber: number, sceneNumber: number, totalScenes: number, wordCount: number) => void;
   onProjectComplete: () => void;
   onError: (error: string) => void;
 }
@@ -611,7 +611,7 @@ export class OrchestratorV2 {
           lastContext = sceneResult.content.slice(-1500); // Keep last 1500 chars for context
 
           const sceneWordCount = sceneResult.content.split(/\s+/).length;
-          this.callbacks.onSceneComplete(chapterNumber, scene.scene_num, sceneWordCount);
+          this.callbacks.onSceneComplete(chapterNumber, scene.scene_num, sceneBreakdown.scenes.length, sceneWordCount);
         }
 
         this.callbacks.onAgentStatus("ghostwriter-v2", "completed", "All scenes written");
@@ -1066,7 +1066,7 @@ export class OrchestratorV2 {
           if (!sceneResult.error) {
             fullChapterText += "\n\n" + sceneResult.content;
             lastContext = sceneResult.content.slice(-1500);
-            this.callbacks.onSceneComplete(chapterNum, scene.scene_num, sceneResult.content?.split(/\s+/).length || 0);
+            this.callbacks.onSceneComplete(chapterNum, scene.scene_num, chapterPlan.parsed.scenes.length, sceneResult.content?.split(/\s+/).length || 0);
           }
 
           this.addTokenUsage(sceneResult.tokenUsage);
@@ -1246,7 +1246,7 @@ export class OrchestratorV2 {
           }
 
           this.addTokenUsage(sceneResult.tokenUsage);
-          this.callbacks.onSceneComplete(chapter.chapterNumber, scene.scene_num, sceneResult.content?.split(/\s+/).length || 0);
+          this.callbacks.onSceneComplete(chapter.chapterNumber, scene.scene_num, chapterPlan.parsed.scenes.length, sceneResult.content?.split(/\s+/).length || 0);
         }
         
         if (scenesCancelled) {
