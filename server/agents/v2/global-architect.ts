@@ -11,6 +11,17 @@ export interface GlobalArchitectInput {
   tone: string;
   chapterCount: number;
   architectInstructions?: string;
+  extendedGuide?: string;
+  styleGuide?: string;
+  hasPrologue?: boolean;
+  hasEpilogue?: boolean;
+  hasAuthorNote?: boolean;
+  workType?: string;
+  seriesName?: string;
+  seriesOrder?: number;
+  previousBooksContext?: string;
+  minWordsPerChapter?: number;
+  maxWordsPerChapter?: number;
 }
 
 export interface GlobalArchitectOutput {
@@ -98,7 +109,18 @@ export class GlobalArchitectAgent extends BaseAgent {
       input.genre,
       input.chapterCount,
       input.tone,
-      input.architectInstructions
+      input.architectInstructions,
+      input.extendedGuide,
+      input.styleGuide,
+      input.hasPrologue,
+      input.hasEpilogue,
+      input.hasAuthorNote,
+      input.workType,
+      input.seriesName,
+      input.seriesOrder,
+      input.previousBooksContext,
+      input.minWordsPerChapter,
+      input.maxWordsPerChapter
     );
 
     const response = await this.generateContent(prompt);

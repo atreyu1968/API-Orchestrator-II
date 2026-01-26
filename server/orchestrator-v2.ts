@@ -71,6 +71,66 @@ export class OrchestratorV2 {
       // Update project status
       await storage.updateProject(project.id, { status: "generating" });
 
+      // Fetch extended guide if exists
+      let extendedGuideContent: string | undefined;
+      if (project.extendedGuideId) {
+        const extendedGuide = await storage.getExtendedGuide(project.extendedGuideId);
+        if (extendedGuide) {
+          extendedGuideContent = extendedGuide.content;
+          console.log(`[OrchestratorV2] Loaded extended guide: ${extendedGuide.title} (${extendedGuide.wordCount} words)`);
+        }
+      }
+
+      // Fetch style guide - first check project, then pseudonym's active guide
+      let styleGuideContent: string | undefined;
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) {
+          styleGuideContent = styleGuide.content;
+          console.log(`[OrchestratorV2] Loaded project style guide`);
+        }
+      } else if (project.pseudonymId) {
+        // Get the active style guide from the pseudonym
+        const pseudonymGuides = await storage.getStyleGuidesByPseudonym(project.pseudonymId);
+        const activeGuide = pseudonymGuides.find(g => g.isActive);
+        if (activeGuide) {
+          styleGuideContent = activeGuide.content;
+          console.log(`[OrchestratorV2] Loaded pseudonym's active style guide: ${activeGuide.title}`);
+        }
+      }
+
+      // Fetch series info if this is part of a series
+      let seriesName: string | undefined;
+      let previousBooksContext: string | undefined;
+      if (project.seriesId) {
+        const series = await storage.getSeries(project.seriesId);
+        if (series) {
+          seriesName = series.title;
+          console.log(`[OrchestratorV2] Part of series: ${series.title}, Book #${project.seriesOrder}`);
+          
+          // Get context from previous books in the series
+          if (project.seriesOrder && project.seriesOrder > 1) {
+            const seriesProjects = await storage.getProjectsBySeries(project.seriesId);
+            const previousBooks = seriesProjects
+              .filter(p => p.seriesOrder && p.seriesOrder < project.seriesOrder! && p.status === 'completed')
+              .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+            
+            if (previousBooks.length > 0) {
+              const contexts: string[] = [];
+              for (const prevBook of previousBooks) {
+                const prevWorldBible = await storage.getWorldBibleByProject(prevBook.id);
+                if (prevWorldBible && prevWorldBible.characters) {
+                  const chars = Array.isArray(prevWorldBible.characters) ? prevWorldBible.characters : [];
+                  contexts.push(`Libro ${prevBook.seriesOrder}: "${prevBook.title}" - Personajes: ${JSON.stringify(chars.slice(0, 5))}`);
+                }
+              }
+              previousBooksContext = contexts.join('\n');
+              console.log(`[OrchestratorV2] Loaded context from ${previousBooks.length} previous books`);
+            }
+          }
+        }
+      }
+
       // Phase 1: Global Architecture
       this.callbacks.onAgentStatus("global-architect", "active", "Designing master structure...");
       
@@ -81,6 +141,17 @@ export class OrchestratorV2 {
         tone: project.tone,
         chapterCount: project.chapterCount,
         architectInstructions: project.architectInstructions || undefined,
+        extendedGuide: extendedGuideContent,
+        styleGuide: styleGuideContent,
+        hasPrologue: project.hasPrologue,
+        hasEpilogue: project.hasEpilogue,
+        hasAuthorNote: project.hasAuthorNote,
+        workType: project.workType || undefined,
+        seriesName,
+        seriesOrder: project.seriesOrder || undefined,
+        previousBooksContext,
+        minWordsPerChapter: project.minWordsPerChapter || undefined,
+        maxWordsPerChapter: project.maxWordsPerChapter || undefined,
       });
 
       if (globalResult.error || !globalResult.parsed) {

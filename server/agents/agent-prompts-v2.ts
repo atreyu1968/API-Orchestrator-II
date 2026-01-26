@@ -9,12 +9,52 @@ export const AGENT_MODELS_V2 = {
 export const PROMPTS_V2 = {
   
   // 1. GLOBAL ARCHITECT (R1) - Crea World Bible y escaleta maestra
-  GLOBAL_ARCHITECT: (premise: string, genre: string, chapters: number, tone: string, architectInstructions?: string) => `
+  GLOBAL_ARCHITECT: (
+    premise: string, 
+    genre: string, 
+    chapters: number, 
+    tone: string, 
+    architectInstructions?: string,
+    extendedGuide?: string,
+    styleGuide?: string,
+    hasPrologue?: boolean,
+    hasEpilogue?: boolean,
+    hasAuthorNote?: boolean,
+    workType?: string,
+    seriesName?: string,
+    seriesOrder?: number,
+    previousBooksContext?: string,
+    minWordsPerChapter?: number,
+    maxWordsPerChapter?: number
+  ) => `
     Eres un Arquitecto Narrativo de Best-Sellers con experiencia en ${genre}.
     OBJETIVO: Crear la estructura maestra para una novela de ${genre} de ${chapters} capítulos.
     PREMISA: "${premise}"
     TONO: ${tone}
     ${architectInstructions ? `INSTRUCCIONES ADICIONALES DEL AUTOR: ${architectInstructions}` : ''}
+    
+    === CONFIGURACIÓN DE LA NOVELA ===
+    - Estructura: ${hasPrologue ? 'Con Prólogo' : 'Sin Prólogo'} | ${hasEpilogue ? 'Con Epílogo' : 'Sin Epílogo'} | ${hasAuthorNote ? 'Con Nota del Autor' : 'Sin Nota del Autor'}
+    - Palabras por capítulo: ${minWordsPerChapter || 1500}-${maxWordsPerChapter || 3500}
+    ${workType === 'series' ? `
+    === INFORMACIÓN DE SERIE ===
+    - Nombre de la serie: ${seriesName || 'No especificado'}
+    - Este es el libro #${seriesOrder || 1} de la serie
+    ${previousBooksContext ? `- Contexto de libros anteriores: ${previousBooksContext}` : ''}
+    IMPORTANTE: Mantén coherencia con los libros anteriores. Los personajes recurrentes deben mantener sus características establecidas.
+    ` : ''}
+    ${extendedGuide ? `
+    === GUÍA DE ESCRITURA EXTENDIDA (SEGUIR OBLIGATORIAMENTE) ===
+    Esta guía contiene los personajes, escenarios, estructura y detalles específicos que DEBES respetar:
+    
+    ${extendedGuide}
+    
+    IMPORTANTE: Usa EXACTAMENTE los personajes, nombres, ubicaciones y estructura definidos en esta guía. NO inventes personajes nuevos a menos que la guía lo permita.
+    ` : ''}
+    ${styleGuide ? `
+    === GUÍA DE ESTILO ===
+    ${styleGuide}
+    ` : ''}
 
     PROCESO DE DISEÑO:
     1. Analiza la premisa y define los temas centrales
