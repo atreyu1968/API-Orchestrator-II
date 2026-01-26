@@ -12,6 +12,7 @@ import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { getAIProvider, type AIProvider } from "./agents/base-agent";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 import { chatService } from "./services/chatService";
+import { TranslationOrchestrator } from "./translation-orchestrator";
 
 const workTypeEnum = z.enum(["standalone", "series", "trilogy"]);
 
@@ -5403,6 +5404,125 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error("Error resuming translation:", error);
       sendEvent("error", { error: `Error al reanudar traducción: ${errorMessage}` });
+      cleanup();
+      res.end();
+    }
+  });
+
+  // LitTranslators 2.0 - Start translation with new orchestrator
+  app.post("/api/translations/v2/start", async (req: Request, res: Response) => {
+    const { projectId, reeditProjectId, targetLanguage } = req.body;
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    const heartbeatInterval = setInterval(() => {
+      try { res.write(`:heartbeat\n\n`); } catch { clearInterval(heartbeatInterval); }
+    }, 15000);
+
+    const cleanup = () => clearInterval(heartbeatInterval);
+    req.on("close", cleanup);
+
+    try {
+      let project: any = null;
+      let chapters: any[] = [];
+      let sourceLanguage = "en";
+      const isReedit = !!reeditProjectId;
+
+      if (isReedit) {
+        project = await storage.getReeditProject(reeditProjectId);
+        if (!project) throw new Error("Reedit project not found");
+        const reeditChapters = await storage.getReeditChaptersByProject(reeditProjectId);
+        chapters = reeditChapters.map(c => ({
+          chapterNumber: c.chapterNumber,
+          title: c.title,
+          content: c.editedContent || c.originalContent || "",
+        }));
+        sourceLanguage = project.language || "es";
+      } else if (projectId) {
+        project = await storage.getProject(projectId);
+        if (!project) throw new Error("Project not found");
+        const projectChapters = await storage.getChaptersByProject(projectId);
+        chapters = projectChapters.map(c => ({
+          chapterNumber: c.chapterNumber,
+          title: c.title,
+          content: c.content || "",
+        }));
+        sourceLanguage = "es";
+      } else {
+        throw new Error("Either projectId or reeditProjectId is required");
+      }
+
+      // Build full text from chapters
+      const getSortOrder = (n: number) => n === 0 ? -1000 : n === -1 ? 1000 : n === -2 ? 1001 : n;
+      const sortedChapters = [...chapters].sort((a, b) => getSortOrder(a.chapterNumber) - getSortOrder(b.chapterNumber));
+      const fullText = sortedChapters.map(c => {
+        const label = c.chapterNumber === 0 ? "Prólogo" :
+                      c.chapterNumber === -1 ? "Epílogo" :
+                      c.chapterNumber === -2 ? "Nota del Autor" :
+                      `Capítulo ${c.chapterNumber}`;
+        return `# ${c.title || label}\n\n${c.content}`;
+      }).join("\n\n---\n\n");
+
+      const totalWords = fullText.split(/\s+/).length;
+
+      // Create translation record
+      const translation = await storage.createTranslation({
+        projectId: isReedit ? null : projectId,
+        reeditProjectId: isReedit ? reeditProjectId : null,
+        source: isReedit ? "reedit" : "original",
+        projectTitle: project.title,
+        sourceLanguage,
+        targetLanguage,
+        chaptersTranslated: 0,
+        totalWords,
+        markdown: "",
+        status: "analyzing",
+      });
+
+      sendEvent("started", { translationId: translation.id, totalWords, totalChunks: 0 });
+
+      const orchestrator = new TranslationOrchestrator({
+        onStatusChange: (status, message) => {
+          sendEvent("status", { status, message });
+        },
+        onChunkComplete: (current, total) => {
+          sendEvent("progress", { current, total, status: "translating" });
+        },
+        onStrategyReady: (strategy) => {
+          sendEvent("strategy", strategy);
+        },
+      });
+
+      const result = await orchestrator.startTranslation(
+        translation.id,
+        fullText,
+        sourceLanguage,
+        targetLanguage
+      );
+
+      sendEvent("complete", {
+        translationId: translation.id,
+        projectTitle: project.title,
+        targetLanguage,
+        totalWords,
+        layoutScore: await storage.getTranslation(translation.id).then(t => t?.layoutScore || 0),
+        naturalnessScore: await storage.getTranslation(translation.id).then(t => t?.naturalnessScore || 0),
+        tokens: result.tokens,
+      });
+
+      cleanup();
+      res.end();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("Error in LitTranslators 2.0:", error);
+      sendEvent("error", { error: msg });
       cleanup();
       res.end();
     }
