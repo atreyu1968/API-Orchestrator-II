@@ -1,0 +1,67 @@
+-- Ejecutar en la consola SQL de Replit
+
+-- 1. Proyectos
+CREATE TABLE projects (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    genre TEXT NOT NULL,
+    premise TEXT,
+    tone TEXT DEFAULT 'balanced',
+    total_chapters INTEGER DEFAULT 12,
+    status TEXT DEFAULT 'idle', -- 'planning', 'generating', 'completed', 'paused'
+    current_chapter_index INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 2. Biblias de Mundo (Generado por Global Architect)
+CREATE TABLE world_bibles (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    characters JSONB DEFAULT '[]', -- Array de perfiles
+    world_rules JSONB DEFAULT '[]',
+    high_level_outline JSONB DEFAULT '[]', -- Escaleta maestra
+    raw_content TEXT -- Backup del output de la IA
+);
+
+-- 3. Hilos Narrativos (Para el Narrative Director)
+CREATE TABLE plot_threads (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    status TEXT DEFAULT 'active', -- 'active', 'resolved', 'ignored'
+    intensity_score INTEGER DEFAULT 5, -- 1-10
+    last_updated_chapter INTEGER DEFAULT 0
+);
+
+-- 4. Capítulos
+CREATE TABLE chapters (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    chapter_number INTEGER NOT NULL,
+    title TEXT,
+    
+    -- Contenido
+    full_text TEXT, -- El texto final ensamblado
+    summary TEXT, -- Resumen comprimido para contexto futuro
+    
+    -- Metadatos de Producción
+    scene_breakdown JSONB, -- El plan del Chapter Architect
+    editor_feedback JSONB, -- Último feedback del Smart Editor
+    quality_score INTEGER, -- 0-10
+    
+    status TEXT DEFAULT 'pending', -- 'drafting', 'reviewing', 'approved'
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 5. Logs de Eventos (Para debugging y dashboard)
+CREATE TABLE production_logs (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    agent_name TEXT,
+    action TEXT,
+    message TEXT,
+    tokens_used INTEGER DEFAULT 0,
+    timestamp TIMESTAMP DEFAULT NOW()
+);
