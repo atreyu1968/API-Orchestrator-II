@@ -100,9 +100,12 @@ function generateExpectedChapters(project: Project, existingChapters: Chapter[])
 }
 
 function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
-  const INPUT_PRICE_PER_MILLION = 0.80;
-  const OUTPUT_PRICE_PER_MILLION = 6.50;
-  const THINKING_PRICE_PER_MILLION = 3.0;
+  // DeepSeek weighted average pricing (R1 for planning, V3 for writing)
+  // R1: $0.55 input, $2.19 output | V3: $0.28 input, $0.42 output
+  // Approx 30% R1 (planning), 70% V3 (writing/editing)
+  const INPUT_PRICE_PER_MILLION = 0.36;  // 0.30*0.55 + 0.70*0.28
+  const OUTPUT_PRICE_PER_MILLION = 0.95; // 0.30*2.19 + 0.70*0.42
+  const THINKING_PRICE_PER_MILLION = 0.55; // R1 thinking rate
   
   const inputCost = (inputTokens / 1_000_000) * INPUT_PRICE_PER_MILLION;
   const outputCost = (outputTokens / 1_000_000) * OUTPUT_PRICE_PER_MILLION;
@@ -111,12 +114,11 @@ function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens
   return inputCost + outputCost + thinkingCost;
 }
 
-const MODEL_PRICING_INFO = `Modelos usados:
-• gemini-3-pro-preview (Arquitecto, Narrador, Revisor): $1.25/$10.0/M + thinking $3.0/M
-• gemini-3-flash (Editor): $0.50/$3.0/M
-• gemini-2.5-flash (QA: Centinela, Auditor, Detector, Estilista): $0.30/$2.5/M
+const MODEL_PRICING_INFO = `Modelos DeepSeek usados:
+• R1 (Arquitecto Global, Arquitecto Capítulos, Director Narrativo): $0.55/$2.19/M
+• V3 (Escritor, Editor, Compresor): $0.28/$0.42/M
 
-Precios promedio ponderados: Input $0.80/M, Output $6.50/M, Thinking $3.0/M`;
+Precios promedio ponderados: Input $0.36/M, Output $0.95/M, Thinking $0.55/M`;
 
 type ConfirmType = "cancel" | "forceComplete" | "resume" | "delete" | null;
 
@@ -830,15 +832,22 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {currentProject.status === "completed" && (currentProject.totalInputTokens || currentProject.totalOutputTokens) && (
+                {(currentProject.totalInputTokens || currentProject.totalOutputTokens) ? (
                   <div className="mt-4 p-4 rounded-md bg-muted/30 border border-border">
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
                       <div className="space-y-1">
-                        <p className="text-sm font-medium">Coste de Generación</p>
+                        <p className="text-sm font-medium flex items-center gap-2">
+                          Coste de Generación
+                          {currentProject.status === "generating" && (
+                            <Badge variant="secondary" className="text-xs">En progreso</Badge>
+                          )}
+                        </p>
                         <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
-                          <span>Tokens entrada: {(currentProject.totalInputTokens || 0).toLocaleString()}</span>
-                          <span>Tokens salida: {(currentProject.totalOutputTokens || 0).toLocaleString()}</span>
-                          <span>Tokens razonamiento: {(currentProject.totalThinkingTokens || 0).toLocaleString()}</span>
+                          <span>Entrada: {(currentProject.totalInputTokens || 0).toLocaleString()} tokens</span>
+                          <span>Salida: {(currentProject.totalOutputTokens || 0).toLocaleString()} tokens</span>
+                          {(currentProject.totalThinkingTokens || 0) > 0 && (
+                            <span>Razonamiento: {(currentProject.totalThinkingTokens || 0).toLocaleString()} tokens</span>
+                          )}
                         </div>
                       </div>
                       <div className="text-right">
@@ -863,7 +872,7 @@ export default function Dashboard() {
                       </div>
                     </div>
                   </div>
-                )}
+                ) : null}
               </CardContent>
             </Card>
           )}
