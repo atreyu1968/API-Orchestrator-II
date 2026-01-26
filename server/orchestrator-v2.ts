@@ -20,6 +20,7 @@ import { applyPatches, type PatchResult } from "./utils/patcher";
 import type { TokenUsage } from "./agents/base-agent";
 import type { Project, Chapter, InsertPlotThread } from "@shared/schema";
 import { isProjectCancelledFromDb } from "./agents";
+import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 
 interface OrchestratorV2Callbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
@@ -62,6 +63,41 @@ export class OrchestratorV2 {
       totalOutputTokens: this.cumulativeTokens.outputTokens,
       totalThinkingTokens: this.cumulativeTokens.thinkingTokens,
     });
+  }
+
+  private async logAiUsage(
+    projectId: number,
+    agentName: string,
+    model: string,
+    usage?: TokenUsage,
+    chapterNumber?: number
+  ) {
+    if (!usage) return;
+    
+    try {
+      const costs = calculateRealCost(
+        model,
+        usage.inputTokens || 0,
+        usage.outputTokens || 0,
+        usage.thinkingTokens || 0
+      );
+      
+      await storage.createAiUsageEvent({
+        projectId,
+        agentName,
+        model,
+        inputTokens: usage.inputTokens || 0,
+        outputTokens: usage.outputTokens || 0,
+        thinkingTokens: usage.thinkingTokens || 0,
+        inputCostUsd: formatCostForStorage(costs.inputCost),
+        outputCostUsd: formatCostForStorage(costs.outputCost + costs.thinkingCost),
+        totalCostUsd: formatCostForStorage(costs.totalCost),
+        chapterNumber,
+        operation: "generate",
+      });
+    } catch (err) {
+      console.error(`[OrchestratorV2] Failed to log AI usage for ${agentName}:`, err);
+    }
   }
 
   private generateTitleFromHook(hookOrBeat: string): string {
@@ -434,6 +470,7 @@ export class OrchestratorV2 {
         }
 
         this.addTokenUsage(globalResult.tokenUsage);
+        await this.logAiUsage(project.id, "global-architect", "deepseek-reasoner", globalResult.tokenUsage);
         this.callbacks.onAgentStatus("global-architect", "completed", "Master structure complete");
 
         worldBible = globalResult.parsed.world_bible;
@@ -588,6 +625,7 @@ export class OrchestratorV2 {
         }
 
         this.addTokenUsage(chapterPlan.tokenUsage);
+        await this.logAiUsage(project.id, "chapter-architect", "deepseek-reasoner", chapterPlan.tokenUsage, chapterNumber);
         this.callbacks.onAgentStatus("chapter-architect", "completed", `${chapterPlan.parsed.scenes.length} scenes planned`);
 
         const sceneBreakdown = chapterPlan.parsed;
@@ -618,6 +656,7 @@ export class OrchestratorV2 {
           }
 
           this.addTokenUsage(sceneResult.tokenUsage);
+          await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", sceneResult.tokenUsage, chapterNumber);
           
           fullChapterText += "\n\n" + sceneResult.content;
           lastContext = sceneResult.content.slice(-1500); // Keep last 1500 chars for context
@@ -638,6 +677,7 @@ export class OrchestratorV2 {
         });
 
         this.addTokenUsage(editResult.tokenUsage);
+        await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapterNumber);
 
         let finalText = fullChapterText;
         let editorFeedback: SmartEditorOutput | null = null;
@@ -673,6 +713,7 @@ export class OrchestratorV2 {
         });
 
         this.addTokenUsage(summaryResult.tokenUsage);
+        await this.logAiUsage(project.id, "summarizer", "deepseek-chat", summaryResult.tokenUsage, chapterNumber);
 
         const chapterSummary = summaryResult.content || `Chapter ${chapterNumber} completed.`;
         chapterSummaries.push(chapterSummary);
