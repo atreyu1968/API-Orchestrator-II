@@ -357,9 +357,20 @@ export class OrchestratorV2 {
         };
         
         const plotOutline = existingWorldBible.plotOutline as any;
+        const timeline = (existingWorldBible.timeline || []) as any[];
+        
+        // Build a map of chapter numbers to titles from timeline (which has the correct titles)
+        const timelineTitles: Record<number, string> = {};
+        for (const entry of timeline) {
+          if (entry.chapter !== undefined && entry.title) {
+            timelineTitles[entry.chapter] = entry.title;
+          }
+        }
+        
         const rawOutline = (plotOutline.chapterOutlines || []).map((ch: any) => ({
           chapter_num: ch.number,
-          title: ch.title || `Capítulo ${ch.number}`,
+          // Priority: plotOutline title > timeline title > fallback
+          title: ch.title || timelineTitles[ch.number] || `Capítulo ${ch.number}`,
           summary: ch.summary || "",
           key_event: ch.keyEvents?.[0] || "",
         }));
