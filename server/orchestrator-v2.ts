@@ -763,14 +763,22 @@ export class OrchestratorV2 {
         await storage.updateProject(project.id, { currentChapter: chapterNumber });
         this.callbacks.onChapterComplete(chapterNumber, wordCount, chapterOutline.title);
 
-        // 2e: Narrative Director - Check every 5 chapters OR before epilogue/author note
-        const isMultipleOfFive = chapterNumber > 0 && chapterNumber % 5 === 0;
+        // 2e: Narrative Director - Check every 5 chapters, before epilogue, AND always with epilogue (998)
+        const isMultipleOfFive = chapterNumber > 0 && chapterNumber < 998 && chapterNumber % 5 === 0;
         const currentIdx = outline.findIndex((ch: any) => ch.chapter_num === chapterNumber);
         const nextChapter = outline[currentIdx + 1];
         const isLastBeforeEpilogue = nextChapter && (nextChapter.chapter_num === 998 || nextChapter.chapter_num === 999);
+        const isEpilogue = chapterNumber === 998; // Always run Director with epilogue for final coherence check
         
-        if (isMultipleOfFive || isLastBeforeEpilogue) {
-          const label = isLastBeforeEpilogue ? "Final review before epilogue" : `Chapter ${chapterNumber} checkpoint`;
+        if (isMultipleOfFive || isLastBeforeEpilogue || isEpilogue) {
+          let label: string;
+          if (isEpilogue) {
+            label = "Final coherence review with epilogue";
+          } else if (isLastBeforeEpilogue) {
+            label = "Pre-epilogue review";
+          } else {
+            label = `Chapter ${chapterNumber} checkpoint`;
+          }
           console.log(`[OrchestratorV2] Running Narrative Director: ${label}`);
           await this.runNarrativeDirector(project.id, chapterNumber, project.chapterCount, chapterSummaries);
         }
