@@ -1,6 +1,6 @@
 import { Check, Brain, Pencil, Eye, FileText, ArrowRight, ClipboardCheck, Shield, AudioWaveform, Search } from "lucide-react";
 
-export type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer" | "continuity-sentinel" | "voice-auditor" | "semantic-detector";
+export type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer" | "continuity-sentinel" | "voice-auditor" | "semantic-detector" | "global-architect" | "chapter-architect" | "ghostwriter-v2" | "smart-editor" | "summarizer" | "narrative-director";
 type StageStatus = "pending" | "active" | "completed";
 
 interface ProcessFlowProps {

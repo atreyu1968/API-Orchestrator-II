@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Pencil, Brain, Eye, FileText, Loader2, ClipboardCheck, Shield, AudioWaveform, Search, AlertTriangle } from "lucide-react";
 
-type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer" | "continuity-sentinel" | "voice-auditor" | "semantic-detector";
+type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer" | "continuity-sentinel" | "voice-auditor" | "semantic-detector" | "global-architect" | "chapter-architect" | "ghostwriter-v2" | "smart-editor" | "summarizer" | "narrative-director";
 type AgentStatusType = "idle" | "thinking" | "writing" | "editing" | "reviewing" | "polishing" | "completed" | "error" | "analyzing" | "warning";
 
 interface AgentCardProps {
@@ -24,6 +24,12 @@ const roleIcons: Record<AgentRole, React.ReactNode> = {
   "continuity-sentinel": <Shield className="h-5 w-5" />,
   "voice-auditor": <AudioWaveform className="h-5 w-5" />,
   "semantic-detector": <Search className="h-5 w-5" />,
+  "global-architect": <Brain className="h-5 w-5" />,
+  "chapter-architect": <Brain className="h-5 w-5" />,
+  "ghostwriter-v2": <Pencil className="h-5 w-5" />,
+  "smart-editor": <Eye className="h-5 w-5" />,
+  "summarizer": <FileText className="h-5 w-5" />,
+  "narrative-director": <ClipboardCheck className="h-5 w-5" />,
 };
 
 const roleColors: Record<AgentRole, string> = {
@@ -35,6 +41,12 @@ const roleColors: Record<AgentRole, string> = {
   "continuity-sentinel": "bg-amber-500/10 text-amber-600 dark:text-amber-400",
   "voice-auditor": "bg-violet-500/10 text-violet-600 dark:text-violet-400",
   "semantic-detector": "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400",
+  "global-architect": "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400",
+  "chapter-architect": "bg-purple-500/10 text-purple-600 dark:text-purple-400",
+  "ghostwriter-v2": "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  "smart-editor": "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+  "summarizer": "bg-sky-500/10 text-sky-600 dark:text-sky-400",
+  "narrative-director": "bg-orange-500/10 text-orange-600 dark:text-orange-400",
 };
 
 const statusColors: Record<AgentStatusType, string> = {
