@@ -857,13 +857,40 @@ export async function registerRoutes(
         },
       });
 
-      // If no World Bible exists, start from scratch with generateNovel
-      // Otherwise, resume from where it left off with resumeNovel
-      if (hasWorldBible) {
-        console.log(`[Resume] Resuming project ${id} with resumeNovel`);
+      // If project is v2 pipeline, use OrchestratorV2
+      if (project.pipelineVersion === "v2") {
+        console.log(`[Resume] Project ${id} is v2 pipeline, using OrchestratorV2.generateNovel`);
+        const orchestratorV2 = new OrchestratorV2({
+          onAgentStatus: async (role, status, message) => {
+            await storage.updateAgentStatus(id, role, { status, currentTask: message });
+            sendToStreams({ type: "agent_status", role, status, message });
+            if (message) await persistActivityLog(id, "info", message, role);
+          },
+          onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+            sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
+            const label = getSectionLabel(chapterNumber, chapterTitle);
+            await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
+          },
+          onSceneComplete: async (chapterNumber, sceneNumber, wordCount) => {
+            sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+          },
+          onProjectComplete: async () => {
+            sendToStreams({ type: "project_complete" });
+            await persistActivityLog(id, "success", "Novela v2 completada exitosamente", "orchestrator");
+          },
+          onError: async (error) => {
+            sendToStreams({ type: "error", message: error });
+            await persistActivityLog(id, "error", error, "orchestrator");
+          },
+        });
+        orchestratorV2.generateNovel(project).catch(console.error);
+      } else if (hasWorldBible) {
+        // V1 pipeline with existing World Bible
+        console.log(`[Resume] Resuming project ${id} with resumeNovel (v1)`);
         orchestrator.resumeNovel(project).catch(console.error);
       } else {
-        console.log(`[Resume] Starting project ${id} from scratch with generateNovel (no World Bible found)`);
+        // V1 pipeline without World Bible
+        console.log(`[Resume] Starting project ${id} from scratch with generateNovel (v1, no World Bible found)`);
         orchestrator.generateNovel(project).catch(console.error);
       }
 
