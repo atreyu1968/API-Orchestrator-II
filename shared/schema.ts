@@ -557,6 +557,7 @@ export type InsertSeriesArcVerification = z.infer<typeof insertSeriesArcVerifica
 export const aiUsageEvents = pgTable("ai_usage_events", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  translationId: integer("translation_id").references(() => translations.id, { onDelete: "cascade" }),
   agentName: text("agent_name").notNull(),
   model: text("model").notNull().default("gemini-2.5-pro"),
   inputTokens: integer("input_tokens").notNull().default(0),
