@@ -118,52 +118,84 @@ function CharactersTab({ characters }: { characters: Character[] }) {
   return (
     <ScrollArea className="h-[400px]">
       <div className="grid gap-3 pr-4">
-        {characters.map((character, index) => (
-          <Card key={index} data-testid={`character-card-${index}`}>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between gap-2">
-                <CardTitle className="text-base font-medium flex items-center gap-2">
-                  {character.name}
-                  {!character.isAlive && <Skull className="h-4 w-4 text-destructive" />}
-                </CardTitle>
-                <Badge variant="outline" className="text-xs">{character.role}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <div>
-                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">
-                  Perfil Psicológico
-                </p>
-                <p className="text-sm text-foreground">{safeStringify(character.psychologicalProfile)}</p>
-              </div>
-              {character.arc && (
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">
-                    Arco del Personaje
-                  </p>
-                  <p className="text-sm text-foreground">{safeStringify(character.arc)}</p>
+        {characters.map((character, index) => {
+          // Support both v1 (psychologicalProfile) and v2 (profile) formats
+          const charAny = character as any;
+          const profileText = character.psychologicalProfile || charAny.profile || "";
+          const appearance = charAny.appearance as { eyes?: string; hair?: string; distinguishing_features?: string[] } | undefined;
+          const isAlive = character.isAlive !== false;
+          
+          return (
+            <Card key={index} data-testid={`character-card-${index}`}>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between gap-2">
+                  <CardTitle className="text-base font-medium flex items-center gap-2">
+                    {character.name}
+                    {!isAlive && <Skull className="h-4 w-4 text-destructive" />}
+                  </CardTitle>
+                  <Badge variant="outline" className="text-xs">{character.role}</Badge>
                 </div>
-              )}
-              {character.relationships && character.relationships.length > 0 && (
-                <div className="flex flex-wrap gap-1 pt-1">
-                  <Heart className="h-3.5 w-3.5 text-muted-foreground mr-1" />
-                  {character.relationships.map((rel, i) => {
-                    const displayText = typeof rel === 'string' 
-                      ? rel 
-                      : typeof rel === 'object' && rel !== null
-                        ? (rel as { con?: string; tipo?: string }).con 
-                          ? `${(rel as { con: string; tipo?: string }).con}${(rel as { tipo?: string }).tipo ? ` (${(rel as { tipo: string }).tipo})` : ''}`
-                          : JSON.stringify(rel)
-                        : String(rel);
-                    return (
-                      <Badge key={i} variant="secondary" className="text-xs">{displayText}</Badge>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {profileText && (
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">
+                      Perfil
+                    </p>
+                    <p className="text-sm text-foreground">{safeStringify(profileText)}</p>
+                  </div>
+                )}
+                {character.arc && (
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">
+                      Arco del Personaje
+                    </p>
+                    <p className="text-sm text-foreground">{safeStringify(character.arc)}</p>
+                  </div>
+                )}
+                {appearance && (
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide mb-1">
+                      Apariencia
+                    </p>
+                    <div className="flex flex-wrap gap-1">
+                      {appearance.eyes && (
+                        <Badge variant="secondary" className="text-xs">Ojos: {appearance.eyes}</Badge>
+                      )}
+                      {appearance.hair && (
+                        <Badge variant="secondary" className="text-xs">Cabello: {appearance.hair}</Badge>
+                      )}
+                    </div>
+                    {appearance.distinguishing_features && appearance.distinguishing_features.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {appearance.distinguishing_features.map((feature, i) => (
+                          <Badge key={i} variant="outline" className="text-xs">{feature}</Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {character.relationships && character.relationships.length > 0 && (
+                  <div className="flex flex-wrap gap-1 pt-1">
+                    <Heart className="h-3.5 w-3.5 text-muted-foreground mr-1" />
+                    {character.relationships.map((rel, i) => {
+                      const displayText = typeof rel === 'string' 
+                        ? rel 
+                        : typeof rel === 'object' && rel !== null
+                          ? (rel as { con?: string; tipo?: string }).con 
+                            ? `${(rel as { con: string; tipo?: string }).con}${(rel as { tipo?: string }).tipo ? ` (${(rel as { tipo: string }).tipo})` : ''}`
+                            : JSON.stringify(rel)
+                          : String(rel);
+                      return (
+                        <Badge key={i} variant="secondary" className="text-xs">{displayText}</Badge>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
     </ScrollArea>
   );
