@@ -7,7 +7,8 @@ import {
   BookOpen,
   Globe,
   Info,
-  TrendingUp
+  TrendingUp,
+  FileText
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -19,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useProject } from "@/lib/project-context";
-import type { Translation } from "@shared/schema";
+import type { Translation, AiUsageEvent } from "@shared/schema";
 
 function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens: number = 0): number {
   const INPUT_PRICE_PER_MILLION = 0.36;
@@ -40,6 +41,10 @@ function formatNumber(num: number): string {
 }
 
 function formatCurrency(amount: number): string {
+  return `$${amount.toFixed(4)}`;
+}
+
+function formatCurrencyShort(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
@@ -50,6 +55,59 @@ V3 (Escritor, Editor): $0.28 input / $0.42 output
 
 Promedio ponderado: $0.36 input / $0.95 output`;
 
+interface ChapterCost {
+  chapterNumber: number;
+  chapterLabel: string;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  cost: number;
+  agents: string[];
+}
+
+function getChapterLabel(chapterNumber: number | null): string {
+  if (chapterNumber === null) return "Global";
+  if (chapterNumber === 0) return "Prólogo";
+  if (chapterNumber === 998) return "Epílogo";
+  if (chapterNumber === 999) return "Nota del Autor";
+  return `Capítulo ${chapterNumber}`;
+}
+
+function groupEventsByChapter(events: AiUsageEvent[]): ChapterCost[] {
+  const grouped = new Map<number | null, ChapterCost>();
+  
+  for (const event of events) {
+    const key = event.chapterNumber;
+    const existing = grouped.get(key);
+    
+    if (existing) {
+      existing.inputTokens += event.inputTokens || 0;
+      existing.outputTokens += event.outputTokens || 0;
+      existing.thinkingTokens += event.thinkingTokens || 0;
+      existing.cost += parseFloat(event.totalCostUsd || "0");
+      if (!existing.agents.includes(event.agentName)) {
+        existing.agents.push(event.agentName);
+      }
+    } else {
+      grouped.set(key, {
+        chapterNumber: key ?? -1,
+        chapterLabel: getChapterLabel(key),
+        inputTokens: event.inputTokens || 0,
+        outputTokens: event.outputTokens || 0,
+        thinkingTokens: event.thinkingTokens || 0,
+        cost: parseFloat(event.totalCostUsd || "0"),
+        agents: [event.agentName],
+      });
+    }
+  }
+  
+  return Array.from(grouped.values()).sort((a, b) => {
+    if (a.chapterNumber === -1) return -1;
+    if (b.chapterNumber === -1) return 1;
+    return a.chapterNumber - b.chapterNumber;
+  });
+}
+
 export default function CostsHistoryPage() {
   const { currentProject, isLoading: loadingProject } = useProject();
 
@@ -57,11 +115,19 @@ export default function CostsHistoryPage() {
     queryKey: ["/api/translations"],
   });
 
-  const projectCost = currentProject ? calculateCost(
+  const { data: aiUsageEvents, isLoading: loadingUsage } = useQuery<AiUsageEvent[]>({
+    queryKey: [`/api/projects/${currentProject?.id}/ai-usage`],
+    enabled: !!currentProject?.id,
+  });
+
+  const chapterCosts = groupEventsByChapter(aiUsageEvents || []);
+  const totalFromEvents = chapterCosts.reduce((sum, c) => sum + c.cost, 0);
+
+  const projectCost = totalFromEvents > 0 ? totalFromEvents : (currentProject ? calculateCost(
     currentProject.totalInputTokens || 0,
     currentProject.totalOutputTokens || 0,
     currentProject.totalThinkingTokens || 0
-  ) : 0;
+  ) : 0);
 
   const translationsWithCosts = (translations || [])
     .filter(t => currentProject && t.projectId === currentProject.id)
@@ -93,7 +159,7 @@ export default function CostsHistoryPage() {
         <div>
           <h1 className="text-2xl font-bold">Costos: {currentProject.title}</h1>
           <p className="text-muted-foreground">
-            Registro de costos de generación y traducciones
+            Desglose de costos por capítulo y traducciones
           </p>
         </div>
         <Tooltip>
@@ -116,13 +182,13 @@ export default function CostsHistoryPage() {
             <BookOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loadingProject ? (
+            {loadingProject || loadingUsage ? (
               <Skeleton className="h-8 w-24" />
             ) : (
               <>
-                <div className="text-2xl font-bold">{formatCurrency(projectCost)}</div>
+                <div className="text-2xl font-bold">{formatCurrencyShort(projectCost)}</div>
                 <p className="text-xs text-muted-foreground">
-                  {formatNumber(currentProject.totalInputTokens || 0)} entrada / {formatNumber(currentProject.totalOutputTokens || 0)} salida
+                  {chapterCosts.length} operaciones registradas
                 </p>
               </>
             )}
@@ -139,7 +205,7 @@ export default function CostsHistoryPage() {
               <Skeleton className="h-8 w-24" />
             ) : (
               <>
-                <div className="text-2xl font-bold">{formatCurrency(totalTranslationsCost)}</div>
+                <div className="text-2xl font-bold">{formatCurrencyShort(totalTranslationsCost)}</div>
                 <p className="text-xs text-muted-foreground">
                   {translationsWithCosts.length} traducciones
                 </p>
@@ -154,11 +220,11 @@ export default function CostsHistoryPage() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            {loadingProject || loadingTranslations ? (
+            {loadingProject || loadingTranslations || loadingUsage ? (
               <Skeleton className="h-8 w-24" />
             ) : (
               <>
-                <div className="text-2xl font-bold text-primary">{formatCurrency(grandTotal)}</div>
+                <div className="text-2xl font-bold text-primary">{formatCurrencyShort(grandTotal)}</div>
                 <p className="text-xs text-muted-foreground">
                   Generación + Traducciones
                 </p>
@@ -171,57 +237,75 @@ export default function CostsHistoryPage() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <BookOpen className="h-5 w-5" />
-            Detalles de Generación
+            <FileText className="h-5 w-5" />
+            Desglose por Capítulo
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {loadingProject ? (
+          {loadingUsage ? (
             <div className="space-y-2">
-              <Skeleton className="h-12 w-full" />
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
+          ) : chapterCosts.length === 0 ? (
+            <p className="text-muted-foreground text-center py-8">
+              No hay datos de costos detallados para este proyecto
+            </p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Proyecto</TableHead>
-                  <TableHead>Estado</TableHead>
-                  <TableHead className="text-right">Tokens Entrada</TableHead>
-                  <TableHead className="text-right">Tokens Salida</TableHead>
-                  <TableHead className="text-right">Tokens Razonamiento</TableHead>
-                  <TableHead className="text-right">Costo</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow data-testid={`row-project-${currentProject.id}`}>
-                  <TableCell className="font-medium max-w-[200px] truncate" title={currentProject.title}>
-                    {currentProject.title}
-                  </TableCell>
-                  <TableCell>
-                    <Badge 
-                      variant={currentProject.status === "completed" ? "default" : "secondary"}
-                      className="text-xs"
-                    >
-                      {currentProject.status === "completed" ? "Completado" : 
-                       currentProject.status === "generating" ? "Generando" :
-                       currentProject.status === "paused" ? "Pausado" : currentProject.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm">
-                    {formatNumber(currentProject.totalInputTokens || 0)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm">
-                    {formatNumber(currentProject.totalOutputTokens || 0)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm text-muted-foreground">
-                    {formatNumber(currentProject.totalThinkingTokens || 0)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm font-semibold">
-                    {formatCurrency(projectCost)}
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
+            <div className="max-h-[400px] overflow-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Capítulo</TableHead>
+                    <TableHead>Agentes</TableHead>
+                    <TableHead className="text-right">Entrada</TableHead>
+                    <TableHead className="text-right">Salida</TableHead>
+                    <TableHead className="text-right">Razonamiento</TableHead>
+                    <TableHead className="text-right">Costo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {chapterCosts.map((chapter) => (
+                    <TableRow key={chapter.chapterNumber} data-testid={`row-chapter-${chapter.chapterNumber}`}>
+                      <TableCell className="font-medium">
+                        {chapter.chapterLabel}
+                      </TableCell>
+                      <TableCell className="max-w-[150px]">
+                        <div className="flex flex-wrap gap-1">
+                          {chapter.agents.slice(0, 3).map(agent => (
+                            <Badge key={agent} variant="outline" className="text-xs">
+                              {agent.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).substring(0, 12)}
+                            </Badge>
+                          ))}
+                          {chapter.agents.length > 3 && (
+                            <Badge variant="secondary" className="text-xs">
+                              +{chapter.agents.length - 3}
+                            </Badge>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(chapter.inputTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(chapter.outputTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                        {formatNumber(chapter.thinkingTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-semibold">
+                        {formatCurrency(chapter.cost)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="bg-muted/50 font-bold">
+                    <TableCell colSpan={5}>TOTAL GENERACIÓN</TableCell>
+                    <TableCell className="text-right font-mono text-lg">
+                      {formatCurrencyShort(projectCost)}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -287,7 +371,7 @@ export default function CostsHistoryPage() {
                     <TableRow className="bg-muted/50 font-bold">
                       <TableCell colSpan={4}>TOTAL TRADUCCIONES</TableCell>
                       <TableCell className="text-right font-mono text-lg">
-                        {formatCurrency(totalTranslationsCost)}
+                        {formatCurrencyShort(totalTranslationsCost)}
                       </TableCell>
                     </TableRow>
                   )}
@@ -305,6 +389,7 @@ export default function CostsHistoryPage() {
             <div className="text-sm text-muted-foreground">
               <p>
                 Los costos se calculan usando las tarifas de DeepSeek (R1 y V3) basándose en el conteo de tokens de cada operación.
+                El desglose muestra el costo por capítulo incluyendo todos los agentes involucrados en su generación.
               </p>
             </div>
           </div>

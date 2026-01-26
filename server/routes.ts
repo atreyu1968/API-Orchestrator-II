@@ -1375,6 +1375,17 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/projects/:id/ai-usage", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const events = await storage.getAiUsageEventsByProject(id);
+      res.json(events);
+    } catch (error) {
+      console.error("Error fetching AI usage events:", error);
+      res.status(500).json({ error: "Failed to fetch AI usage events" });
+    }
+  });
+
   app.get("/api/agent-statuses", async (req: Request, res: Response) => {
     try {
       const projects = await storage.getAllProjects();
