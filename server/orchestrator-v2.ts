@@ -162,8 +162,37 @@ export class OrchestratorV2 {
       this.callbacks.onAgentStatus("global-architect", "completed", "Master structure complete");
 
       const worldBible = globalResult.parsed.world_bible;
-      const outline = globalResult.parsed.outline;
+      const rawOutline = globalResult.parsed.outline;
       const plotThreads = globalResult.parsed.plot_threads;
+
+      // Remap chapter numbers to match system convention:
+      // Prologue: 0, Normal chapters: 1-N, Epilogue: 998, Author Note: 999
+      const outline = rawOutline.map((ch, idx) => {
+        let actualNumber = ch.chapter_num;
+        const totalChapters = rawOutline.length;
+        
+        // Detect prologue (first chapter if project has prologue)
+        if (project.hasPrologue && idx === 0) {
+          actualNumber = 0;
+        }
+        // Detect author note (last chapter if project has author note)
+        else if (project.hasAuthorNote && idx === totalChapters - 1) {
+          actualNumber = 999;
+        }
+        // Detect epilogue (last or second-to-last if author note exists)
+        else if (project.hasEpilogue && (
+          (project.hasAuthorNote && idx === totalChapters - 2) ||
+          (!project.hasAuthorNote && idx === totalChapters - 1)
+        )) {
+          actualNumber = 998;
+        }
+        // Normal chapters: adjust numbering if prologue exists
+        else if (project.hasPrologue) {
+          actualNumber = idx; // idx 1 becomes chapter 1, etc.
+        }
+        
+        return { ...ch, chapter_num: actualNumber };
+      });
 
       // Store World Bible with timeline derived from outline
       const timeline = outline.map(ch => ({
