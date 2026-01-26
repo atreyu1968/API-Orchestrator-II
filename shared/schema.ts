@@ -499,9 +499,9 @@ export const seriesArcVerifications = pgTable("series_arc_verifications", {
 
 export const translations = pgTable("translations", {
   id: serial("id").primaryKey(),
-  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }), // Nullable for reedit projects
-  reeditProjectId: integer("reedit_project_id").references(() => reeditProjects.id, { onDelete: "cascade" }), // For reedit projects
-  source: text("source").notNull().default("original"), // "original" or "reedit"
+  projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  reeditProjectId: integer("reedit_project_id").references(() => reeditProjects.id, { onDelete: "cascade" }),
+  source: text("source").notNull().default("original"),
   projectTitle: text("project_title").notNull(),
   sourceLanguage: text("source_language").notNull(),
   targetLanguage: text("target_language").notNull(),
@@ -510,7 +510,15 @@ export const translations = pgTable("translations", {
   markdown: text("markdown").notNull(),
   inputTokens: integer("input_tokens").default(0),
   outputTokens: integer("output_tokens").default(0),
-  status: text("status").notNull().default("pending"), // pending, translating, completed, error
+  thinkingTokens: integer("thinking_tokens").default(0),
+  glossary: jsonb("glossary").default({}),
+  typographicalRules: text("typographical_rules"),
+  toneInstructions: text("tone_instructions"),
+  layoutScore: integer("layout_score").default(0),
+  naturalnessScore: integer("naturalness_score").default(0),
+  currentChunk: integer("current_chunk").default(0),
+  totalChunks: integer("total_chunks").default(0),
+  status: text("status").notNull().default("pending"),
   heartbeatAt: timestamp("heartbeat_at"),
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });

@@ -1,0 +1,158 @@
+LitTranslators 2.0 - Blueprint de Implementación (Replit)Este documento es la guía técnica completa para implementar el módulo de Traducción Nativa y Maquetación Perfecta dentro de la aplicación LitAgents.1. Stack y Dependencias AdicionalesEl sistema utiliza el mismo stack que el Generador (Node.js + PostgreSQL + DeepSeek).Asegúrate de que estas dependencias estén en package.json:openai (SDK compatible con DeepSeek)fuse.js (Para aplicar parches de corrección de formato)2. Esquema de Base de Datos (SQL)Ejecuta este SQL en la consola de PostgreSQL de Replit para habilitar el motor de traducción avanzado.-- Tabla Principal de Traducciones
+CREATE TABLE translations (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER, -- Opcional, si está vinculado a un proyecto existente
+    title TEXT NOT NULL,
+    source_lang TEXT NOT NULL, -- ej: "en"
+    target_lang TEXT NOT NULL, -- ej: "es-ES"
+    
+    -- Contenido
+    original_text TEXT,    -- Texto completo origen
+    translated_text TEXT,  -- Texto final destino
+    
+    -- Cerebro del Sistema (Strategist Agent)
+    glossary JSONB DEFAULT '{}',            -- Términos clave (Winterfell -> Invernalia)
+    typographical_rules TEXT,               -- Reglas de puntuación (Rayas vs Comillas)
+    style_guide TEXT,                       -- Tono y registro (Voz pasiva, tú/usted)
+    
+    -- Métricas de Calidad (Proofreader Agent)
+    layout_score INTEGER DEFAULT 0,         -- 0-10 (Calidad de maquetación)
+    naturalness_score INTEGER DEFAULT 0,    -- 0-10 (Nivel de "sabor nativo")
+    
+    status TEXT DEFAULT 'pending',          -- 'analyzing', 'translating', 'completed'
+    current_chunk INTEGER DEFAULT 0,        -- Progreso de recuperación
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+3. Configuración de Prompts (server/agents/translation_prompts.ts)Copia este archivo exacto para activar el modo "Transcreación".export const TRANSLATION_MODELS = {
+  STRATEGIST: "deepseek-reasoner", // R1: Define las reglas
+  DRAFTER: "deepseek-chat",        // V3: Ejecuta la transcreación
+  PROOFREADER: "deepseek-chat"     // V3: Audita formato y estilo
+};
+
+export const TRANSLATION_PROMPTS = {
+  // 1. ESTRATEGA: Define las reglas del juego
+  STRATEGIST_INIT: (source: string, target: string, sample: string) => `
+    Actúa como Editor Jefe de localización de ${source} a ${target}.
+    Analiza este fragmento: "${sample.substring(0, 1000)}..."
+    
+    DEFINE LAS REGLAS DE ORO (JSON):
+    1. "typographical_rules": ¿Cómo se puntúan los diálogos en ${target}? (Rayas, comillas, espacios).
+    2. "glossary": Extrae nombres propios y define su traducción o conservación.
+    3. "tone_instructions": Nivel de formalidad y distancia cultural.
+  `,
+
+  // 2. ESCRITOR (DRAFTER): Transcreación
+  DRAFTER_CHUNK: (chunk: string, glossary: string, typoRules: string, context: string, target: string) => `
+    Eres un novelista nativo de ${target}. NO TRADUZCAS LITERALMENTE. TRANSCREA.
+    
+    CONTEXTO PREVIO: "...${context}"
+    REGLAS TIPOGRÁFICAS (CRÍTICO): ${typoRules}
+    GLOSARIO: ${glossary}
+    
+    TEXTO A TRANSCREAR: "${chunk}"
+    
+    INSTRUCCIONES:
+    - Rompe la sintaxis original para sonar natural en ${target}.
+    - Aplica rigurosamente las reglas tipográficas (ej: rayas de diálogo).
+    - Respeta el formato Markdown (negritas, cursivas).
+    
+    SALIDA: Solo el texto literario final.
+  `,
+
+  // 3. AUDITOR (PROOFREADER): Control de Calidad
+  PROOFREADER_CHECK: (original: string, translation: string, target: string) => `
+    Audita esta traducción a ${target} buscando errores de MAQUETACIÓN y ESTILO.
+    
+    ORIGINAL: "${original.substring(0, 500)}..."
+    TRADUCCIÓN: "${translation.substring(0, 500)}..."
+    
+    CHECKLIST:
+    1. ¿La puntuación de diálogos es correcta para ${target}?
+    2. ¿Suena a traducción literal ("translationese")?
+    3. ¿Se han perdido formatos (cursivas, negritas)?
+    
+    SALIDA JSON:
+    {
+      "has_critical_errors": boolean,
+      "replacements": [ { "original_snippet": "...", "correction": "...", "reason": "..." } ]
+    }
+  `
+};
+4. Orquestador de Traducción (server/core/translation_orchestrator.ts)Lógica central que maneja el flujo Estrategia -> Traducción -> Revisión.import OpenAI from 'openai';
+import { TRANSLATION_PROMPTS, TRANSLATION_MODELS } from '../agents/translation_prompts';
+import { applyPatches } from './patcher'; // Reusa el patcher del generador
+
+const openai = new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: '[https://api.deepseek.com](https://api.deepseek.com)' });
+
+export class TranslationOrchestrator {
+  
+  async startTranslation(translationId: number, fullText: string, sourceLang: string, targetLang: string) {
+    // 1. Fase de Estrategia (Solo al inicio)
+    console.log("Analizando estilo y tipografía...");
+    const strategyRaw = await this.callAI(
+      TRANSLATION_MODELS.STRATEGIST,
+      TRANSLATION_PROMPTS.STRATEGIST_INIT(sourceLang, targetLang, fullText)
+    );
+    const strategy = JSON.parse(strategyRaw.replace(/```json|```/g, ''));
+
+    // 2. Dividir en Chunks (Párrafos completos, ~1500 chars)
+    const chunks = this.smartSplit(fullText);
+    let finalDoc = "";
+    let context = "";
+
+    // 3. Bucle de Transcreación
+    for (const chunk of chunks) {
+      // A. Borrador
+      const draft = await this.callAI(
+        TRANSLATION_MODELS.DRAFTER,
+        TRANSLATION_PROMPTS.DRAFTER_CHUNK(chunk, JSON.stringify(strategy.glossary), strategy.typographical_rules, context, targetLang)
+      );
+
+      // B. Auditoría de Maquetación
+      const auditRaw = await this.callAI(
+        TRANSLATION_MODELS.PROOFREADER,
+        TRANSLATION_PROMPTS.PROOFREADER_CHECK(chunk, draft, targetLang)
+      );
+      
+      let finalChunk = draft;
+      try {
+        const audit = JSON.parse(auditRaw.replace(/```json|```/g, ''));
+        if (audit.has_critical_errors) {
+          console.log(`Aplicando correcciones de formato: ${audit.replacements.length}`);
+          finalChunk = applyPatches(draft, audit.replacements);
+        }
+      } catch (e) {}
+
+      finalDoc += finalChunk + "\n\n";
+      context = finalChunk.slice(-300); // Contexto deslizante para el siguiente chunk
+    }
+
+    return { content: finalDoc, metadata: strategy };
+  }
+
+  private async callAI(model: string, prompt: string) {
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: "user", content: prompt }],
+      model: model,
+      temperature: model.includes('reasoner') ? 0.6 : 0.3 // Baja temp para fidelidad
+    });
+    return completion.choices[0].message.content || "";
+  }
+  
+  private smartSplit(text: string) { /* Lógica de división por párrafos */ return [text]; }
+}
+5. Implementación API (server/routes/translation.ts)import { Router } from 'express';
+import { TranslationOrchestrator } from '../core/translation_orchestrator';
+
+const router = Router();
+const orchestrator = new TranslationOrchestrator();
+
+router.post('/start', async (req, res) => {
+  const { text, source, target } = req.body;
+  // Iniciar proceso async (idealmente usar una cola de trabajos)
+  const result = await orchestrator.startTranslation(1, text, source, target);
+  res.json({ status: 'completed', result });
+});
+
+export default router;
