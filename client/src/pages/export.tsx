@@ -461,13 +461,77 @@ export default function ExportPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     }).then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("No readable stream available");
+      }
+      
       const decoder = new TextDecoder();
       
+      const handleSSEEvent = (eventType: string, data: Record<string, unknown>) => {
+        if (eventType === "started") {
+          queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
+        } else if (eventType === "status") {
+          setTranslationProgress(prev => ({
+            ...prev,
+            chapterTitle: (data.message as string) || (data.status as string) || "Procesando...",
+          }));
+        } else if (eventType === "strategy") {
+          const rules = data.typographical_rules as string;
+          toast({
+            title: "Estrategia definida",
+            description: `Reglas tipográficas: ${rules?.substring(0, 50) || "Configurado"}...`,
+          });
+        } else if (eventType === "progress") {
+          setTranslationProgress(prev => ({
+            ...prev,
+            currentChapter: data.current as number,
+            totalChapters: data.total as number,
+            chapterTitle: `Transcreando fragmento ${data.current}/${data.total}...`,
+          }));
+          queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
+        } else if (eventType === "complete") {
+          saveTranslationState(null);
+          setTranslationProgress({
+            isTranslating: false,
+            currentChapter: 0,
+            totalChapters: 0,
+            chapterTitle: "",
+            inputTokens: 0,
+            outputTokens: 0,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
+          toast({
+            title: "Transcreación completada",
+            description: `${data.projectTitle} transcreado a ${getLangName(tgtLang)}. Puntuación: Maquetación ${data.layoutScore}/10, Naturalidad ${data.naturalnessScore}/10`,
+          });
+        } else if (eventType === "error") {
+          saveTranslationState(null);
+          setTranslationProgress({
+            isTranslating: false,
+            currentChapter: 0,
+            totalChapters: 0,
+            chapterTitle: "",
+            inputTokens: 0,
+            outputTokens: 0,
+          });
+          toast({
+            title: "Error en transcreación",
+            description: data.error as string,
+            variant: "destructive",
+          });
+        }
+      };
+      
       const processStream = async () => {
-        if (!reader) return;
-        
         let buffer = "";
+        let currentEvent = "";
+        let currentData = "";
+        
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -478,67 +542,27 @@ export default function ExportPage() {
           
           for (const line of lines) {
             if (line.startsWith("event: ")) {
-              const eventType = line.slice(7);
-              const dataLine = lines[lines.indexOf(line) + 1];
-              if (dataLine?.startsWith("data: ")) {
-                try {
-                  const data = JSON.parse(dataLine.slice(6));
-                  
-                  if (eventType === "started") {
-                    queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
-                  } else if (eventType === "status") {
-                    setTranslationProgress(prev => ({
-                      ...prev,
-                      chapterTitle: data.message || data.status,
-                    }));
-                  } else if (eventType === "strategy") {
-                    toast({
-                      title: "Estrategia definida",
-                      description: `Reglas tipográficas: ${data.typographical_rules?.substring(0, 50)}...`,
-                    });
-                  } else if (eventType === "progress") {
-                    setTranslationProgress(prev => ({
-                      ...prev,
-                      currentChapter: data.current,
-                      totalChapters: data.total,
-                      chapterTitle: `Transcreando fragmento ${data.current}/${data.total}...`,
-                    }));
-                    queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
-                  } else if (eventType === "complete") {
-                    saveTranslationState(null);
-                    setTranslationProgress({
-                      isTranslating: false,
-                      currentChapter: 0,
-                      totalChapters: 0,
-                      chapterTitle: "",
-                      inputTokens: 0,
-                      outputTokens: 0,
-                    });
-                    queryClient.invalidateQueries({ queryKey: ["/api/translations"] });
-                    toast({
-                      title: "Transcreación completada",
-                      description: `${data.projectTitle} transcreado a ${getLangName(tgtLang)}. Puntuación: Maquetación ${data.layoutScore}/10, Naturalidad ${data.naturalnessScore}/10`,
-                    });
-                  } else if (eventType === "error") {
-                    saveTranslationState(null);
-                    setTranslationProgress({
-                      isTranslating: false,
-                      currentChapter: 0,
-                      totalChapters: 0,
-                      chapterTitle: "",
-                      inputTokens: 0,
-                      outputTokens: 0,
-                    });
-                    toast({
-                      title: "Error en transcreación",
-                      description: data.error,
-                      variant: "destructive",
-                    });
-                  }
-                } catch {}
+              currentEvent = line.slice(7).trim();
+            } else if (line.startsWith("data: ")) {
+              currentData = line.slice(6);
+            } else if (line === "" && currentEvent && currentData) {
+              try {
+                const data = JSON.parse(currentData);
+                handleSSEEvent(currentEvent, data);
+              } catch (e) {
+                console.warn("Failed to parse SSE data:", currentData);
               }
+              currentEvent = "";
+              currentData = "";
             }
           }
+        }
+        
+        if (currentEvent && currentData) {
+          try {
+            const data = JSON.parse(currentData);
+            handleSSEEvent(currentEvent, data);
+          } catch {}
         }
       };
       
@@ -552,6 +576,11 @@ export default function ExportPage() {
           chapterTitle: "",
           inputTokens: 0,
           outputTokens: 0,
+        });
+        toast({
+          title: "Conexión perdida",
+          description: "La transcreación puede continuar en segundo plano. Revisa el repositorio.",
+          variant: "default",
         });
       });
     }).catch(err => {
@@ -567,7 +596,7 @@ export default function ExportPage() {
       });
       toast({
         title: "Error",
-        description: "No se pudo iniciar la transcreación",
+        description: err.message || "No se pudo iniciar la transcreación",
         variant: "destructive",
       });
     });
