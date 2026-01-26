@@ -17,6 +17,7 @@ const statusConfig = {
   writing: { icon: Loader2, color: "bg-chart-2/20 text-chart-2", label: "Escribiendo" },
   editing: { icon: Loader2, color: "bg-chart-3/20 text-chart-3", label: "Editando" },
   completed: { icon: CheckCircle, color: "bg-green-500/20 text-green-600 dark:text-green-400", label: "Completado" },
+  approved: { icon: CheckCircle, color: "bg-green-500/20 text-green-600 dark:text-green-400", label: "Completado" },
 };
 
 export function ChapterList({ chapters, selectedChapterId, onSelectChapter, onResetChapter, resettingChapterId }: ChapterListProps) {
@@ -100,7 +101,7 @@ export function ChapterList({ chapters, selectedChapterId, onSelectChapter, onRe
                 )}
               </button>
               
-              {onResetChapter && chapter.status === "completed" && (
+              {onResetChapter && (chapter.status === "completed" || chapter.status === "approved") && (
                 <Button
                   size="sm"
                   variant={isEmpty ? "destructive" : "outline"}
