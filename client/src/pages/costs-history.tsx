@@ -113,11 +113,13 @@ export default function CostsHistoryPage() {
 
   const { data: translations, isLoading: loadingTranslations } = useQuery<Translation[]>({
     queryKey: ["/api/translations"],
+    refetchInterval: 5000,
   });
 
   const { data: aiUsageEvents, isLoading: loadingUsage } = useQuery<AiUsageEvent[]>({
     queryKey: [`/api/projects/${currentProject?.id}/ai-usage`],
     enabled: !!currentProject?.id,
+    refetchInterval: 5000,
   });
 
   const chapterCosts = groupEventsByChapter(aiUsageEvents || []);
