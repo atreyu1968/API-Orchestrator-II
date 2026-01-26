@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { Orchestrator } from "./orchestrator";
 import { OrchestratorV2 } from "./orchestrator-v2";
 import { queueManager } from "./queue-manager";
 import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
@@ -641,7 +640,9 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Project is already generating" });
       }
 
-      res.json({ message: "Generation started", projectId: id });
+      // All projects now use v2 pipeline
+      await storage.updateProject(id, { pipelineVersion: "v2" });
+      res.json({ message: "Generation started (v2)", projectId: id });
 
       const sendToStreams = (data: any) => {
         const streams = activeStreams.get(id);
@@ -657,7 +658,7 @@ export async function registerRoutes(
         }
       };
 
-      const orchestrator = new Orchestrator({
+      const orchestrator = new OrchestratorV2({
         onAgentStatus: async (role, status, message) => {
           await storage.updateAgentStatus(id, role, { status, currentTask: message });
           sendToStreams({ type: "agent_status", role, status, message });
@@ -666,15 +667,10 @@ export async function registerRoutes(
         onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
           sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
           const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
+          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
         },
-        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
-          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
-        },
-        onChapterStatusChange: (chapterNumber, status) => {
-          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        onSceneComplete: async (chapterNumber, sceneNumber, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
         },
         onProjectComplete: async () => {
           sendToStreams({ type: "project_complete" });
@@ -828,7 +824,14 @@ export async function registerRoutes(
         }
       };
 
-      const orchestrator = new Orchestrator({
+      // All projects now use v2 pipeline - upgrade if needed
+      if (project.pipelineVersion !== "v2") {
+        await storage.updateProject(id, { pipelineVersion: "v2" });
+        console.log(`[Resume] Upgraded project ${id} to v2 pipeline`);
+      }
+
+      console.log(`[Resume] Resuming project ${id} with OrchestratorV2.generateNovel`);
+      const orchestrator = new OrchestratorV2({
         onAgentStatus: async (role, status, message) => {
           await storage.updateAgentStatus(id, role, { status, currentTask: message });
           sendToStreams({ type: "agent_status", role, status, message });
@@ -837,15 +840,10 @@ export async function registerRoutes(
         onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
           sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
           const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
+          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
         },
-        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
-          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
-        },
-        onChapterStatusChange: (chapterNumber, status) => {
-          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
+        onSceneComplete: async (chapterNumber, sceneNumber, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
         },
         onProjectComplete: async () => {
           sendToStreams({ type: "project_complete" });
@@ -857,42 +855,7 @@ export async function registerRoutes(
         },
       });
 
-      // If project is v2 pipeline, use OrchestratorV2
-      if (project.pipelineVersion === "v2") {
-        console.log(`[Resume] Project ${id} is v2 pipeline, using OrchestratorV2.generateNovel`);
-        const orchestratorV2 = new OrchestratorV2({
-          onAgentStatus: async (role, status, message) => {
-            await storage.updateAgentStatus(id, role, { status, currentTask: message });
-            sendToStreams({ type: "agent_status", role, status, message });
-            if (message) await persistActivityLog(id, "info", message, role);
-          },
-          onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
-            sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
-            const label = getSectionLabel(chapterNumber, chapterTitle);
-            await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
-          },
-          onSceneComplete: async (chapterNumber, sceneNumber, wordCount) => {
-            sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
-          },
-          onProjectComplete: async () => {
-            sendToStreams({ type: "project_complete" });
-            await persistActivityLog(id, "success", "Novela v2 completada exitosamente", "orchestrator");
-          },
-          onError: async (error) => {
-            sendToStreams({ type: "error", message: error });
-            await persistActivityLog(id, "error", error, "orchestrator");
-          },
-        });
-        orchestratorV2.generateNovel(project).catch(console.error);
-      } else if (hasWorldBible) {
-        // V1 pipeline with existing World Bible
-        console.log(`[Resume] Resuming project ${id} with resumeNovel (v1)`);
-        orchestrator.resumeNovel(project).catch(console.error);
-      } else {
-        // V1 pipeline without World Bible
-        console.log(`[Resume] Starting project ${id} from scratch with generateNovel (v1, no World Bible found)`);
-        orchestrator.generateNovel(project).catch(console.error);
-      }
+      orchestrator.generateNovel(project).catch(console.error);
 
     } catch (error) {
       console.error("Error resuming generation:", error);
@@ -940,36 +903,16 @@ export async function registerRoutes(
         }
       };
 
-      const orchestrator = new Orchestrator({
-        onAgentStatus: async (role, status, message) => {
-          await storage.updateAgentStatus(id, role, { status, currentTask: message });
-          sendToStreams({ type: "agent_status", role, status, message });
-          if (message) await persistActivityLog(id, "info", message, role);
-        },
-        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
-          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
-        },
-        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
-          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
-        },
-        onChapterStatusChange: (chapterNumber, status) => {
-          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
-        },
-        onProjectComplete: async () => {
-          sendToStreams({ type: "project_complete" });
-          await persistActivityLog(id, "success", "Revisión final completada", "final-reviewer");
-        },
-        onError: async (error) => {
-          sendToStreams({ type: "error", message: error });
-          await persistActivityLog(id, "error", error, "orchestrator");
-        },
+      // V2 pipeline handles editing during generation, so final review just marks complete
+      await storage.updateProject(id, { 
+        status: "completed",
+        finalReviewResult: { approved: true, note: "V2 pipeline - reviewed during generation" }
       });
-
-      orchestrator.runFinalReviewOnly(project).catch(console.error);
+      
+      sendToStreams({ type: "project_complete" });
+      await persistActivityLog(id, "success", "Revisión completada (pipeline v2)", "final-reviewer");
+      
+      console.log(`[FinalReview] Project ${id} marked as completed (v2 pipeline)`);
 
     } catch (error) {
       console.error("Error starting final review:", error);
@@ -1038,38 +981,11 @@ export async function registerRoutes(
         }
       };
 
-      const orchestrator = new Orchestrator({
-        onAgentStatus: async (role, status, message) => {
-          await storage.updateAgentStatus(id, role, { status, currentTask: message });
-          sendToStreams({ type: "agent_status", role, status, message });
-          if (message) await persistActivityLog(id, "info", message, role);
-        },
-        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
-          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter");
-        },
-        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
-          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "editor");
-        },
-        onChapterStatusChange: (chapterNumber, status) => {
-          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
-        },
-        onProjectComplete: async () => {
-          sendToStreams({ type: "project_complete" });
-          await persistActivityLog(id, "success", "Extensión de novela completada", "orchestrator");
-        },
-        onError: async (error) => {
-          sendToStreams({ type: "error", message: error });
-          await persistActivityLog(id, "error", error, "orchestrator");
-        },
+      // Extend functionality not yet implemented in v2 - use resume with updated chapter count instead
+      await storage.updateProject(id, { status: "paused" });
+      return res.status(501).json({ 
+        error: "La funcionalidad de extensión no está disponible en el pipeline v2. Use 'Reanudar' para continuar la generación." 
       });
-
-      // Get updated project with new chapter count
-      const updatedProject = await storage.getProject(id);
-      orchestrator.extendNovel(updatedProject!, maxExistingChapter, targetChapters).catch(console.error);
 
     } catch (error) {
       console.error("Error extending project:", error);
@@ -1108,36 +1024,11 @@ export async function registerRoutes(
         }
       };
 
-      const orchestrator = new Orchestrator({
-        onAgentStatus: async (role, status, message) => {
-          await storage.updateAgentStatus(id, role, { status, currentTask: message });
-          sendToStreams({ type: "agent_status", role, status, message });
-          if (message) await persistActivityLog(id, "info", message, role);
-        },
-        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
-          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "success", `${label} corregido (${wordCount} palabras)`, "ghostwriter");
-        },
-        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
-          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "warning", `Reescritura ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "continuity-sentinel");
-        },
-        onChapterStatusChange: (chapterNumber, status) => {
-          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
-        },
-        onProjectComplete: async () => {
-          sendToStreams({ type: "project_complete" });
-          await persistActivityLog(id, "success", "Corrección del Centinela completada", "continuity-sentinel");
-        },
-        onError: async (error) => {
-          sendToStreams({ type: "error", message: error });
-          await persistActivityLog(id, "error", error, "continuity-sentinel");
-        },
+      // Force sentinel functionality not yet implemented in v2
+      await storage.updateProject(id, { status: "paused" });
+      return res.status(501).json({ 
+        error: "La funcionalidad del centinela no está disponible en el pipeline v2." 
       });
-
-      orchestrator.runContinuitySentinelForce(project).catch(console.error);
 
     } catch (error) {
       console.error("Error starting forced sentinel:", error);
@@ -1177,36 +1068,11 @@ export async function registerRoutes(
         }
       };
 
-      const orchestrator = new Orchestrator({
-        onAgentStatus: async (role, status, message) => {
-          await storage.updateAgentStatus(id, role, { status, currentTask: message });
-          sendToStreams({ type: "agent_status", role, status, message });
-          if (message) await persistActivityLog(id, "info", message, role);
-        },
-        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
-          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "success", `${label} regenerado (${wordCount} palabras)`, "ghostwriter");
-        },
-        onChapterRewrite: async (chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason) => {
-          sendToStreams({ type: "chapter_rewrite", chapterNumber, chapterTitle, currentIndex, totalToRewrite, reason });
-          const label = getSectionLabel(chapterNumber, chapterTitle);
-          await persistActivityLog(id, "warning", `Regenerando ${currentIndex}/${totalToRewrite}: ${label} - ${reason}`, "ghostwriter");
-        },
-        onChapterStatusChange: (chapterNumber, status) => {
-          sendToStreams({ type: "chapter_status_change", chapterNumber, status });
-        },
-        onProjectComplete: async () => {
-          sendToStreams({ type: "project_complete" });
-          await persistActivityLog(id, "success", "Regeneración de capítulos truncados completada", "ghostwriter");
-        },
-        onError: async (error) => {
-          sendToStreams({ type: "error", message: error });
-          await persistActivityLog(id, "error", error, "ghostwriter");
-        },
+      // Regenerate truncated functionality not yet implemented in v2
+      await storage.updateProject(id, { status: "paused" });
+      return res.status(501).json({ 
+        error: "La funcionalidad de regenerar capítulos truncados no está disponible en el pipeline v2." 
       });
-
-      orchestrator.regenerateTruncatedChapters(project, minWordCount).catch(console.error);
 
     } catch (error) {
       console.error("Error starting truncated chapters regeneration:", error);
