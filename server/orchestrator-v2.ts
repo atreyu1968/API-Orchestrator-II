@@ -183,21 +183,29 @@ export class OrchestratorV2 {
         const totalChapters = rawOutline.length;
         outline = rawOutline.map((ch: any, idx: number) => {
           let actualNumber = ch.chapter_num;
+          let actualTitle = ch.title;
           
           if (project.hasPrologue && idx === 0) {
             actualNumber = 0;
+            actualTitle = "Prólogo";
           } else if (project.hasAuthorNote && idx === totalChapters - 1) {
             actualNumber = 999;
+            actualTitle = "Nota del Autor";
           } else if (project.hasEpilogue && (
             (project.hasAuthorNote && idx === totalChapters - 2) ||
             (!project.hasAuthorNote && idx === totalChapters - 1)
           )) {
             actualNumber = 998;
+            actualTitle = "Epílogo";
           } else if (project.hasPrologue) {
             actualNumber = idx;
+            // Update title to match the new chapter number if it was a generic title
+            if (ch.title && ch.title.match(/^Capítulo \d+$/i)) {
+              actualTitle = `Capítulo ${actualNumber}`;
+            }
           }
           
-          return { ...ch, chapter_num: actualNumber };
+          return { ...ch, chapter_num: actualNumber, title: actualTitle };
         });
         
         console.log(`[OrchestratorV2] Loaded ${outline.length} chapter outlines. Numbers: ${outline.map(c => c.chapter_num).join(', ')}`);
@@ -241,21 +249,29 @@ export class OrchestratorV2 {
         outline = rawOutline.map((ch, idx) => {
           let actualNumber = ch.chapter_num;
           const totalChapters = rawOutline.length;
+          let actualTitle = ch.title;
           
           if (project.hasPrologue && idx === 0) {
             actualNumber = 0;
+            actualTitle = "Prólogo";
           } else if (project.hasAuthorNote && idx === totalChapters - 1) {
             actualNumber = 999;
+            actualTitle = "Nota del Autor";
           } else if (project.hasEpilogue && (
             (project.hasAuthorNote && idx === totalChapters - 2) ||
             (!project.hasAuthorNote && idx === totalChapters - 1)
           )) {
             actualNumber = 998;
+            actualTitle = "Epílogo";
           } else if (project.hasPrologue) {
             actualNumber = idx;
+            // Update title to match the new chapter number if it was a generic title
+            if (ch.title.match(/^Capítulo \d+$/i)) {
+              actualTitle = `Capítulo ${actualNumber}`;
+            }
           }
           
-          return { ...ch, chapter_num: actualNumber };
+          return { ...ch, chapter_num: actualNumber, title: actualTitle };
         });
 
         // Store World Bible with timeline derived from outline
