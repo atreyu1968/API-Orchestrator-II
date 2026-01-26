@@ -6,6 +6,7 @@ LitAgents is a Node.js application designed for orchestrating autonomous AI lite
 
 Key capabilities include:
 - Orchestration of 9 specialized AI agents covering plot planning, prose writing, editing, quality assurance, and structural corrections.
+- **LitAgents 2.0**: New scene-based writing pipeline with 6 specialized agents optimized for DeepSeek AI, featuring surgical JSON patching for token efficiency.
 - A persistent World Bible system for maintaining consistent lore and character details.
 - Logging of AI reasoning processes for transparency and auditing.
 - A real-time dashboard for monitoring progress and agent activities.
@@ -38,7 +39,8 @@ Preferred communication style: Simple, everyday language.
 ### Data Storage
 - **Database**: PostgreSQL, managed with Drizzle ORM.
 - **Schema**: Defined in `shared/schema.ts`.
-- **Key Tables**: `projects`, `chapters`, `worldBibles`, `thoughtLogs`, `agentStatuses`, `series`, `continuitySnapshots`, `importedManuscripts`, `importedChapters`. These tables store project metadata, chapter content, world-building elements, AI process logs, real-time status, series information, continuity summaries, and details on imported manuscripts.
+- **Key Tables**: `projects`, `chapters`, `worldBibles`, `thoughtLogs`, `agentStatuses`, `series`, `continuitySnapshots`, `importedManuscripts`, `importedChapters`, `plot_threads`. These tables store project metadata, chapter content, world-building elements, AI process logs, real-time status, series information, continuity summaries, details on imported manuscripts, and narrative thread tracking for LitAgents 2.0.
+- **LitAgents 2.0 Schema Additions**: `chapters` table has new columns (`scene_breakdown`, `summary`, `editor_feedback`, `quality_score`); `plot_threads` table tracks narrative threads for the Narrative Director agent.
 
 ### AI Integration
 - **Default Provider**: DeepSeek (cost-efficient), with Gemini as optional high-speed alternative.
@@ -74,6 +76,20 @@ Preferred communication style: Simple, everyday language.
   - **Intelligent Deduplication**: Similar issues from different tranches are merged, with affected chapters combined and issues sorted by severity (critical first).
   - **WorldBible Sync**: After review, plotDecisions and persistentInjuries are saved to WorldBible for continuity enforcement.
   - **Ghostwriter Integration**: Issues with detailed correction instructions are passed to the Ghostwriter, which receives the full context for surgical rewrites.
+
+### LitAgents 2.0 (Scene-Based Pipeline)
+- **Architecture**: New scene-based writing pipeline optimized for DeepSeek AI models, accessible via `POST /api/projects/:id/generate-v2`.
+- **6 New Agents** (located in `server/agents/v2/`):
+  - **Global Architect** (R1): Designs master novel structure, World Bible, and plot threads.
+  - **Chapter Architect** (R1): Plans 3-4 scenes per chapter with detailed beats.
+  - **Ghostwriter V2** (V3): Writes one scene at a time for better flow control.
+  - **Smart Editor** (V3): Evaluates chapters and generates JSON patches instead of full rewrites.
+  - **Summarizer** (V3): Compresses chapters for memory efficiency.
+  - **Narrative Director** (R1): Reviews progress every 5 chapters to maintain story coherence.
+- **Patcher Utility** (`server/utils/patcher.ts`): Uses fuse.js for fuzzy text matching to apply surgical edits without full rewrites, reducing token consumption.
+- **Model Assignment**: R1 (deepseek-reasoner) for planning agents, V3 (deepseek-chat) for writing/editing agents.
+- **Plot Threads API**: `GET /api/projects/:id/plot-threads` for accessing narrative thread status.
+- **Backward Compatibility**: Original v1 orchestrator and routes remain unchanged.
 
 ## External Dependencies
 
