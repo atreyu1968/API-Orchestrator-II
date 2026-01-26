@@ -204,7 +204,7 @@ export default function ManuscriptPage() {
     URL.revokeObjectURL(url);
   };
 
-  const completedChapters = chapters.filter(c => c.status === "completed");
+  const completedChapters = chapters.filter(c => c.status === "completed" || c.status === "approved");
   const totalWordCount = chapters.reduce((sum, c) => sum + (c.wordCount || 0), 0);
 
   if (projectsLoading) {
