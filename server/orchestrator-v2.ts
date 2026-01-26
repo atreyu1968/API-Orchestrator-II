@@ -611,4 +611,540 @@ export class OrchestratorV2 {
       sceneBreakdown,
     };
   }
+
+  /**
+   * Run final review only - V2 simplified version
+   * V2 pipeline handles editing during generation, so this mainly validates and marks complete
+   */
+  async runFinalReviewOnly(project: Project): Promise<void> {
+    console.log(`[OrchestratorV2] Running final review for project ${project.id}`);
+    
+    try {
+      this.callbacks.onAgentStatus("smart-editor", "active", "Ejecutando revisión final v2...");
+      
+      const chapters = await storage.getChaptersByProject(project.id);
+      const completedChapters = chapters.filter(c => c.status === "completed" || c.status === "approved");
+      
+      if (completedChapters.length === 0) {
+        this.callbacks.onError("No hay capítulos completados para revisar");
+        return;
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) {
+        this.callbacks.onError("No se encontró la World Bible para este proyecto");
+        return;
+      }
+
+      const worldBibleData = {
+        characters: worldBible.characters || [],
+        rules: worldBible.worldRules || [],
+      };
+
+      let totalScore = 0;
+      let reviewedCount = 0;
+
+      // Review each chapter with Smart Editor
+      for (let i = 0; i < completedChapters.length; i++) {
+        const chapter = completedChapters[i];
+        
+        if (await isProjectCancelledFromDb(project.id)) {
+          console.log(`[OrchestratorV2] Final review cancelled for project ${project.id}`);
+          await this.updateProjectTokens(project.id);
+          await storage.updateProject(project.id, { status: "paused" });
+          return;
+        }
+
+        this.callbacks.onAgentStatus("smart-editor", "active", `Revisando capítulo ${chapter.chapterNumber} (${i + 1}/${completedChapters.length})...`);
+
+        const editResult = await this.smartEditor.execute({
+          chapterContent: chapter.content || "",
+          sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
+          worldBible: worldBibleData,
+        });
+
+        this.addTokenUsage(editResult.tokenUsage);
+
+        if (editResult.parsed) {
+          const avgScore = (editResult.parsed.logic_score + editResult.parsed.style_score) / 2;
+          totalScore += avgScore;
+          reviewedCount++;
+
+          // Always update quality score
+          const updateData: any = { qualityScore: Math.round(avgScore) };
+
+          // Apply patches if needed
+          if (editResult.parsed.patches && editResult.parsed.patches.length > 0) {
+            const patchResult = applyPatches(chapter.content || "", editResult.parsed.patches);
+            if (patchResult.appliedPatches > 0) {
+              updateData.content = patchResult.patchedText;
+              updateData.wordCount = patchResult.patchedText.split(/\s+/).length;
+            }
+          }
+
+          await storage.updateChapter(chapter.id, updateData);
+          
+          // Emit chapter complete callback
+          const wordCount = updateData.content 
+            ? updateData.content.split(/\s+/).length 
+            : (chapter.content?.split(/\s+/).length || 0);
+          this.callbacks.onChapterComplete(
+            chapter.chapterNumber,
+            wordCount,
+            chapter.title || `Capítulo ${chapter.chapterNumber}`
+          );
+        }
+      }
+
+      await this.updateProjectTokens(project.id);
+
+      const averageScore = reviewedCount > 0 ? totalScore / reviewedCount : 0;
+      const approved = averageScore >= 7;
+
+      await storage.updateProject(project.id, { 
+        status: approved ? "completed" : "failed_final_review",
+        finalReviewResult: { 
+          approved, 
+          averageScore: Math.round(averageScore * 10) / 10,
+          chaptersReviewed: reviewedCount,
+        }
+      });
+
+      if (approved) {
+        this.callbacks.onAgentStatus("smart-editor", "completed", `Revisión aprobada (${averageScore.toFixed(1)}/10)`);
+        this.callbacks.onProjectComplete();
+      } else {
+        this.callbacks.onAgentStatus("smart-editor", "error", `Puntuación insuficiente (${averageScore.toFixed(1)}/10)`);
+        this.callbacks.onError(`El manuscrito obtuvo ${averageScore.toFixed(1)}/10, por debajo del mínimo de 7`);
+      }
+    } catch (error) {
+      console.error("[OrchestratorV2] Final review error:", error);
+      this.callbacks.onError(error instanceof Error ? error.message : String(error));
+      await storage.updateProject(project.id, { status: "error" });
+    }
+  }
+
+  /**
+   * Extend novel by generating additional chapters
+   */
+  async extendNovel(project: Project, fromChapter: number, toChapter: number): Promise<void> {
+    console.log(`[OrchestratorV2] Extending project ${project.id} from chapter ${fromChapter + 1} to ${toChapter}`);
+    
+    try {
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible || !worldBible.plotOutline) {
+        this.callbacks.onError("No se encontró la World Bible con escaleta para este proyecto");
+        await storage.updateProject(project.id, { status: "error" });
+        return;
+      }
+
+      const worldBibleData = {
+        characters: worldBible.characters || [],
+        rules: worldBible.worldRules || [],
+      };
+
+      let guiaEstilo = "";
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) guiaEstilo = styleGuide.content;
+      }
+
+      // Get existing chapters for context
+      const existingChapters = await storage.getChaptersByProject(project.id);
+      const sortedChapters = existingChapters
+        .filter(c => c.status === "completed" || c.status === "approved")
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+      let rollingSummary = sortedChapters.length > 0 
+        ? sortedChapters.slice(-3).map(c => c.summary || `Cap ${c.chapterNumber} completado`).join("\n")
+        : "Inicio de la novela.";
+
+      // Generate new chapters from fromChapter+1 to toChapter
+      this.callbacks.onAgentStatus("global-architect", "active", `Planificando capítulos ${fromChapter + 1} a ${toChapter}...`);
+
+      // Create outlines for new chapters using Chapter Architect
+      for (let chapterNum = fromChapter + 1; chapterNum <= toChapter; chapterNum++) {
+        if (await isProjectCancelledFromDb(project.id)) {
+          console.log(`[OrchestratorV2] Extension cancelled for project ${project.id}`);
+          await this.updateProjectTokens(project.id);
+          await storage.updateProject(project.id, { status: "paused" });
+          return;
+        }
+
+        const chapterOutline = {
+          chapter_num: chapterNum,
+          title: `Capítulo ${chapterNum}`,
+          summary: `Continuación de la historia - Capítulo ${chapterNum}`,
+          key_event: "Desarrollo de la trama",
+        };
+
+        const previousSummary = rollingSummary;
+
+        // Plan scenes for this chapter
+        this.callbacks.onAgentStatus("chapter-architect", "active", `Planificando escenas para Capítulo ${chapterNum}...`);
+        
+        const chapterPlan = await this.chapterArchitect.execute({
+          chapterOutline,
+          worldBible: worldBibleData,
+          previousChapterSummary: previousSummary,
+          storyState: rollingSummary,
+        });
+
+        if (!chapterPlan.parsed) {
+          console.error(`[OrchestratorV2] Failed to plan chapter ${chapterNum}`);
+          continue;
+        }
+
+        this.addTokenUsage(chapterPlan.tokenUsage);
+
+        // Write scenes
+        let fullChapterText = "";
+        let lastContext = "";
+        let scenesCancelled = false;
+
+        for (const scene of chapterPlan.parsed.scenes) {
+          // Check cancellation before each scene
+          if (await isProjectCancelledFromDb(project.id)) {
+            console.log(`[OrchestratorV2] Extension cancelled during scene writing for project ${project.id}`);
+            scenesCancelled = true;
+            break;
+          }
+          
+          this.callbacks.onAgentStatus("ghostwriter-v2", "active", `Escribiendo escena ${scene.scene_num}...`);
+
+          const sceneResult = await this.ghostwriter.execute({
+            scenePlan: scene,
+            prevSceneContext: lastContext,
+            rollingSummary,
+            worldBible: worldBibleData,
+            guiaEstilo,
+          });
+
+          if (!sceneResult.error) {
+            fullChapterText += "\n\n" + sceneResult.content;
+            lastContext = sceneResult.content.slice(-1500);
+            this.callbacks.onSceneComplete(chapterNum, scene.scene_num, sceneResult.content?.split(/\s+/).length || 0);
+          }
+
+          this.addTokenUsage(sceneResult.tokenUsage);
+        }
+        
+        if (scenesCancelled) {
+          await this.updateProjectTokens(project.id);
+          await storage.updateProject(project.id, { status: "paused" });
+          return;
+        }
+
+        // Edit
+        const editResult = await this.smartEditor.execute({
+          chapterContent: fullChapterText,
+          sceneBreakdown: chapterPlan.parsed,
+          worldBible: worldBibleData,
+        });
+
+        let finalText = fullChapterText;
+        if (editResult.parsed?.patches && editResult.parsed.patches.length > 0) {
+          const patchResult = applyPatches(fullChapterText, editResult.parsed.patches);
+          finalText = patchResult.patchedText;
+        }
+
+        this.addTokenUsage(editResult.tokenUsage);
+
+        // Summarize
+        const summaryResult = await this.summarizer.execute({
+          chapterContent: finalText,
+          chapterNumber: chapterNum,
+        });
+
+        this.addTokenUsage(summaryResult.tokenUsage);
+
+        const chapterSummary = summaryResult.content || `Capítulo ${chapterNum} completado.`;
+        rollingSummary = chapterSummary;
+
+        // Save chapter
+        const wordCount = finalText.split(/\s+/).length;
+        await storage.createChapter({
+          projectId: project.id,
+          chapterNumber: chapterNum,
+          title: chapterOutline.title,
+          content: finalText,
+          wordCount,
+          status: "approved",
+          sceneBreakdown: chapterPlan.parsed as any,
+          summary: chapterSummary,
+        });
+
+        await storage.updateProject(project.id, { currentChapter: chapterNum });
+        this.callbacks.onChapterComplete(chapterNum, wordCount, chapterOutline.title);
+        await this.updateProjectTokens(project.id);
+      }
+
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onProjectComplete();
+
+    } catch (error) {
+      console.error("[OrchestratorV2] Extension error:", error);
+      this.callbacks.onError(error instanceof Error ? error.message : String(error));
+      await storage.updateProject(project.id, { status: "error" });
+    }
+  }
+
+  /**
+   * Regenerate truncated chapters
+   */
+  async regenerateTruncatedChapters(project: Project, minWordCount: number = 100): Promise<void> {
+    console.log(`[OrchestratorV2] Regenerating truncated chapters for project ${project.id} (min: ${minWordCount} words)`);
+    
+    try {
+      const chapters = await storage.getChaptersByProject(project.id);
+      const truncatedChapters = chapters.filter(ch => {
+        const wordCount = ch.content ? ch.content.split(/\s+/).length : 0;
+        return wordCount < minWordCount;
+      });
+
+      if (truncatedChapters.length === 0) {
+        this.callbacks.onAgentStatus("ghostwriter-v2", "completed", "No se encontraron capítulos truncados");
+        await storage.updateProject(project.id, { status: "completed" });
+        this.callbacks.onProjectComplete();
+        return;
+      }
+
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible) {
+        this.callbacks.onError("No se encontró la World Bible para este proyecto");
+        await storage.updateProject(project.id, { status: "error" });
+        return;
+      }
+
+      const worldBibleData = {
+        characters: worldBible.characters || [],
+        rules: worldBible.worldRules || [],
+      };
+
+      let guiaEstilo = "";
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) guiaEstilo = styleGuide.content;
+      }
+
+      this.callbacks.onAgentStatus("ghostwriter-v2", "active", 
+        `Regenerando ${truncatedChapters.length} capítulos truncados`);
+
+      for (let i = 0; i < truncatedChapters.length; i++) {
+        if (await isProjectCancelledFromDb(project.id)) {
+          console.log(`[OrchestratorV2] Truncated regeneration cancelled for project ${project.id}`);
+          await this.updateProjectTokens(project.id);
+          await storage.updateProject(project.id, { status: "paused" });
+          return;
+        }
+
+        const chapter = truncatedChapters[i];
+
+        this.callbacks.onAgentStatus("ghostwriter-v2", "active", 
+          `Regenerando capítulo ${chapter.chapterNumber} (${i + 1}/${truncatedChapters.length})`);
+
+        // Get context from previous chapters
+        const previousChapters = chapters
+          .filter(c => c.chapterNumber < chapter.chapterNumber && c.content)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+        
+        const rollingSummary = previousChapters.slice(-3)
+          .map(c => c.summary || `Cap ${c.chapterNumber}: ${c.content?.slice(0, 200)}...`)
+          .join("\n");
+
+        const chapterOutline = {
+          chapter_num: chapter.chapterNumber,
+          title: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+          summary: chapter.summary || "Regeneración del capítulo",
+          key_event: "Continuación de la historia",
+        };
+
+        // Plan new scenes
+        const chapterPlan = await this.chapterArchitect.execute({
+          chapterOutline,
+          worldBible: worldBibleData,
+          previousChapterSummary: rollingSummary,
+          storyState: rollingSummary,
+        });
+
+        if (!chapterPlan.parsed) {
+          console.error(`[OrchestratorV2] Failed to plan chapter ${chapter.chapterNumber}`);
+          continue;
+        }
+
+        this.addTokenUsage(chapterPlan.tokenUsage);
+
+        // Write new scenes
+        let fullChapterText = "";
+        let lastContext = "";
+        let scenesCancelled = false;
+
+        for (const scene of chapterPlan.parsed.scenes) {
+          // Check cancellation before each scene
+          if (await isProjectCancelledFromDb(project.id)) {
+            console.log(`[OrchestratorV2] Truncated regeneration cancelled during scene writing for project ${project.id}`);
+            scenesCancelled = true;
+            break;
+          }
+          
+          this.callbacks.onAgentStatus("ghostwriter-v2", "active", `Escribiendo escena ${scene.scene_num}...`);
+          
+          const sceneResult = await this.ghostwriter.execute({
+            scenePlan: scene,
+            prevSceneContext: lastContext,
+            rollingSummary,
+            worldBible: worldBibleData,
+            guiaEstilo,
+          });
+
+          if (!sceneResult.error) {
+            fullChapterText += "\n\n" + sceneResult.content;
+            lastContext = sceneResult.content.slice(-1500);
+          }
+
+          this.addTokenUsage(sceneResult.tokenUsage);
+          this.callbacks.onSceneComplete(chapter.chapterNumber, scene.scene_num, sceneResult.content?.split(/\s+/).length || 0);
+        }
+        
+        if (scenesCancelled) {
+          await this.updateProjectTokens(project.id);
+          await storage.updateProject(project.id, { status: "paused" });
+          return;
+        }
+
+        // Edit
+        const editResult = await this.smartEditor.execute({
+          chapterContent: fullChapterText,
+          sceneBreakdown: chapterPlan.parsed,
+          worldBible: worldBibleData,
+        });
+
+        let finalText = fullChapterText;
+        if (editResult.parsed?.patches && editResult.parsed.patches.length > 0) {
+          const patchResult = applyPatches(fullChapterText, editResult.parsed.patches);
+          finalText = patchResult.patchedText;
+        }
+
+        this.addTokenUsage(editResult.tokenUsage);
+
+        // Update chapter
+        const wordCount = finalText.split(/\s+/).length;
+        await storage.updateChapter(chapter.id, {
+          content: finalText,
+          wordCount,
+          status: "approved",
+          sceneBreakdown: chapterPlan.parsed as any,
+        });
+
+        this.callbacks.onChapterComplete(chapter.chapterNumber, wordCount, chapter.title || `Capítulo ${chapter.chapterNumber}`);
+        await this.updateProjectTokens(project.id);
+      }
+
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onProjectComplete();
+
+    } catch (error) {
+      console.error("[OrchestratorV2] Truncated regeneration error:", error);
+      this.callbacks.onError(error instanceof Error ? error.message : String(error));
+      await storage.updateProject(project.id, { status: "error" });
+    }
+  }
+
+  /**
+   * Run continuity sentinel check (simplified v2 version)
+   */
+  async runContinuitySentinelForce(project: Project): Promise<void> {
+    console.log(`[OrchestratorV2] Running continuity sentinel for project ${project.id}`);
+    
+    try {
+      this.callbacks.onAgentStatus("smart-editor", "active", "Ejecutando análisis de continuidad...");
+
+      const chapters = await storage.getChaptersByProject(project.id);
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      
+      if (!worldBible) {
+        this.callbacks.onError("No se encontró la World Bible para este proyecto");
+        await storage.updateProject(project.id, { status: "error" });
+        return;
+      }
+
+      const worldBibleData = {
+        characters: worldBible.characters || [],
+        rules: worldBible.worldRules || [],
+      };
+
+      let guiaEstilo = "";
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) guiaEstilo = styleGuide.content;
+      }
+
+      let issuesFound = 0;
+      let chaptersFixed = 0;
+
+      const chaptersWithContent = chapters.filter(c => c.content);
+      for (let i = 0; i < chaptersWithContent.length; i++) {
+        const chapter = chaptersWithContent[i];
+        
+        if (await isProjectCancelledFromDb(project.id)) {
+          console.log(`[OrchestratorV2] Sentinel check cancelled for project ${project.id}`);
+          await this.updateProjectTokens(project.id);
+          await storage.updateProject(project.id, { status: "paused" });
+          return;
+        }
+
+        this.callbacks.onAgentStatus("smart-editor", "active", `Analizando capítulo ${chapter.chapterNumber} (${i + 1}/${chaptersWithContent.length})...`);
+
+        const editResult = await this.smartEditor.execute({
+          chapterContent: chapter.content || "",
+          sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
+          worldBible: worldBibleData,
+        });
+
+        this.addTokenUsage(editResult.tokenUsage);
+
+        if (editResult.parsed && !editResult.parsed.is_approved) {
+          issuesFound++;
+          
+          if (editResult.parsed.patches && editResult.parsed.patches.length > 0) {
+            const patchResult = applyPatches(chapter.content || "", editResult.parsed.patches);
+            
+            if (patchResult.appliedPatches > 0) {
+              await storage.updateChapter(chapter.id, { 
+                content: patchResult.patchedText,
+                wordCount: patchResult.patchedText.split(/\s+/).length,
+              });
+              chaptersFixed++;
+              this.callbacks.onChapterComplete(
+                chapter.chapterNumber, 
+                patchResult.patchedText.split(/\s+/).length,
+                chapter.title || `Capítulo ${chapter.chapterNumber}`
+              );
+            }
+          }
+        }
+      }
+
+      await this.updateProjectTokens(project.id);
+
+      if (chaptersFixed > 0) {
+        this.callbacks.onAgentStatus("smart-editor", "completed", 
+          `Correcciones aplicadas: ${chaptersFixed} capítulos mejorados`);
+      } else if (issuesFound > 0) {
+        this.callbacks.onAgentStatus("smart-editor", "completed", 
+          `Análisis completado: ${issuesFound} capítulos con observaciones menores`);
+      } else {
+        this.callbacks.onAgentStatus("smart-editor", "completed", 
+          "No se encontraron issues de continuidad");
+      }
+
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onProjectComplete();
+
+    } catch (error) {
+      console.error("[OrchestratorV2] Sentinel error:", error);
+      this.callbacks.onError(error instanceof Error ? error.message : String(error));
+      await storage.updateProject(project.id, { status: "error" });
+    }
+  }
 }

@@ -903,16 +903,29 @@ export async function registerRoutes(
         }
       };
 
-      // V2 pipeline handles editing during generation, so final review just marks complete
-      await storage.updateProject(id, { 
-        status: "completed",
-        finalReviewResult: { approved: true, note: "V2 pipeline - reviewed during generation" }
+      // Run final review using OrchestratorV2
+      const orchestratorV2 = new OrchestratorV2({
+        onAgentStatus: (agentName, status, currentTask) => {
+          storage.updateAgentStatus(id, agentName, { status, currentTask });
+          sendToStreams({ type: "agent_status", agentName, status, currentTask });
+        },
+        onChapterComplete: (chapterNumber, wordCount, title) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, title });
+        },
+        onSceneComplete: () => {},
+        onProjectComplete: () => {
+          sendToStreams({ type: "project_complete" });
+          persistActivityLog(id, "success", "Revisión final completada", "smart-editor");
+        },
+        onError: (error) => {
+          sendToStreams({ type: "error", error });
+          persistActivityLog(id, "error", error, "smart-editor");
+        },
       });
+
+      orchestratorV2.runFinalReviewOnly(project);
       
-      sendToStreams({ type: "project_complete" });
-      await persistActivityLog(id, "success", "Revisión completada (pipeline v2)", "final-reviewer");
-      
-      console.log(`[FinalReview] Project ${id} marked as completed (v2 pipeline)`);
+      console.log(`[FinalReview] Started final review for project ${id} (v2 pipeline)`);
 
     } catch (error) {
       console.error("Error starting final review:", error);
@@ -981,11 +994,30 @@ export async function registerRoutes(
         }
       };
 
-      // Extend functionality not yet implemented in v2 - use resume with updated chapter count instead
-      await storage.updateProject(id, { status: "paused" });
-      return res.status(501).json({ 
-        error: "La funcionalidad de extensión no está disponible en el pipeline v2. Use 'Reanudar' para continuar la generación." 
+      // Run extension using OrchestratorV2
+      const orchestratorV2 = new OrchestratorV2({
+        onAgentStatus: (agentName, status, currentTask) => {
+          storage.updateAgentStatus(id, agentName, { status, currentTask });
+          sendToStreams({ type: "agent_status", agentName, status, currentTask });
+        },
+        onChapterComplete: (chapterNumber, wordCount, title) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, title });
+          persistActivityLog(id, "success", `Capítulo ${chapterNumber} extendido: "${title}" (${wordCount} palabras)`, "ghostwriter-v2");
+        },
+        onSceneComplete: (chapterNumber, sceneNumber, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+        },
+        onProjectComplete: () => {
+          sendToStreams({ type: "project_complete" });
+          persistActivityLog(id, "success", "Extensión completada", "orchestrator-v2");
+        },
+        onError: (error) => {
+          sendToStreams({ type: "error", error });
+          persistActivityLog(id, "error", error, "orchestrator-v2");
+        },
       });
+
+      orchestratorV2.extendNovel(project, maxExistingChapter, targetChapters);
 
     } catch (error) {
       console.error("Error extending project:", error);
@@ -1024,11 +1056,28 @@ export async function registerRoutes(
         }
       };
 
-      // Force sentinel functionality not yet implemented in v2
-      await storage.updateProject(id, { status: "paused" });
-      return res.status(501).json({ 
-        error: "La funcionalidad del centinela no está disponible en el pipeline v2." 
+      // Run sentinel using OrchestratorV2
+      const orchestratorV2 = new OrchestratorV2({
+        onAgentStatus: (agentName, status, currentTask) => {
+          storage.updateAgentStatus(id, agentName, { status, currentTask });
+          sendToStreams({ type: "agent_status", agentName, status, currentTask });
+        },
+        onChapterComplete: (chapterNumber, wordCount, title) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, title });
+          persistActivityLog(id, "success", `Capítulo ${chapterNumber} corregido`, "smart-editor");
+        },
+        onSceneComplete: () => {},
+        onProjectComplete: () => {
+          sendToStreams({ type: "project_complete" });
+          persistActivityLog(id, "success", "Análisis de continuidad completado", "orchestrator-v2");
+        },
+        onError: (error) => {
+          sendToStreams({ type: "error", error });
+          persistActivityLog(id, "error", error, "orchestrator-v2");
+        },
       });
+
+      orchestratorV2.runContinuitySentinelForce(project);
 
     } catch (error) {
       console.error("Error starting forced sentinel:", error);
@@ -1068,11 +1117,30 @@ export async function registerRoutes(
         }
       };
 
-      // Regenerate truncated functionality not yet implemented in v2
-      await storage.updateProject(id, { status: "paused" });
-      return res.status(501).json({ 
-        error: "La funcionalidad de regenerar capítulos truncados no está disponible en el pipeline v2." 
+      // Run regeneration using OrchestratorV2
+      const orchestratorV2 = new OrchestratorV2({
+        onAgentStatus: (agentName, status, currentTask) => {
+          storage.updateAgentStatus(id, agentName, { status, currentTask });
+          sendToStreams({ type: "agent_status", agentName, status, currentTask });
+        },
+        onChapterComplete: (chapterNumber, wordCount, title) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, title });
+          persistActivityLog(id, "success", `Capítulo ${chapterNumber} regenerado (${wordCount} palabras)`, "ghostwriter-v2");
+        },
+        onSceneComplete: (chapterNumber, sceneNumber, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, wordCount });
+        },
+        onProjectComplete: () => {
+          sendToStreams({ type: "project_complete" });
+          persistActivityLog(id, "success", "Regeneración de capítulos truncados completada", "orchestrator-v2");
+        },
+        onError: (error) => {
+          sendToStreams({ type: "error", error });
+          persistActivityLog(id, "error", error, "orchestrator-v2");
+        },
       });
+
+      orchestratorV2.regenerateTruncatedChapters(project, minWordCount);
 
     } catch (error) {
       console.error("Error starting truncated chapters regeneration:", error);
