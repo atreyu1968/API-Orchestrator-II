@@ -11,6 +11,7 @@ import { z } from "zod";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { getAIProvider, type AIProvider } from "./agents/base-agent";
 import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
+import { developmentalEditor } from "./orchestrators/developmental-editor";
 import { chatService } from "./services/chatService";
 import { TranslationOrchestrator } from "./translation-orchestrator";
 
@@ -6062,6 +6063,169 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     } catch (error) {
       console.error("Error starting reedit:", error);
       res.status(500).json({ error: "Failed to start reedit processing" });
+    }
+  });
+
+  // LitEditors 3.0: Analyze structure endpoint
+  app.post("/api/reedit-projects/:id/analyze-structure", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const { settingContext } = req.body;
+      
+      const project = await storage.getReeditProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.status === "processing") {
+        return res.status(400).json({ error: "Project is already being processed" });
+      }
+
+      // Update setting context if provided
+      if (settingContext) {
+        await storage.updateReeditProject(projectId, { settingContext });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders();
+
+      const sendEvent = (event: string, data: any) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      developmentalEditor.setProgressCallback((progress) => {
+        sendEvent("progress", progress);
+      });
+
+      sendEvent("started", { projectId });
+
+      await developmentalEditor.runFullPipeline(projectId);
+
+      const updatedProject = await storage.getReeditProject(projectId);
+      sendEvent("complete", {
+        projectId,
+        structuralReport: updatedProject?.structuralReport,
+        reconstructionPlan: updatedProject?.reconstructionPlan,
+      });
+
+      res.end();
+    } catch (error: any) {
+      console.error("Error analyzing structure:", error);
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+      res.end();
+    }
+  });
+
+  // LitEditors 3.0: Approve reconstruction plan
+  app.post("/api/reedit-projects/:id/approve-plan", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const { modifiedPlan } = req.body;
+
+      const project = await storage.getReeditProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.currentStage !== "plan_ready") {
+        return res.status(400).json({ error: "No plan ready for approval" });
+      }
+
+      // Allow user to modify the plan before approval
+      const updateData: any = { planApproved: true };
+      if (modifiedPlan) {
+        updateData.reconstructionPlan = modifiedPlan;
+      }
+
+      await storage.updateReeditProject(projectId, updateData);
+
+      res.json({
+        success: true,
+        message: "Plan approved. Ready to execute.",
+        projectId,
+      });
+    } catch (error: any) {
+      console.error("Error approving plan:", error);
+      res.status(500).json({ error: error.message || "Failed to approve plan" });
+    }
+  });
+
+  // LitEditors 3.0: Execute approved plan
+  app.post("/api/reedit-projects/:id/execute-plan", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+
+      const project = await storage.getReeditProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (!project.planApproved) {
+        return res.status(400).json({ error: "Plan must be approved before execution" });
+      }
+
+      if (project.status === "processing") {
+        return res.status(400).json({ error: "Project is already being processed" });
+      }
+
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.flushHeaders();
+
+      const sendEvent = (event: string, data: any) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      };
+
+      developmentalEditor.setProgressCallback((progress) => {
+        sendEvent("progress", progress);
+      });
+
+      sendEvent("started", { projectId });
+
+      await developmentalEditor.executeApprovedPlan(projectId);
+
+      // After plan execution, continue with the regular reedit pipeline
+      const orchestrator = new ReeditOrchestrator();
+      activeReeditOrchestrators.set(projectId, orchestrator);
+
+      sendEvent("status", { message: "Plan executed. Starting style editing..." });
+
+      orchestrator.processProject(projectId).finally(() => {
+        activeReeditOrchestrators.delete(projectId);
+        sendEvent("complete", { projectId });
+        res.end();
+      });
+
+    } catch (error: any) {
+      console.error("Error executing plan:", error);
+      res.write(`event: error\ndata: ${JSON.stringify({ error: error.message })}\n\n`);
+      res.end();
+    }
+  });
+
+  // LitEditors 3.0: Get structural report
+  app.get("/api/reedit-projects/:id/structural-report", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      res.json({
+        structuralReport: project.structuralReport,
+        reconstructionPlan: project.reconstructionPlan,
+        planApproved: project.planApproved,
+        settingContext: project.settingContext,
+        currentStage: project.currentStage,
+      });
+    } catch (error: any) {
+      console.error("Error getting structural report:", error);
+      res.status(500).json({ error: error.message || "Failed to get structural report" });
     }
   });
 
