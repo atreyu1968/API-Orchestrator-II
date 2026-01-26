@@ -1470,4 +1470,239 @@ export class OrchestratorV2 {
       await storage.updateProject(project.id, { status: "error" });
     }
   }
+
+  /**
+   * Generate missing chapters that weren't written during initial generation
+   * This handles cases where the pipeline jumped over chapters
+   */
+  async generateMissingChapters(project: Project): Promise<void> {
+    try {
+      await storage.updateProject(project.id, { status: "generating" });
+      this.callbacks.onAgentStatus("orchestrator-v2", "active", "Analizando capítulos faltantes...");
+
+      // Get World Bible and outline
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+      if (!worldBible || !worldBible.plotOutline) {
+        throw new Error("No se encontró el World Bible con el outline de capítulos");
+      }
+
+      const plotOutline = worldBible.plotOutline as any;
+      const rawOutline = (plotOutline.chapterOutlines || []).map((ch: any) => ({
+        chapter_num: ch.chapter_num ?? ch.number ?? 0,
+        title: ch.title || `Capítulo ${ch.chapter_num ?? ch.number ?? 0}`,
+        summary: ch.summary || ch.description || "",
+        key_event: ch.key_event || ch.keyEvent || "",
+        emotional_arc: ch.emotional_arc || ch.emotionalArc || "",
+      }));
+
+      // Remap chapter numbers for prologue/epilogue
+      const outline = rawOutline.map((ch: any, idx: number) => {
+        let actualNum = ch.chapter_num;
+        let actualTitle = ch.title;
+
+        if (project.hasPrologue && idx === 0) {
+          actualNum = 0;
+          actualTitle = "Prólogo";
+        } else if (project.hasEpilogue && idx === rawOutline.length - 1) {
+          actualNum = 998;
+          actualTitle = "Epílogo";
+        } else if (project.hasAuthorNote && idx === rawOutline.length - 1) {
+          actualNum = 999;
+          actualTitle = "Nota del Autor";
+        } else if (project.hasPrologue) {
+          actualNum = idx; // Adjust for prologue offset
+        }
+
+        return { ...ch, chapter_num: actualNum, title: actualTitle };
+      });
+
+      // Get existing chapters
+      const existingChapters = await storage.getChaptersByProject(project.id);
+      const existingNumbers = new Set(existingChapters.map(c => c.chapterNumber));
+
+      // Find missing chapters (excluding epilogue 998 and author note 999)
+      const missingChapters = outline.filter((ch: any) => 
+        !existingNumbers.has(ch.chapter_num) && ch.chapter_num < 998
+      );
+
+      if (missingChapters.length === 0) {
+        this.callbacks.onAgentStatus("orchestrator-v2", "completed", "No hay capítulos faltantes");
+        await storage.updateProject(project.id, { status: "completed" });
+        this.callbacks.onProjectComplete();
+        return;
+      }
+
+      console.log(`[OrchestratorV2] Found ${missingChapters.length} missing chapters: ${missingChapters.map((c: any) => c.chapter_num).join(', ')}`);
+      this.callbacks.onAgentStatus("orchestrator-v2", "active", 
+        `Generando ${missingChapters.length} capítulos faltantes: ${missingChapters.map((c: any) => c.chapter_num).join(', ')}`);
+
+      // Get style guide
+      let guiaEstilo = "";
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) guiaEstilo = styleGuide.content;
+      }
+
+      // Build context from existing chapters
+      const sortedExisting = existingChapters
+        .filter(c => c.chapterNumber < 998)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
+      
+      const chapterSummaries: string[] = sortedExisting.map(c => c.summary || "");
+      let rollingSummary = sortedExisting.length > 0 
+        ? (sortedExisting[sortedExisting.length - 1].summary || "")
+        : "Inicio de la novela.";
+
+      // Generate each missing chapter
+      for (const chapterOutline of missingChapters) {
+        if (await isProjectCancelledFromDb(project.id)) {
+          console.log(`[OrchestratorV2] Project ${project.id} was cancelled`);
+          return;
+        }
+
+        const chapterNumber = chapterOutline.chapter_num;
+        console.log(`[OrchestratorV2] Generating missing Chapter ${chapterNumber}: "${chapterOutline.title}"`);
+
+        // Get previous chapter summary for context
+        const prevChapter = sortedExisting.find(c => c.chapterNumber === chapterNumber - 1);
+        const previousSummary = prevChapter?.summary || rollingSummary;
+
+        // Chapter Architect
+        this.callbacks.onAgentStatus("chapter-architect", "active", `Planning scenes for Chapter ${chapterNumber}...`);
+        
+        const chapterPlan = await this.chapterArchitect.execute({
+          chapterOutline,
+          worldBible: worldBible as any,
+          previousChapterSummary: previousSummary,
+          storyState: rollingSummary,
+        });
+
+        if (chapterPlan.error || !chapterPlan.parsed) {
+          throw new Error(`Chapter Architect failed for Chapter ${chapterNumber}: ${chapterPlan.error || "No parsed output"}`);
+        }
+
+        this.addTokenUsage(chapterPlan.tokenUsage);
+        await this.logAiUsage(project.id, "chapter-architect", "deepseek-reasoner", chapterPlan.tokenUsage, chapterNumber);
+        this.callbacks.onAgentStatus("chapter-architect", "completed", `${chapterPlan.parsed.scenes.length} scenes planned`);
+
+        const sceneBreakdown = chapterPlan.parsed;
+
+        // Ghostwriter - Write scenes
+        let fullChapterText = "";
+        let lastContext = "";
+
+        for (const scene of sceneBreakdown.scenes) {
+          this.callbacks.onAgentStatus("ghostwriter-v2", "active", 
+            `Writing scene ${scene.scene_num}/${sceneBreakdown.scenes.length}...`);
+
+          const sceneResult = await this.ghostwriter.execute({
+            scenePlan: scene,
+            prevSceneContext: lastContext,
+            rollingSummary,
+            worldBible: worldBible as any,
+            guiaEstilo,
+          });
+
+          this.addTokenUsage(sceneResult.tokenUsage);
+          await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", sceneResult.tokenUsage, chapterNumber);
+
+          const sceneText = sceneResult.content || "";
+          fullChapterText += (fullChapterText ? "\n\n" : "") + sceneText;
+          lastContext = sceneText.slice(-1500);
+
+          this.callbacks.onSceneComplete(
+            chapterNumber, 
+            scene.scene_num, 
+            sceneBreakdown.scenes.length,
+            sceneText.split(/\s+/).length
+          );
+        }
+
+        this.callbacks.onAgentStatus("ghostwriter-v2", "completed", "All scenes written");
+
+        // Smart Editor
+        this.callbacks.onAgentStatus("smart-editor", "active", "Reviewing chapter...");
+        
+        const editResult = await this.smartEditor.execute({
+          chapterContent: fullChapterText,
+          sceneBreakdown,
+          worldBible: worldBible as any,
+        });
+
+        this.addTokenUsage(editResult.tokenUsage);
+        await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapterNumber);
+
+        let finalText = fullChapterText;
+        let editorFeedback = editResult.parsed;
+
+        if (editResult.parsed?.patches && editResult.parsed.patches.length > 0) {
+          const patchResult = applyPatches(fullChapterText, editResult.parsed.patches);
+          if (patchResult.appliedPatches > 0) {
+            finalText = patchResult.patchedText;
+            this.callbacks.onAgentStatus("smart-editor", "completed", `${patchResult.appliedPatches} patches applied`);
+          }
+        }
+
+        // Summarizer
+        this.callbacks.onAgentStatus("summarizer", "active", "Compressing for memory...");
+
+        const summaryResult = await this.summarizer.execute({
+          chapterContent: finalText,
+          chapterNumber,
+        });
+
+        this.addTokenUsage(summaryResult.tokenUsage);
+        await this.logAiUsage(project.id, "summarizer", "deepseek-chat", summaryResult.tokenUsage, chapterNumber);
+
+        const chapterSummary = summaryResult.content || `Chapter ${chapterNumber} completed.`;
+        chapterSummaries.push(chapterSummary);
+        rollingSummary = chapterSummary;
+
+        this.callbacks.onAgentStatus("summarizer", "completed", "Chapter compressed");
+
+        // Save chapter
+        const wordCount = finalText.split(/\s+/).length;
+        
+        await storage.createChapter({
+          projectId: project.id,
+          chapterNumber,
+          title: chapterOutline.title,
+          content: finalText,
+          wordCount,
+          status: "approved",
+          sceneBreakdown: sceneBreakdown as any,
+          summary: chapterSummary,
+          editorFeedback: editorFeedback as any,
+          qualityScore: editorFeedback ? Math.round((editorFeedback.logic_score + editorFeedback.style_score) / 2) : null,
+        });
+
+        console.log(`[OrchestratorV2] Created missing chapter ${chapterNumber}`);
+        this.callbacks.onChapterComplete(chapterNumber, wordCount, chapterOutline.title);
+
+        // Update token counts
+        await this.updateProjectTokens(project.id);
+      }
+
+      // Run final Narrative Director review
+      const allChapters = await storage.getChaptersByProject(project.id);
+      const allSummaries = allChapters
+        .filter(c => c.chapterNumber < 998)
+        .sort((a, b) => a.chapterNumber - b.chapterNumber)
+        .map(c => c.summary || "");
+
+      const lastRegularChapter = Math.max(...allChapters.filter(c => c.chapterNumber < 998).map(c => c.chapterNumber));
+      
+      console.log(`[OrchestratorV2] Running final Narrative Director review after missing chapters`);
+      await this.runNarrativeDirector(project.id, lastRegularChapter, project.chapterCount, allSummaries);
+
+      // Complete
+      await storage.updateProject(project.id, { status: "completed" });
+      this.callbacks.onProjectComplete();
+
+    } catch (error) {
+      console.error("[OrchestratorV2] Generate missing chapters error:", error);
+      this.callbacks.onError(error instanceof Error ? error.message : String(error));
+      await storage.updateProject(project.id, { status: "error" });
+    }
+  }
 }

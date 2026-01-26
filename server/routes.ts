@@ -769,6 +769,68 @@ export async function registerRoutes(
     }
   });
 
+  // LitAgents 2.0 - Generate Missing Chapters
+  app.post("/api/projects/:id/generate-missing", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      if (project.status === "generating") {
+        return res.status(400).json({ error: "Project is already generating" });
+      }
+
+      res.json({ message: "Generating missing chapters", projectId: id });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new OrchestratorV2({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+          if (message) await persistActivityLog(id, "info", message, role);
+        },
+        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
+          const label = getSectionLabel(chapterNumber, chapterTitle);
+          await persistActivityLog(id, "success", `${label} completado (${wordCount} palabras)`, "ghostwriter-v2");
+        },
+        onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, totalScenes, wordCount });
+        },
+        onProjectComplete: async () => {
+          sendToStreams({ type: "project_complete" });
+          await persistActivityLog(id, "success", "Capítulos faltantes generados exitosamente", "orchestrator-v2");
+        },
+        onError: async (error) => {
+          sendToStreams({ type: "error", message: error });
+          await persistActivityLog(id, "error", error, "orchestrator-v2");
+        },
+      });
+
+      orchestrator.generateMissingChapters(project).catch(console.error);
+
+    } catch (error) {
+      console.error("Error starting missing chapters generation:", error);
+      res.status(500).json({ error: "Failed to start missing chapters generation" });
+    }
+  });
+
   app.post("/api/projects/:id/resume", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
