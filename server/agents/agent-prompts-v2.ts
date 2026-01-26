@@ -28,6 +28,7 @@ export const PROMPTS_V2 = {
     maxWordsPerChapter?: number
   ) => `
     Eres un Arquitecto Narrativo de Best-Sellers con experiencia en ${genre}.
+    IDIOMA: Escribe TODO en ESPAÑOL. Títulos de capítulos, descripciones, nombres de personajes típicos del contexto, todo debe estar en español.
     OBJETIVO: Crear la estructura maestra para una novela de ${genre} de ${chapters} capítulos.
     PREMISA: "${premise}"
     TONO: ${tone}
