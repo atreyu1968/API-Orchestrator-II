@@ -683,21 +683,41 @@ export class OrchestratorV2 {
 
         this.callbacks.onAgentStatus("summarizer", "completed", "Chapter compressed");
 
-        // Save chapter to database
+        // Save chapter to database (update if exists, create if not)
         const wordCount = finalText.split(/\s+/).length;
         
-        await storage.createChapter({
-          projectId: project.id,
-          chapterNumber,
-          title: chapterOutline.title,
-          content: finalText,
-          wordCount,
-          status: "approved",
-          sceneBreakdown: sceneBreakdown as any,
-          summary: chapterSummary,
-          editorFeedback: editorFeedback as any,
-          qualityScore: editorFeedback ? Math.round((editorFeedback.logic_score + editorFeedback.style_score) / 2) : null,
-        });
+        // Check if chapter already exists (e.g., was reset to pending)
+        const existingChapter = existingChapters.find(c => c.chapterNumber === chapterNumber);
+        
+        if (existingChapter) {
+          // Update existing chapter instead of creating a duplicate
+          await storage.updateChapter(existingChapter.id, {
+            title: chapterOutline.title,
+            content: finalText,
+            wordCount,
+            status: "approved",
+            sceneBreakdown: sceneBreakdown as any,
+            summary: chapterSummary,
+            editorFeedback: editorFeedback as any,
+            qualityScore: editorFeedback ? Math.round((editorFeedback.logic_score + editorFeedback.style_score) / 2) : null,
+          });
+          console.log(`[OrchestratorV2] Updated existing chapter ${chapterNumber} (ID: ${existingChapter.id})`);
+        } else {
+          // Create new chapter
+          await storage.createChapter({
+            projectId: project.id,
+            chapterNumber,
+            title: chapterOutline.title,
+            content: finalText,
+            wordCount,
+            status: "approved",
+            sceneBreakdown: sceneBreakdown as any,
+            summary: chapterSummary,
+            editorFeedback: editorFeedback as any,
+            qualityScore: editorFeedback ? Math.round((editorFeedback.logic_score + editorFeedback.style_score) / 2) : null,
+          });
+          console.log(`[OrchestratorV2] Created new chapter ${chapterNumber}`);
+        }
 
         await storage.updateProject(project.id, { currentChapter: chapterNumber });
         this.callbacks.onChapterComplete(chapterNumber, wordCount, chapterOutline.title);
