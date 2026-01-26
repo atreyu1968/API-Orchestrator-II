@@ -1,0 +1,215 @@
+LitEditors 3.0 - Editor de Desarrollo y EstructuralEste módulo realiza una reingeniería completa de un manuscrito .docx. No solo corrige el estilo, sino que repara la trama, elimina redundancias, detecta anacronismos y puede escribir nuevos capítulos para llenar agujeros argumentales.1. Dependencias (Replit)Mantén mammoth y multer. Añade uuid para gestión interna de nuevos capítulos.npm install mammoth multer uuid
+2. Esquema de Base de Datos (SQL)El esquema cambia para soportar una estructura de capítulos flexible (Original vs Propuesta).-- Proyecto de Edición
+CREATE TABLE editing_projects (
+    id SERIAL PRIMARY KEY,
+    title TEXT NOT NULL,
+    setting_context TEXT,   -- Ej: "Paris, 1920" (Crucial para anacronismos)
+    original_filename TEXT,
+    
+    -- Análisis Estructural (El Diagnóstico Global)
+    structural_report JSONB, -- Detección de plot holes y anacronismos
+    reconstruction_plan JSONB, -- Lista de acciones: DELETE ch3, INSERT new_ch, MERGE ch1+ch2
+    
+    status TEXT DEFAULT 'analyzing_structure',
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Capítulos (Versión Dinámica)
+CREATE TABLE editing_chapters (
+    id SERIAL PRIMARY KEY,
+    project_id INTEGER REFERENCES editing_projects(id) ON DELETE CASCADE,
+    
+    -- Orden y Estructura
+    original_index INTEGER, -- Null si es un capítulo nuevo
+    final_index INTEGER,    -- El nuevo orden tras la reestructuración
+    
+    title TEXT,
+    raw_content TEXT,       -- Contenido original (si existe)
+    final_content TEXT,     -- Contenido reescrito o generado
+    summary TEXT,           -- Resumen para el análisis de R1
+    
+    action_type TEXT,       -- 'KEEP_AND_POLISH', 'DELETE', 'INSERT_NEW', 'MERGE'
+    anachronisms_found JSONB DEFAULT '[]',
+    
+    status TEXT DEFAULT 'pending' -- 'analyzing', 'processing', 'completed'
+);
+3. Configuración de Prompts (server/agents/editor_prompts.ts)Introducimos al "Story Mapper" (Cartógrafo de Historias), el agente más potente del sistema.export const EDITOR_MODELS = {
+  MAPPER: "deepseek-reasoner",    // R1: Analiza la estructura completa
+  HISTORIAN: "deepseek-chat",     // V3: Detecta anacronismos específicos
+  SURGEON: "deepseek-chat",       // V3: Pule texto existente
+  GHOSTWRITER: "deepseek-chat"    // V3: Escribe capítulos nuevos (fillers)
+};
+
+export const EDITOR_PROMPTS = {
+  
+  // 1. SUMMARIZER: Paso previo obligatorio (V3 Fast)
+  QUICK_SCAN: (text: string) => `
+    Resume este capítulo en 3 frases. Céntrate en:
+    1. Qué pasa (Eventos).
+    2. Qué información nueva se revela.
+    3. Objetos/Tecnología mencionada (para check de anacronismos).
+  `,
+
+  // 2. STORY MAPPER (R1): El cerebro estructural
+  STRUCTURAL_ANALYSIS: (chapterSummaries: string, context: string) => `
+    Actúa como Editor de Desarrollo. Analiza el esqueleto de esta novela.
+    CONTEXTO (Época/Lugar): "${context}"
+    
+    RESÚMENES POR CAPÍTULO ORIGINAL:
+    ${chapterSummaries}
+
+    BUSCA PROBLEMAS ESTRUCTURALES:
+    1. **Agujeros de Trama:** ¿Algo ocurre sin causa previa? ¿Se olvida una subtrama?
+    2. **Redundancia:** ¿Dos capítulos cuentan lo mismo?
+    3. **Ritmo:** ¿Hay valles aburridos?
+    4. **Coherencia:** ¿Un personaje muerto reaparece?
+
+    GENERA UN PLAN DE RECONSTRUCCIÓN (JSON):
+    Devuelve un array de acciones ordenadas para el NUEVO libro.
+    Acciones posibles: 
+    - "KEEP": Mantener y pulir.
+    - "DELETE": Eliminar capítulo redundante.
+    - "INSERT": Crear un capítulo NUEVO para arreglar un agujero de trama.
+    - "MERGE": Unir con el siguiente.
+
+    Output format:
+    {
+      "critique": "...",
+      "anachronisms_warning": ["Uso de 'internet' en 1980 en cap 3"],
+      "plan": [
+        { "new_order": 1, "action": "KEEP", "original_id": 1 },
+        { "new_order": 2, "action": "INSERT", "reason": "Falta explicar cómo llegaron a la isla", "prompt_for_writer": "Escribir escena de viaje en barco..." },
+        { "new_order": 3, "action": "KEEP", "original_id": 3 }
+      ]
+    }
+  `,
+
+  // 3. SURGEON (V3): Para capítulos existentes (KEEP)
+  // Nota: Ahora incluye chequeo de anacronismos in-situ
+  SURGEON_REWRITE: (text: string, setting: string, prevContext: string) => `
+    Reescribe este texto para calidad editorial.
+    CONTEXTO ÉPOCA: ${setting} (ALERTA MÁXIMA CON ANACRONISMOS).
+    
+    INSTRUCCIONES:
+    1. Si detectas un objeto/palabra fuera de época (ej: "Smartphone" en 1950), CORRÍGELO o sustitúyelo por equivalente histórico.
+    2. Mejora el estilo (Show don't tell).
+    3. Mantén la continuidad con: "...${prevContext}"
+    
+    TEXTO: "${text}"
+  `,
+
+  // 4. GHOSTWRITER (V3): Para capítulos nuevos (INSERT)
+  FILLER_GENERATOR: (instruction: string, prevContext: string, setting: string) => `
+    NECESITAMOS UN CAPÍTULO NUEVO para llenar un agujero de trama.
+    
+    INSTRUCCIÓN DEL EDITOR: "${instruction}"
+    CONTEXTO PREVIO: "...${prevContext}"
+    ÉPOCA: ${setting}
+
+    Escribe un capítulo puente de 1500 palabras que cumpla la instrucción y enlace coherentemente.
+  `
+};
+4. Orquestador de Desarrollo (server/core/dev_editor.ts)Este orquestador es más complejo: primero "desguaza" el DOCX, lo analiza y luego construye el nuevo libro.import mammoth from 'mammoth';
+import { EDITOR_PROMPTS, EDITOR_MODELS } from '../agents/editor_prompts';
+// Imports de OpenAI y DB simulados...
+
+export class DevelopmentalEditor {
+  
+  // FASE 1: Ingesta y Fragmentación
+  async ingestManuscript(buffer: Buffer, setting: string) {
+    const { value: fullText } = await mammoth.extractRawText({ buffer });
+    
+    // 1. Dividir por capítulos (Heurística: buscar "Capítulo" o saltos de página)
+    const rawChapters = fullText.split(/Capítulo \d+|Chapter \d+|Page Break/gi).filter(t => t.length > 100);
+    
+    // 2. Generar resúmenes rápidos (V3 Fast)
+    const summaries = [];
+    for (let i = 0; i < rawChapters.length; i++) {
+      const summary = await this.callAI(EDITOR_MODELS.GHOSTWRITER, EDITOR_PROMPTS.QUICK_SCAN(rawChapters[i]));
+      summaries.push({ id: i, text: summary });
+    }
+
+    return { rawChapters, summaries };
+  }
+
+  // FASE 2: Análisis Estructural (El Cerebro R1)
+  async analyzeStructure(summaries: any[], setting: string) {
+    const summaryBlock = summaries.map(s => `Cap ${s.id}: ${s.text}`).join('\n');
+    
+    console.log("Analizando estructura completa con R1...");
+    const analysisRaw = await this.callAI(
+      EDITOR_MODELS.MAPPER, 
+      EDITOR_PROMPTS.STRUCTURAL_ANALYSIS(summaryBlock, setting)
+    );
+    
+    // Retorna el Plan de Reconstrucción (JSON)
+    return JSON.parse(analysisRaw.replace(/```json|```/g, ''));
+  }
+
+  // FASE 3: Ejecución del Plan (Reconstrucción)
+  async executePlan(plan: any, rawChapters: string[], setting: string) {
+    let finalBook = "";
+    let context = ""; // Contexto deslizante para continuidad
+
+    console.log("Iniciando reconstrucción del manuscrito...");
+
+    for (const step of plan.plan) {
+      let content = "";
+
+      if (step.action === 'KEEP') {
+        console.log(`[Cap ${step.new_order}] Puliendo original...`);
+        content = await this.callAI(
+          EDITOR_MODELS.SURGEON,
+          EDITOR_PROMPTS.SURGEON_REWRITE(rawChapters[step.original_id], setting, context)
+        );
+      } 
+      else if (step.action === 'INSERT') {
+        console.log(`[Cap ${step.new_order}] GENERANDO NUEVO CONTENIDO (Plot Hole Fix)...`);
+        content = await this.callAI(
+          EDITOR_MODELS.GHOSTWRITER,
+          EDITOR_PROMPTS.FILLER_GENERATOR(step.prompt_for_writer, context, setting)
+        );
+      }
+      else if (step.action === 'DELETE') {
+        console.log(`[Cap Eliminado] Saltando contenido redundante (Original ID: ${step.original_id})`);
+        continue; 
+      }
+
+      // Guardar resultado
+      finalBook += `\n\n## Capítulo ${step.new_order}\n\n` + content;
+      context = content.slice(-500); // Actualizar contexto para el siguiente
+    }
+
+    return finalBook;
+  }
+  
+  // Helper AI Call
+  private async callAI(model: string, prompt: string) { /* ... implementación standard ... */ }
+}
+5. Endpoints API Actualizados// server/routes/editor.ts
+
+router.post('/analyze', upload.single('file'), async (req, res) => {
+  const { setting } = req.body; // Ej: "Madrid, 1890"
+  
+  // 1. Ingesta
+  const { rawChapters, summaries } = await editor.ingestManuscript(req.file.buffer, setting);
+  
+  // 2. Diagnóstico R1
+  const plan = await editor.analyzeStructure(summaries, setting);
+  
+  // Devolvemos el plan al usuario para que lo apruebe antes de reescribir
+  res.json({ 
+    status: 'plan_ready', 
+    critique: plan.critique,
+    detected_anachronisms: plan.anachronisms_warning,
+    proposed_structure: plan.plan // El usuario podría editar esto en el frontend
+  });
+});
+
+router.post('/execute', async (req, res) => {
+  const { approvedPlan, originalRawChapters, setting } = req.body;
+  
+  // 3. Ejecución
+  const finalBook = await editor.executePlan(approvedPlan, originalRawChapters, setting);
+  res.json({ status: 'completed', book: finalBook });
+});

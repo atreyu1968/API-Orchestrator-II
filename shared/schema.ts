@@ -579,21 +579,27 @@ export const insertAiUsageEventSchema = createInsertSchema(aiUsageEvents).omit({
 export type AiUsageEvent = typeof aiUsageEvents.$inferSelect;
 export type InsertAiUsageEvent = z.infer<typeof insertAiUsageEventSchema>;
 
-// Reedit Projects - Full agent pipeline for manuscript re-editing
+// Reedit Projects - Full agent pipeline for manuscript re-editing (LitEditors 3.0)
 export const reeditProjects = pgTable("reedit_projects", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
   originalFileName: text("original_file_name").notNull(),
   sourceProjectId: integer("source_project_id").references(() => projects.id, { onDelete: "set null" }), // Link to original created project if cloned
   detectedLanguage: text("detected_language"),
+  // LitEditors 3.0: Setting context for anachronism detection
+  settingContext: text("setting_context"), // e.g., "Paris, 1920" - crucial for anachronism detection
   totalChapters: integer("total_chapters").default(0),
   processedChapters: integer("processed_chapters").default(0),
-  currentStage: text("current_stage").notNull().default("uploaded"), // uploaded, analyzing, editing, auditing, reviewing, completed
+  currentStage: text("current_stage").notNull().default("uploaded"), // uploaded, analyzing_structure, plan_ready, executing, editing, auditing, reviewing, completed
   currentChapter: integer("current_chapter").default(0),
   currentActivity: text("current_activity"), // Real-time progress message shown in UI
   bestsellerScore: integer("bestseller_score"), // 1-10 final score
   finalReviewResult: jsonb("final_review_result"),
   structureAnalysis: jsonb("structure_analysis"), // Chapter order issues, duplicates detected
+  // LitEditors 3.0: Structural analysis from Story Mapper (R1)
+  structuralReport: jsonb("structural_report"), // { critique, anachronisms_warning, plot_holes, redundancies }
+  reconstructionPlan: jsonb("reconstruction_plan"), // Array of actions: KEEP, DELETE, INSERT, MERGE
+  planApproved: boolean("plan_approved").default(false), // User must approve before execution
   styleGuideId: integer("style_guide_id").references(() => styleGuides.id, { onDelete: "set null" }),
   pseudonymId: integer("pseudonym_id").references(() => pseudonyms.id, { onDelete: "set null" }),
   totalInputTokens: integer("total_input_tokens").default(0),
@@ -634,9 +640,20 @@ export const reeditChapters = pgTable("reedit_chapters", {
   projectId: integer("project_id").notNull().references(() => reeditProjects.id, { onDelete: "cascade" }),
   chapterNumber: integer("chapter_number").notNull(),
   originalChapterNumber: integer("original_chapter_number"), // For tracking reordering
+  // LitEditors 3.0: Flexible chapter structure
+  originalIndex: integer("original_index"), // Original position (null if new chapter)
+  finalIndex: integer("final_index"), // New order after restructuring
   title: text("title"),
   originalContent: text("original_content").notNull(),
   editedContent: text("edited_content"),
+  // LitEditors 3.0: Quick summary for R1 analysis
+  summary: text("summary"), // 3-sentence summary for structural analysis
+  // LitEditors 3.0: Action type from reconstruction plan
+  actionType: text("action_type").default("KEEP_AND_POLISH"), // KEEP_AND_POLISH, DELETE, INSERT_NEW, MERGE
+  insertPrompt: text("insert_prompt"), // Instruction for Ghostwriter if INSERT_NEW
+  mergeWithNext: boolean("merge_with_next").default(false), // If MERGE action
+  // LitEditors 3.0: Anachronism detection
+  anachronismsFound: jsonb("anachronisms_found").default([]), // Array of detected anachronisms
   // Editor agent feedback
   editorScore: integer("editor_score"), // 1-10
   editorFeedback: jsonb("editor_feedback"), // {issues: [], suggestions: [], strengths: []}
@@ -651,8 +668,8 @@ export const reeditChapters = pgTable("reedit_chapters", {
   suggestedOrder: integer("suggested_order"),
   // Status tracking
   wordCount: integer("word_count").default(0),
-  status: text("status").notNull().default("pending"), // pending, analyzing, editing, reviewed, completed, skipped
-  processingStage: text("processing_stage").default("none"), // none, editor, copyeditor, auditor, completed
+  status: text("status").notNull().default("pending"), // pending, summarizing, analyzing, editing, reviewed, completed, skipped, deleted
+  processingStage: text("processing_stage").default("none"), // none, summarizer, editor, copyeditor, auditor, completed
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
