@@ -88,6 +88,91 @@ export class OrchestratorV2 {
     return title || "Sin título";
   }
 
+  private async syncChapterHeaders(projectId: number, outline: Array<{ chapter_num: number; title: string }>): Promise<void> {
+    const existingChapters = await storage.getChaptersByProject(projectId);
+    if (existingChapters.length === 0) return;
+
+    console.log(`[OrchestratorV2] Syncing chapter headers for ${existingChapters.length} existing chapters...`);
+
+    const headerPatterns = [
+      /^#\s*(Capítulo|Capitulo|CAPÍTULO|CAPITULO)\s+(\d+)\s*[:|-]?\s*([^\n]*)/im,
+      /^(Capítulo|Capitulo|CAPÍTULO|CAPITULO)\s+(\d+)\s*[:|-]?\s*([^\n]*)/im,
+      /^#\s*(Prólogo|Prologo|PRÓLOGO|PROLOGO)\s*[:|-]?\s*([^\n]*)/im,
+      /^#\s*(Epílogo|Epilogo|EPÍLOGO|EPILOGO)\s*[:|-]?\s*([^\n]*)/im,
+    ];
+
+    for (const chapter of existingChapters) {
+      if (!chapter.content) continue;
+
+      // Find the corresponding outline entry for this chapter
+      const outlineEntry = outline.find(o => o.chapter_num === chapter.chapterNumber);
+      
+      // Extract any existing title from the content header
+      let existingTitleFromContent = "";
+      for (const pattern of headerPatterns) {
+        const match = chapter.content.match(pattern);
+        if (match) {
+          // Get the title part (after the colon/dash)
+          const titlePart = match[match.length - 1]?.trim() || "";
+          if (titlePart && !titlePart.match(/^(Prólogo|Epílogo|Capítulo \d+)$/i)) {
+            existingTitleFromContent = titlePart;
+          }
+          break;
+        }
+      }
+      
+      // Priority: chapter.title from DB > existingTitleFromContent > outlineEntry?.title
+      let titleToUse = (chapter.title && !chapter.title.match(/^Capítulo \d+$/i)) 
+        ? chapter.title 
+        : existingTitleFromContent || outlineEntry?.title || "";
+      
+      // Remove "Prólogo:", "Epílogo:", or "Capítulo X:" prefix from title if it exists
+      titleToUse = titleToUse.replace(/^(Prólogo|Prologo|Epílogo|Epilogo|Nota del Autor)\s*[:|-]?\s*/i, "").trim();
+      titleToUse = titleToUse.replace(/^Capítulo\s+\d+\s*[:|-]?\s*/i, "").trim();
+      
+      // Determine the correct header based on chapter number
+      let correctHeader = "";
+      if (chapter.chapterNumber === 0) {
+        correctHeader = "# Prólogo";
+        if (titleToUse && titleToUse.toLowerCase() !== "prólogo") {
+          correctHeader += `: ${titleToUse}`;
+        }
+      } else if (chapter.chapterNumber === 998) {
+        correctHeader = "# Epílogo";
+        if (titleToUse && titleToUse.toLowerCase() !== "epílogo") {
+          correctHeader += `: ${titleToUse}`;
+        }
+      } else if (chapter.chapterNumber === 999) {
+        correctHeader = "# Nota del Autor";
+      } else {
+        correctHeader = `# Capítulo ${chapter.chapterNumber}`;
+        if (titleToUse && !titleToUse.match(/^Capítulo \d+$/i)) {
+          correctHeader += `: ${titleToUse}`;
+        }
+      }
+
+      let updatedContent = chapter.content;
+      let wasUpdated = false;
+
+      for (const pattern of headerPatterns) {
+        const match = updatedContent.match(pattern);
+        if (match) {
+          const oldHeader = match[0];
+          if (oldHeader !== correctHeader) {
+            updatedContent = updatedContent.replace(pattern, correctHeader);
+            wasUpdated = true;
+            console.log(`[OrchestratorV2] Chapter ${chapter.chapterNumber}: "${oldHeader.substring(0, 40)}..." -> "${correctHeader}"`);
+          }
+          break;
+        }
+      }
+
+      if (wasUpdated) {
+        await storage.updateChapter(chapter.id, { content: updatedContent });
+      }
+    }
+  }
+
   async generateNovel(project: Project): Promise<void> {
     console.log(`[OrchestratorV2] Starting novel generation for "${project.title}" (ID: ${project.id})`);
     
@@ -341,6 +426,11 @@ export class OrchestratorV2 {
       
       if (completedChapterNumbers.size > 0) {
         console.log(`[OrchestratorV2] Found ${completedChapterNumbers.size} completed chapters. Resuming from where we left off.`);
+        
+        // Sync chapter headers in case they have incorrect numbers from before remapping
+        if (project.hasPrologue || project.hasEpilogue || project.hasAuthorNote) {
+          await this.syncChapterHeaders(project.id, outline);
+        }
         
         // Load existing summaries for context
         for (const chapter of existingChapters.sort((a, b) => a.chapterNumber - b.chapterNumber)) {
