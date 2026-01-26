@@ -205,6 +205,26 @@ export class OrchestratorV2 {
       let rollingSummary = "Inicio de la novela.";
       const chapterSummaries: string[] = [];
 
+      // Check for existing chapters to resume from
+      const existingChapters = await storage.getChaptersByProject(project.id);
+      const completedChapterNumbers = new Set(
+        existingChapters
+          .filter(c => c.status === "completed" || c.status === "approved")
+          .map(c => c.chapterNumber)
+      );
+      
+      if (completedChapterNumbers.size > 0) {
+        console.log(`[OrchestratorV2] Found ${completedChapterNumbers.size} completed chapters. Resuming from where we left off.`);
+        
+        // Load existing summaries for context
+        for (const chapter of existingChapters.sort((a, b) => a.chapterNumber - b.chapterNumber)) {
+          if (chapter.summary) {
+            chapterSummaries.push(chapter.summary);
+            rollingSummary = chapter.summary;
+          }
+        }
+      }
+
       for (let i = 0; i < outline.length; i++) {
         if (await isProjectCancelledFromDb(project.id)) {
           console.log(`[OrchestratorV2] Project ${project.id} was cancelled`);
@@ -213,6 +233,12 @@ export class OrchestratorV2 {
 
         const chapterOutline = outline[i];
         const chapterNumber = chapterOutline.chapter_num;
+
+        // Skip already completed chapters
+        if (completedChapterNumbers.has(chapterNumber)) {
+          console.log(`[OrchestratorV2] Skipping Chapter ${chapterNumber} (already completed)`);
+          continue;
+        }
 
         console.log(`[OrchestratorV2] Generating Chapter ${chapterNumber}: "${chapterOutline.title}"`);
 
