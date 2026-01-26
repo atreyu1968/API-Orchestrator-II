@@ -39,6 +39,38 @@ interface ModelStats {
   outputTokens: number;
   thinkingTokens: number;
   cost: number;
+  firstDate: Date | null;
+  lastDate: Date | null;
+}
+
+interface ProjectDates {
+  start: Date | null;
+  end: Date | null;
+}
+
+function getProjectDates(events: AiUsageEvent[]): ProjectDates {
+  if (events.length === 0) return { start: null, end: null };
+  
+  const dates = events
+    .map(e => new Date(e.createdAt))
+    .filter(d => !isNaN(d.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+  
+  return {
+    start: dates[0] || null,
+    end: dates[dates.length - 1] || null,
+  };
+}
+
+function formatDate(date: Date | null): string {
+  if (!date) return "-";
+  return date.toLocaleDateString("es-ES", { 
+    day: "2-digit", 
+    month: "short", 
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 }
 
 function groupByModel(events: AiUsageEvent[]): ModelStats[] {
@@ -46,6 +78,7 @@ function groupByModel(events: AiUsageEvent[]): ModelStats[] {
   
   for (const event of events) {
     const model = event.model || "unknown";
+    const eventDate = new Date(event.createdAt);
     const existing = grouped.get(model);
     
     if (existing) {
@@ -53,6 +86,8 @@ function groupByModel(events: AiUsageEvent[]): ModelStats[] {
       existing.outputTokens += event.outputTokens || 0;
       existing.thinkingTokens += event.thinkingTokens || 0;
       existing.cost += parseFloat(event.totalCostUsd || "0");
+      if (!existing.firstDate || eventDate < existing.firstDate) existing.firstDate = eventDate;
+      if (!existing.lastDate || eventDate > existing.lastDate) existing.lastDate = eventDate;
     } else {
       grouped.set(model, {
         model,
@@ -60,6 +95,8 @@ function groupByModel(events: AiUsageEvent[]): ModelStats[] {
         outputTokens: event.outputTokens || 0,
         thinkingTokens: event.thinkingTokens || 0,
         cost: parseFloat(event.totalCostUsd || "0"),
+        firstDate: eventDate,
+        lastDate: eventDate,
       });
     }
   }
@@ -77,6 +114,7 @@ export default function CostsHistoryPage() {
   });
 
   const modelStats = groupByModel(aiUsageEvents || []);
+  const projectDates = getProjectDates(aiUsageEvents || []);
   const totalCost = modelStats.reduce((sum, m) => sum + m.cost, 0);
   const totalInput = modelStats.reduce((sum, m) => sum + m.inputTokens, 0);
   const totalOutput = modelStats.reduce((sum, m) => sum + m.outputTokens, 0);
@@ -118,14 +156,20 @@ export default function CostsHistoryPage() {
 
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
-          <CardTitle className="text-sm font-medium">Costo Total del Proyecto</CardTitle>
+          <CardTitle className="text-sm font-medium">Resumen del Proyecto</CardTitle>
           <DollarSign className="h-4 w-4 text-muted-foreground" />
         </CardHeader>
         <CardContent>
           {loadingProject || loadingUsage ? (
-            <Skeleton className="h-8 w-24" />
+            <Skeleton className="h-8 w-full" />
           ) : (
-            <div className="text-3xl font-bold text-primary">{formatCurrency(totalCost)}</div>
+            <div className="space-y-2">
+              <div className="text-3xl font-bold text-primary">{formatCurrency(totalCost)}</div>
+              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+                <span>Inicio: <span className="text-foreground">{formatDate(projectDates.start)}</span></span>
+                <span>Fin: <span className="text-foreground">{formatDate(projectDates.end)}</span></span>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>
