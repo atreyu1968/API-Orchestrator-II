@@ -41,10 +41,62 @@ const agentNames: Record<string, string> = {
 
 function sortChaptersForDisplay(chapters: Chapter[]): Chapter[] {
   return [...chapters].sort((a, b) => {
-    const orderA = a.chapterNumber === 0 ? -1000 : a.chapterNumber === -1 ? 1000 : a.chapterNumber === -2 ? 1001 : a.chapterNumber;
-    const orderB = b.chapterNumber === 0 ? -1000 : b.chapterNumber === -1 ? 1000 : b.chapterNumber === -2 ? 1001 : b.chapterNumber;
-    return orderA - orderB;
+    const getOrder = (num: number) => {
+      if (num === 0) return -1000; // Prologue first
+      if (num === 998) return 9998; // Epilogue near end
+      if (num === 999) return 9999; // Author note last
+      return num;
+    };
+    return getOrder(a.chapterNumber) - getOrder(b.chapterNumber);
   });
+}
+
+function generateExpectedChapters(project: Project, existingChapters: Chapter[]): Chapter[] {
+  const existingNumbers = new Set(existingChapters.map(c => c.chapterNumber));
+  const expectedChapters: Chapter[] = [...existingChapters];
+  
+  const createPlaceholder = (id: number, chapterNumber: number, title: string): Chapter => ({
+    id,
+    projectId: project.id,
+    chapterNumber,
+    title,
+    content: null,
+    originalContent: null,
+    summary: null,
+    wordCount: 0,
+    status: "pending",
+    editorFeedback: null,
+    needsRevision: false,
+    revisionReason: null,
+    continuityState: null,
+    sceneBreakdown: null,
+    qualityScore: null,
+    createdAt: new Date(),
+  });
+  
+  // Generate prologue placeholder if needed
+  if (project.hasPrologue && !existingNumbers.has(0)) {
+    expectedChapters.push(createPlaceholder(-1, 0, "Prólogo"));
+  }
+  
+  // Generate normal chapter placeholders
+  for (let i = 1; i <= project.chapterCount; i++) {
+    if (!existingNumbers.has(i)) {
+      expectedChapters.push(createPlaceholder(-i - 1, i, `Capítulo ${i}`));
+    }
+  }
+  
+  // Generate epilogue placeholder if needed
+  if (project.hasEpilogue && !existingNumbers.has(998)) {
+    expectedChapters.push(createPlaceholder(-998, 998, "Epílogo"));
+  }
+  
+  // Generate author note placeholder if needed
+  if (project.hasAuthorNote && !existingNumbers.has(999)) {
+    expectedChapters.push(createPlaceholder(-999, 999, "Nota del Autor"));
+  }
+  
+  return sortChaptersForDisplay(expectedChapters);
 }
 
 function calculateCost(inputTokens: number, outputTokens: number, thinkingTokens: number): number {
@@ -678,7 +730,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-2">
-                  {sortChaptersForDisplay(chapters).map((chapter) => (
+                  {generateExpectedChapters(currentProject, chapters).map((chapter) => (
                     <div 
                       key={chapter.id}
                       className="flex items-center justify-between gap-4 p-2 rounded-md bg-muted/50"
@@ -693,13 +745,13 @@ export default function Dashboard() {
                           <Clock className="h-4 w-4 text-muted-foreground" />
                         )}
                         <span className="text-sm font-medium">
-                          {chapter.title === "Prólogo" ? "Prólogo" :
-                           chapter.title === "Epílogo" ? "Epílogo" :
-                           chapter.title === "Nota del Autor" ? "Nota del Autor" :
+                          {chapter.chapterNumber === 0 ? "Prólogo" :
+                           chapter.chapterNumber === 998 ? "Epílogo" :
+                           chapter.chapterNumber === 999 ? "Nota del Autor" :
                            `Capítulo ${chapter.chapterNumber}`}
                         </span>
-                        {chapter.title && chapter.title !== "Prólogo" && chapter.title !== "Epílogo" && chapter.title !== "Nota del Autor" && (
-                          <span className="text-sm text-muted-foreground">
+                        {chapter.title && chapter.chapterNumber !== 0 && chapter.chapterNumber !== 998 && chapter.chapterNumber !== 999 && (
+                          <span className="text-sm text-muted-foreground truncate max-w-[200px]">
                             - {chapter.title}
                           </span>
                         )}
