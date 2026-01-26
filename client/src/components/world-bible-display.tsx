@@ -376,7 +376,14 @@ function PersistentInjuriesTab({ injuries }: { injuries: PersistentInjury[] }) {
 }
 
 function PlotTab({ plotOutline }: { plotOutline: PlotOutline | null }) {
-  if (!plotOutline || !plotOutline.premise) {
+  const plotAny = plotOutline as any;
+  const hasContent = plotOutline && (
+    plotOutline.premise || 
+    plotOutline.chapterOutlines?.length > 0 || 
+    plotAny?.plotThreads?.length > 0
+  );
+
+  if (!hasContent) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <BookOpen className="h-12 w-12 text-muted-foreground/30 mb-4" />
@@ -385,7 +392,8 @@ function PlotTab({ plotOutline }: { plotOutline: PlotOutline | null }) {
     );
   }
 
-  const { threeActStructure, chapterOutlines } = plotOutline;
+  const { threeActStructure, chapterOutlines } = plotOutline!;
+  const plotThreads = plotAny?.plotThreads as Array<{ name: string; description: string; goal?: string }> || [];
 
   return (
     <ScrollArea className="h-[400px]">
@@ -500,6 +508,31 @@ function PlotTab({ plotOutline }: { plotOutline: PlotOutline | null }) {
                       <Badge key={i} variant="outline" className="text-xs">{safeStringify(event)}</Badge>
                     ))}
                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {plotThreads && plotThreads.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Hilos Narrativos
+            </h3>
+            <div className="space-y-2">
+              {plotThreads.map((thread, index) => (
+                <div 
+                  key={index} 
+                  className="bg-card border border-card-border rounded-md p-3"
+                  data-testid={`plot-thread-${index}`}
+                >
+                  <div className="font-medium text-sm mb-1">{thread.name}</div>
+                  <p className="text-sm text-muted-foreground mb-1">{thread.description}</p>
+                  {thread.goal && (
+                    <div className="text-xs text-muted-foreground/80">
+                      <span className="font-medium">Objetivo: </span>{thread.goal}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
