@@ -67,16 +67,15 @@ interface UsageByModel {
   eventCount: number;
 }
 
-const PRICING_INFO = `Precios reales por modelo (por millón de tokens):
+const PRICING_INFO = `Precios por modelo (por millón de tokens):
 
-gemini-3-pro-preview:
-  Input: $1.25/M, Output: $10.00/M, Thinking: $3.00/M
+DeepSeek R1 (deepseek-reasoner):
+  Input: $0.55/M, Output: $2.19/M
+  Usado por: Arquitecto Global, Arquitecto de Capítulos, Director Narrativo
 
-gemini-3-flash:
-  Input: $0.50/M, Output: $3.00/M, Thinking: $1.50/M
-
-gemini-2.5-flash:
-  Input: $0.30/M, Output: $2.50/M, Thinking: $1.00/M
+DeepSeek V3 (deepseek-chat):
+  Input: $0.28/M, Output: $0.42/M
+  Usado por: Escritor, Editor Inteligente, Compresor
 
 Los costos se calculan según el modelo usado por cada agente.`;
 
@@ -92,16 +91,16 @@ function formatCurrency(amount: number): string {
 
 function getModelBadge(model: string) {
   const colors: Record<string, "default" | "secondary" | "outline"> = {
-    "gemini-3-pro-preview": "default",
-    "gemini-3-flash": "secondary",
+    "deepseek-reasoner": "default",
+    "deepseek-chat": "secondary",
+    "gemini-3-pro-preview": "outline",
     "gemini-2.5-flash": "outline",
-    "gemini-2.0-flash": "outline",
   };
   const shortNames: Record<string, string> = {
-    "gemini-3-pro-preview": "3 Pro",
-    "gemini-3-flash": "3 Flash",
-    "gemini-2.5-flash": "2.5 Flash",
-    "gemini-2.0-flash": "2.0 Flash",
+    "deepseek-reasoner": "R1",
+    "deepseek-chat": "V3",
+    "gemini-3-pro-preview": "Gemini Pro",
+    "gemini-2.5-flash": "Gemini Flash",
   };
   return (
     <Badge variant={colors[model] || "outline"} className="text-xs font-mono">
@@ -495,8 +494,8 @@ export default function CostsPage() {
             <Info className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
             <div className="text-sm text-muted-foreground space-y-2">
               <p>
-                <strong>Costos reales:</strong> Los costos se calculan usando los precios oficiales de cada modelo 
-                de Gemini y el conteo real de tokens de cada llamada a la API.
+                <strong>Costos reales:</strong> Los costos se calculan usando los precios oficiales de DeepSeek
+                (R1 y V3) y el conteo real de tokens de cada llamada a la API.
               </p>
               <p>
                 El tracking de costos se activa automáticamente para nuevas generaciones. 

@@ -1,42 +1,42 @@
 // Real pricing per model (per 1M tokens)
-// Source: Google AI pricing as of Jan 2025
+// Source: DeepSeek API pricing as of Jan 2025
 
 export interface ModelPricing {
   inputPerMillion: number;
   outputPerMillion: number;
-  thinkingPerMillion: number; // Some models have separate thinking costs
+  thinkingPerMillion: number; // For reasoning models like R1
 }
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
-  // Gemini 3 Pro Preview - Most expensive, best quality
+  // DeepSeek R1 (deepseek-reasoner) - Slow reasoning model for planning
+  "deepseek-reasoner": {
+    inputPerMillion: 0.55,
+    outputPerMillion: 2.19,
+    thinkingPerMillion: 0.55, // Thinking tokens at input rate
+  },
+  // DeepSeek V3/Chat - Fast model for writing and editing
+  "deepseek-chat": {
+    inputPerMillion: 0.28,
+    outputPerMillion: 0.42,
+    thinkingPerMillion: 0.28,
+  },
+  // Gemini 3 Pro Preview - Optional high-speed alternative
   "gemini-3-pro-preview": {
     inputPerMillion: 1.25,
     outputPerMillion: 10.0,
-    thinkingPerMillion: 3.0, // Thinking tokens billed separately at lower rate
+    thinkingPerMillion: 3.0,
   },
-  // Gemini 3 Flash - Fast, medium cost
-  "gemini-3-flash": {
-    inputPerMillion: 0.50,
-    outputPerMillion: 3.0,
-    thinkingPerMillion: 1.5,
-  },
-  // Gemini 2.5 Flash - Cheapest option
+  // Gemini 2.5 Flash - Cheap Gemini option
   "gemini-2.5-flash": {
     inputPerMillion: 0.30,
     outputPerMillion: 2.5,
     thinkingPerMillion: 1.0,
   },
-  // Gemini 2.0 Flash - Legacy
-  "gemini-2.0-flash": {
-    inputPerMillion: 0.30,
-    outputPerMillion: 2.5,
-    thinkingPerMillion: 1.0,
-  },
-  // Default fallback
+  // Default fallback (uses DeepSeek V3 rates)
   "default": {
-    inputPerMillion: 1.0,
-    outputPerMillion: 5.0,
-    thinkingPerMillion: 2.0,
+    inputPerMillion: 0.28,
+    outputPerMillion: 0.42,
+    thinkingPerMillion: 0.28,
   },
 };
 
@@ -67,15 +67,23 @@ export function formatCostForStorage(cost: number): string {
 
 // Agent to model mapping for reference
 export const AGENT_MODEL_MAPPING: Record<string, string> = {
+  // V2 Agents (DeepSeek)
+  "global-architect": "deepseek-reasoner",
+  "chapter-architect": "deepseek-reasoner",
+  "narrative-director": "deepseek-reasoner",
+  "ghostwriter-v2": "deepseek-chat",
+  "smart-editor": "deepseek-chat",
+  "summarizer": "deepseek-chat",
+  // Legacy V1 Agents (Gemini) - kept for compatibility
   "architect": "gemini-3-pro-preview",
   "ghostwriter": "gemini-3-pro-preview",
-  "editor": "gemini-3-flash",
+  "editor": "gemini-2.5-flash",
   "copyeditor": "gemini-2.5-flash",
-  "final-reviewer": "gemini-3-pro-preview",
+  "final-reviewer": "deepseek-reasoner",
   "continuity-sentinel": "gemini-2.5-flash",
   "voice-auditor": "gemini-2.5-flash",
   "semantic-detector": "gemini-2.5-flash",
-  "translator": "gemini-2.5-flash",
+  "translator": "deepseek-chat",
   "arc-validator": "gemini-2.5-flash",
   "series-thread-fixer": "gemini-2.5-flash",
 };
