@@ -1423,8 +1423,13 @@ export class OrchestratorV2 {
           }
         }
 
-        // If approved or no chapters to rewrite, we're done
-        if (veredicto === "APROBADO" || (capitulos_para_reescribir?.length || 0) === 0) {
+        // If score >= 9 and approved, we're done. Otherwise continue correcting if possible.
+        const meetsQualityThreshold = puntuacion_global >= 9 && (veredicto === "APROBADO" || veredicto === "APROBADO_CON_RESERVAS");
+        
+        if (meetsQualityThreshold || (capitulos_para_reescribir?.length || 0) === 0) {
+          if (!meetsQualityThreshold && puntuacion_global < 9) {
+            console.log(`[OrchestratorV2] Score ${puntuacion_global} < 9 but no chapters to rewrite. Manual intervention needed.`);
+          }
           break;
         }
 
@@ -1587,7 +1592,8 @@ export class OrchestratorV2 {
       }
 
       const { veredicto, puntuacion_global, resumen_general, justificacion_puntuacion, analisis_bestseller, issues, capitulos_para_reescribir } = finalResult;
-      const approved = veredicto === "APROBADO" || veredicto === "APROBADO_CON_RESERVAS";
+      // Only consider approved if score >= 9 AND veredicto is positive
+      const approved = puntuacion_global >= 9 && (veredicto === "APROBADO" || veredicto === "APROBADO_CON_RESERVAS");
 
       await storage.updateProject(project.id, { 
         status: approved ? "completed" : "failed_final_review",
