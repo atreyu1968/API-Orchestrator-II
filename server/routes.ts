@@ -1155,8 +1155,8 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      // Allow re-running final review on completed, failed, or 8-score projects
-      const allowedStatuses = ["completed", "failed_final_review"];
+      // Allow re-running final review on completed, awaiting, or failed projects
+      const allowedStatuses = ["completed", "awaiting_final_review", "failed_final_review"];
       if (!allowedStatuses.includes(project.status)) {
         return res.status(400).json({ error: "Solo se puede ejecutar la revisión final en proyectos completados o con revisión fallida" });
       }
