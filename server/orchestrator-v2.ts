@@ -638,6 +638,11 @@ export class OrchestratorV2 {
         });
         
         console.log(`[OrchestratorV2] Loaded ${outline.length} chapter outlines. Numbers: ${outline.map(c => c.chapter_num).join(', ')}`);
+        
+        // LitAgents 2.1: Ensure consistency database is initialized even when resuming
+        // (in case project was reset but World Bible preserved)
+        this.callbacks.onAgentStatus("consistency", "active", "Checking consistency database...");
+        await this.initializeConsistencyDatabase(project.id, worldBible, project.genre);
       } else {
         // Phase 1: Global Architecture - create new World Bible
         this.callbacks.onAgentStatus("global-architect", "active", "Designing master structure...");

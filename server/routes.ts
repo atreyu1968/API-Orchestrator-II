@@ -1641,6 +1641,37 @@ export async function registerRoutes(
     }
   });
 
+  // LitAgents 2.1: Get consistency database (entities + rules)
+  app.get("/api/projects/:id/consistency-database", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const entities = await db.select().from(worldEntities)
+        .where(eq(worldEntities.projectId, id));
+      const rules = await db.select().from(worldRulesTable)
+        .where(eq(worldRulesTable.projectId, id));
+      res.json({ 
+        entities: entities.map(e => ({
+          id: e.id,
+          name: e.name,
+          type: e.type,
+          status: e.status,
+          attributes: e.attributes,
+          lastSeenChapter: e.lastSeenChapter,
+        })),
+        rules: rules.map(r => ({
+          id: r.id,
+          description: r.ruleDescription,
+          category: r.category,
+          isActive: r.isActive,
+          sourceChapter: r.sourceChapter,
+        })),
+      });
+    } catch (error) {
+      console.error("Error fetching consistency database:", error);
+      res.status(500).json({ error: "Failed to fetch consistency database" });
+    }
+  });
+
   app.get("/api/projects/:id/thought-logs", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
