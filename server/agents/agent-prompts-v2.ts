@@ -224,18 +224,44 @@ export const PROMPTS_V2 = {
     ║    - ¿Las heridas/consecuencias anteriores se respetan?         ║
     ╚══════════════════════════════════════════════════════════════════╝
 
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║ COHERENCIA TEMPORAL, GEOGRÁFICA Y FÍSICA (OBLIGATORIA)          ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║                                                                  ║
+    ║ 🕐 TIEMPO - En cada escena especifica:                          ║
+    ║    - Cuánto tiempo ha pasado desde la escena anterior           ║
+    ║    - Hora aproximada del día (amanecer, mediodía, noche)        ║
+    ║    - Viajes: tiempo REALISTA (Madrid-Barcelona: 6h coche)       ║
+    ║    - Recuperación: heridas graves → días/semanas, NO horas      ║
+    ║                                                                  ║
+    ║ 📍 GEOGRAFÍA - Ubicación coherente:                             ║
+    ║    - Ubicación específica de cada escena                        ║
+    ║    - Transiciones lógicas entre lugares                         ║
+    ║    - Si cambia de ciudad/país: indicar medio de transporte      ║
+    ║    - PROHIBIDO: personaje en sótano mirando por ventana         ║
+    ║                                                                  ║
+    ║ 🏥 ESTADO FÍSICO - Rastrear lesiones activas:                   ║
+    ║    - Si hay heridas previas, listarlas en el plan de escena     ║
+    ║    - Pierna rota → no correr, necesita apoyo                    ║
+    ║    - Brazo herido → no cargar peso con ese brazo                ║
+    ║    - Costillas rotas → dolor al respirar, no puede pelear       ║
+    ║    - Pérdida de sangre → debilidad, palidez, fatiga             ║
+    ║    - En emotional_beat: incluir mención al dolor/limitación     ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
     SALIDA REQUERIDA (JSON):
     {
       "scenes": [
         {
           "scene_num": 1,
           "characters": ["Personaje1", "Personaje2"],
-          "setting": "Descripción del lugar y momento",
+          "setting": "Lugar + hora del día + tiempo desde escena anterior",
           "plot_beat": "Acción específica que ocurre (qué pasa)",
-          "emotional_beat": "Cambio interno del personaje (qué siente/descubre)",
+          "emotional_beat": "Cambio interno + limitaciones físicas si aplica",
           "sensory_details": ["Vista", "Sonido", "Olor relevante"],
           "dialogue_focus": "Tema principal de los diálogos si los hay",
           "ending_hook": "Cómo termina la escena para impulsar la siguiente",
+          "physical_constraints": "Lesiones activas de personajes presentes (opcional)",
           "word_target": 350
         }
       ],
@@ -352,6 +378,35 @@ export const PROMPTS_V2 = {
     ║    → PREGÚNTATE: ¿Un lector atento lo creería?                  ║
     ╚══════════════════════════════════════════════════════════════════╝
     
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║ 🕐📍🏥 COHERENCIA TEMPORAL, GEOGRÁFICA Y FÍSICA                  ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║                                                                  ║
+    ║ TIEMPO - Verifica ANTES de escribir:                            ║
+    ║    - ¿Cuánto tiempo real pasó desde la escena anterior?         ║
+    ║    - Si el personaje viaja: tiempo REALISTA                     ║
+    ║      (Madrid-Barcelona: 6h coche, 2.5h tren alta velocidad)     ║
+    ║    - Si hubo herida grave: recuperación = días/semanas          ║
+    ║    - Mantén coherencia día/noche                                ║
+    ║                                                                  ║
+    ║ GEOGRAFÍA - No "teletransportes":                               ║
+    ║    - Si cambia de ubicación: mencionar el traslado              ║
+    ║    - Coherencia espacial: no subir escaleras si está en ático   ║
+    ║    - No mirar por ventana si está en sótano o habitación interior║
+    ║    - Direcciones consistentes (izquierda/derecha)               ║
+    ║                                                                  ║
+    ║ ESTADO FÍSICO - Lesiones activas LIMITAN acciones:              ║
+    ║    - Pierna rota/herida: cojea, no corre, necesita apoyo        ║
+    ║    - Brazo herido: dolor al moverlo, no carga peso              ║
+    ║    - Costillas rotas: respira con dificultad, muecas de dolor   ║
+    ║    - Conmoción: mareos, visión borrosa, confusión               ║
+    ║    - Pérdida de sangre: debilidad, palidez, fatiga              ║
+    ║    - Quemaduras: piel tirante, dolor al moverse                 ║
+    ║    → Al describir acciones, INCLUIR limitaciones si hay lesión  ║
+    ║    → Ejemplo: "Se apoyó en la pared para avanzar, la pierna     ║
+    ║      herida palpitando con cada paso."                          ║
+    ╚══════════════════════════════════════════════════════════════════╝
+    
     SALIDA: Solo el texto de la narrativa. Sin comentarios, sin marcadores.
   `,
 
@@ -403,6 +458,19 @@ export const PROMPTS_V2 = {
     ║    - Conocimiento imposible (sabe sin haber investigado)        ║
     ║      → LÓGICA = 4 máximo.                                       ║
     ║    - Herida/consecuencia ignorada → LÓGICA = 5 máximo.          ║
+    ║                                                                  ║
+    ║ ❌ INCOHERENCIA TEMPORAL/GEOGRÁFICA/FÍSICA:                     ║
+    ║    - Viaje imposible (distancia vs tiempo)                      ║
+    ║      → LÓGICA = 4 máximo.                                       ║
+    ║    - "Teletransportación" sin explicación                       ║
+    ║      → LÓGICA = 5 máximo.                                       ║
+    ║    - Personaje en sótano mirando por ventana                    ║
+    ║      → LÓGICA = 5 máximo.                                       ║
+    ║    - Acción imposible con lesión activa (correr con pierna      ║
+    ║      rota, pelear con costillas rotas sin mención de dolor)     ║
+    ║      → LÓGICA = 4 máximo.                                       ║
+    ║    - Recuperación milagrosa (herida grave → activo en horas)    ║
+    ║      → LÓGICA = 5 máximo.                                       ║
     ╚══════════════════════════════════════════════════════════════════╝
 
     REGLAS DE APROBACIÓN:
