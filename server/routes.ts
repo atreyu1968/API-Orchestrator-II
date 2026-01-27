@@ -17,6 +17,8 @@ import { developmentalEditor } from "./orchestrators/developmental-editor";
 import { chatService } from "./services/chatService";
 import { TranslationOrchestrator } from "./translation-orchestrator";
 import { betaReaderAgent } from "./agents/beta-reader";
+import cookieParser from "cookie-parser";
+import { authMiddleware, setupAuthRoutes, isAuthEnabled } from "./middleware/auth";
 
 const workTypeEnum = z.enum(["standalone", "series", "trilogy"]);
 
@@ -90,6 +92,11 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+
+  // Setup cookie parser and authentication
+  app.use(cookieParser());
+  setupAuthRoutes(app);
+  app.use(authMiddleware);
 
   app.get("/api/projects", async (req: Request, res: Response) => {
     try {

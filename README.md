@@ -6,16 +6,40 @@ Sistema autónomo de orquestación de agentes de IA para la escritura, edición 
 
 - **Generador de Novelas (LitAgents 2.0)**: Pipeline basado en escenas con 6 agentes especializados
 - **Re-editor de Manuscritos (LitEditors)**: Editor de desarrollo con auditoría forense de consistencia
-- **Traductor de Novelas**: Sistema de traducción literaria preservando estilo y contexto
+- **Traductor de Novelas (LitTranslators 2.0)**: Sistema de traducción literaria con revisión nativa
 - **World Bible**: Base de datos de consistencia para personajes, ubicaciones y reglas del mundo
 - **Seguimiento de Costos**: Tracking granular de uso de tokens por proyecto
+- **Autenticación**: Protección con contraseña para instalaciones en servidor propio
+
+## Novedades v2.1
+
+### Native Beta Reader (Revisor Nativo)
+- **Revisión como hablante nativo**: Analiza traducciones desde la perspectiva de un lector nativo del idioma destino
+- **Soporte multi-idioma**: Español, Inglés, Francés, Alemán, Italiano, Portugués, Catalán
+- **Feedback por género literario**: Expectativas específicas para Romance, Fantasía, Misterio, Thriller, Ciencia Ficción, Horror, Literaria, Histórica
+- **Correcciones automáticas**: Aplica correcciones directamente al texto traducido
+- **Panel de resumen**: Muestra puntuaciones de calidad, fluidez, género y adaptación cultural en la interfaz
+
+### Sistema de Autenticación
+- **Protección con contraseña**: Configurable durante la instalación
+- **Sesiones seguras**: Cookies HTTPOnly con expiración de 24 horas
+- **Desactivable en Replit**: Se desactiva automáticamente cuando se ejecuta en Replit
+
+### Mejoras en el Generador (LitAgents 2.1)
+- **Módulo de Consistencia Universal**: Inyección de restricciones antes de la planificación Y escritura
+- **Guardian de Consistencia**: Validación después de cada capítulo con reescritura forzada si hay violaciones
+- **Zero-tolerance rewrites**: El sistema garantiza que no se produzcan errores de continuidad
+
+### Mejoras en el Re-editor (LitEditors)
+- **Forensic Consistency Auditor**: Detecta errores de consistencia existentes en manuscritos
+- **Beta Reader comercial**: Análisis de viabilidad comercial con comparaciones de mercado
 
 ### Agentes del Sistema
 
 **Generador (LitAgents 2.0)**:
 - Global Architect - Planificación de estructura narrativa
-- Chapter Architect - Diseño de escenas por capítulo
-- Ghostwriter V2 - Escritura creativa de escenas
+- Chapter Architect - Diseño de escenas por capítulo (recibe restricciones de consistencia)
+- Ghostwriter V2 - Escritura creativa de escenas (recibe restricciones de consistencia)
 - Smart Editor - Edición y refinamiento
 - Summarizer - Generación de resúmenes
 - Narrative Director - Control de coherencia narrativa
@@ -25,6 +49,12 @@ Sistema autónomo de orquestación de agentes de IA para la escritura, edición 
 - Beta Reader - Análisis de viabilidad comercial
 - Copyeditor - Corrección de estilo
 - Final Reviewer - Evaluación final
+
+**Traductor (LitTranslators 2.0)**:
+- Strategist - Análisis de estilo y tipografía
+- Drafter - Traducción inicial preservando contexto
+- Proofreader - Revisión y corrección
+- Native Beta Reader - Revisión como hablante nativo con feedback por género
 
 ## Requisitos del Sistema
 
@@ -79,7 +109,7 @@ sudo bash install.sh
 
 ### 2. Durante la instalación
 
-El instalador te pedirá las siguientes claves API (todas opcionales):
+El instalador te pedirá las siguientes configuraciones:
 
 **DeepSeek (3 claves separadas para gestión de cuotas):**
 - **DEEPSEEK_API_KEY (Escritor)**: Para generación de novelas
@@ -88,6 +118,7 @@ El instalador te pedirá las siguientes claves API (todas opcionales):
 
 **Otras:**
 - **Gemini API Key**: Alternativa a DeepSeek
+- **Contraseña de acceso**: Para proteger la aplicación (opcional)
 - **Cloudflare Tunnel Token**: Para acceso HTTPS externo
 
 > **Nota:** Puedes usar la misma clave de DeepSeek para las tres funciones, o crear claves separadas en la plataforma DeepSeek para mejor control de cuotas y costos.
@@ -97,6 +128,8 @@ El instalador te pedirá las siguientes claves API (todas opcionales):
 ```
 http://TU_IP_SERVIDOR
 ```
+
+Si configuraste una contraseña, verás una pantalla de login antes de acceder a la aplicación.
 
 ## Configuración Manual de API Keys
 
@@ -114,6 +147,9 @@ DEEPSEEK_REEDITOR_API_KEY=tu_clave_reeditor
 
 # Gemini (alternativa)
 GEMINI_API_KEY=tu_clave_gemini
+
+# Contraseña de acceso (dejar vacío para desactivar)
+LITAGENTS_PASSWORD=tu_contraseña
 
 # Guardar y salir (Ctrl+O, Enter, Ctrl+X)
 
@@ -164,6 +200,7 @@ sudo bash install.sh
 El instalador detectará la instalación existente y preservará:
 - Credenciales de base de datos
 - API keys configuradas
+- Contraseña de acceso
 - Proyectos existentes
 
 ## Estructura de Archivos
@@ -231,6 +268,7 @@ sudo chown -R litagents:litagents /var/www/litagents
 | `DEEPSEEK_TRANSLATOR_API_KEY` | API key de DeepSeek - Traductor | Opcional* |
 | `DEEPSEEK_REEDITOR_API_KEY` | API key de DeepSeek - Re-editor | Opcional* |
 | `GEMINI_API_KEY` | API key de Google Gemini | Opcional |
+| `LITAGENTS_PASSWORD` | Contraseña de acceso | Opcional |
 | `SECURE_COOKIES` | true/false para cookies seguras | Sí (auto) |
 | `PORT` | Puerto de la aplicación | Sí (auto: 5000) |
 

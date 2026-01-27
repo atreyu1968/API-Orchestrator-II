@@ -124,6 +124,23 @@ if [ "$IS_UPDATE" = false ] || [ -z "$GEMINI_API_KEY" ]; then
     GEMINI_API_KEY="${INPUT_GEMINI:-$GEMINI_API_KEY}"
 fi
 
+echo ""
+print_status "Configuración de seguridad:"
+echo -e "  ${CYAN}Establece una contraseña para proteger el acceso a la aplicación.${NC}"
+echo -e "  ${CYAN}Si la dejas vacía, la aplicación estará accesible sin autenticación.${NC}"
+echo ""
+
+if [ "$IS_UPDATE" = false ] || [ -z "$LITAGENTS_PASSWORD" ]; then
+    read -sp "$(echo -e ${YELLOW}Contraseña de acceso${NC} [Enter para desactivar]: )" INPUT_PASSWORD
+    echo ""
+    LITAGENTS_PASSWORD="${INPUT_PASSWORD:-$LITAGENTS_PASSWORD}"
+    if [ -n "$LITAGENTS_PASSWORD" ]; then
+        print_success "Contraseña configurada"
+    else
+        print_warning "Sin contraseña - acceso libre a la aplicación"
+    fi
+fi
+
 # Preservar SECURE_COOKIES existente en actualizaciones
 if [ "$IS_UPDATE" = true ] && [ -n "$SECURE_COOKIES" ]; then
     CURRENT_SECURE_COOKIES="$SECURE_COOKIES"
@@ -137,6 +154,8 @@ PORT=$APP_PORT
 DATABASE_URL=$DATABASE_URL
 SESSION_SECRET=$SESSION_SECRET
 SECURE_COOKIES=$CURRENT_SECURE_COOKIES
+# Contraseña de acceso (dejar vacío para desactivar)
+LITAGENTS_PASSWORD=$LITAGENTS_PASSWORD
 # DeepSeek API Keys (3 claves para gestión de cuotas)
 DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
 DEEPSEEK_TRANSLATOR_API_KEY=$DEEPSEEK_TRANSLATOR_API_KEY
