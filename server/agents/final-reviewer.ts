@@ -386,7 +386,7 @@ SALIDA OBLIGATORIA (JSON):
       "instrucciones_correccion": "Cambio QUIRÚRGICO: qué párrafos/líneas específicas modificar y cómo. El resto del capítulo permanece INTACTO"
     }
   ],
-  "capitulos_para_reescribir": [2, 5],
+  "capitulos_para_reescribir": [2, 5],  // ⚠️ OBLIGATORIO: Incluir TODOS los capítulos de issues con severidad "critica" o "mayor" que tengan instrucciones_correccion
   "plot_decisions": [
     {
       "decision": "El Escultor es Arnald (no el hombre de la cueva)",
@@ -910,6 +910,23 @@ REGLAS:
       persistent_injuries: allPersistentInjuries,
       orphan_chapters: allOrphanChapters,
     };
+
+    // SAFETY NET: If capitulos_para_reescribir is empty but there are issues with instrucciones_correccion,
+    // automatically extract chapters from issues with severity "critica" or "mayor"
+    if (combinedResult.capitulos_para_reescribir.length === 0 && combinedResult.issues.length > 0) {
+      const chaptersFromIssues: number[] = [];
+      for (const issue of combinedResult.issues) {
+        if ((issue.severidad === "critica" || issue.severidad === "mayor") && 
+            issue.instrucciones_correccion && 
+            issue.capitulos_afectados?.length > 0) {
+          chaptersFromIssues.push(...issue.capitulos_afectados);
+        }
+      }
+      if (chaptersFromIssues.length > 0) {
+        combinedResult.capitulos_para_reescribir = Array.from(new Set(chaptersFromIssues));
+        console.log(`[FinalReviewer] SAFETY NET: Extracted ${combinedResult.capitulos_para_reescribir.length} chapters from issues: ${combinedResult.capitulos_para_reescribir.join(", ")}`);
+      }
+    }
 
     // Save debug info
     const fs = await import('fs');
