@@ -16,7 +16,7 @@ interface FinalReviewerInput {
 
 export interface FinalReviewIssue {
   capitulos_afectados: number[];
-  categoria: "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "ubicacion" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "hook_debil" | "identidad_confusa" | "capitulo_huerfano" | "otro";
+  categoria: "enganche" | "personajes" | "trama" | "atmosfera" | "ritmo" | "continuidad_fisica" | "timeline" | "ubicacion" | "repeticion_lexica" | "arco_incompleto" | "tension_insuficiente" | "giro_predecible" | "hook_debil" | "identidad_confusa" | "capitulo_huerfano" | "habilidad_injustificada" | "recurso_sin_origen" | "coincidencia_excesiva" | "conocimiento_imposible" | "consecuencia_ignorada" | "otro";
   descripcion: string;
   severidad: "critica" | "mayor" | "menor";
   elementos_a_preservar: string;
@@ -304,6 +304,35 @@ Debes detectar y reportar estos problemas que SOLO se ven leyendo toda la novela
    - ¿Hay objetos/llaves/pistas introducidos que NUNCA se usan después?
    - Ejemplo: Cap 44 introduce una llave que nunca se usa → capítulo huérfano
    - Recomendar: eliminar, reubicar como flashback, o integrar en otro capítulo
+
+4. **CREDIBILIDAD NARRATIVA** (categorías: habilidad_injustificada, recurso_sin_origen, 
+   coincidencia_excesiva, conocimiento_imposible, consecuencia_ignorada):
+   
+   a) HABILIDADES INJUSTIFICADAS:
+      - ¿El protagonista hace algo que requiere formación especializada sin tenerla?
+      - Ejemplo: Protagonista "periodista" hackea un servidor seguro → CRÍTICO
+      - Severidad: CRÍTICA (el lector no lo cree)
+   
+   b) RECURSOS SIN ORIGEN:
+      - ¿Aparecen armas, dinero, vehículos, contactos sin explicación?
+      - Ejemplo: "Sacó una pistola" pero nunca se explica de dónde salió → MAYOR
+      - Severidad: MAYOR (distrae al lector atento)
+   
+   c) COINCIDENCIAS EXCESIVAS:
+      - ¿Cuántas veces el protagonista tiene "suerte" o recibe ayuda conveniente?
+      - REGLA: Máximo 1 coincidencia afortunada por novela
+      - Ejemplo: "Justo cuando iba a rendirse, un coche se detuvo" (2ª vez) → MAYOR
+      - Severidad: MAYOR si es la 2ª, CRÍTICA si hay 3+
+   
+   d) CONOCIMIENTO IMPOSIBLE:
+      - ¿El personaje sabe cosas que no ha investigado/descubierto?
+      - Ejemplo: "Sabía que el asesino estaba en la cabaña" (sin haber investigado) → CRÍTICO
+      - Severidad: CRÍTICA (rompe la lógica)
+   
+   e) CONSECUENCIAS IGNORADAS:
+      - ¿Heridas graves, delitos, enemigos son olvidados en capítulos posteriores?
+      - Ejemplo: Recibe puñalada en Cap 10, corre maratón en Cap 11 → CRÍTICO
+      - Severidad: CRÍTICA (el lector pierde confianza)
 
 ═══════════════════════════════════════════════════════════════════
 PROTOCOLO DE PASADAS - OBJETIVO: PUNTUACIÓN 10/10

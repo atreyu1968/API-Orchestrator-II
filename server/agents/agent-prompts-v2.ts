@@ -94,6 +94,18 @@ export const PROMPTS_V2 = {
     ║      ESPACIADO (1 vez cada 5-10 capítulos, no en cada uno).     ║
     ║    - Evitar que un personaje repita el mismo gesto físico       ║
     ║      (tocarse anillo, cicatriz, etc.) en múltiples capítulos.   ║
+    ║                                                                  ║
+    ║ 5. CREDIBILIDAD NARRATIVA (FUNDAMENTAL):                        ║
+    ║    - Define EXPLÍCITAMENTE las habilidades del protagonista     ║
+    ║      (formación, idiomas, combate, tecnología, contactos).      ║
+    ║    - El protagonista SOLO puede usar habilidades definidas.     ║
+    ║    - Define recursos iniciales (dinero, armas, vehículos).      ║
+    ║    - Planifica cómo el protagonista OBTIENE nuevos recursos     ║
+    ║      durante la trama (no pueden aparecer mágicamente).         ║
+    ║    - Máximo 1 coincidencia afortunada en toda la novela.        ║
+    ║    - Las heridas graves tienen consecuencias en capítulos       ║
+    ║      posteriores (no desaparecen convenientemente).             ║
+    ║    - Los enemigos recuerdan al protagonista y toman medidas.    ║
     ╚══════════════════════════════════════════════════════════════════╝
 
     ╔══════════════════════════════════════════════════════════════════╗
@@ -203,6 +215,13 @@ export const PROMPTS_V2 = {
     ║    planes. Actúan, no monologan. Si hay enfrentamiento verbal,  ║
     ║    el antagonista provoca/amenaza, pero NUNCA revela su         ║
     ║    estrategia completa al héroe.                                ║
+    ║                                                                  ║
+    ║ 4. CREDIBILIDAD NARRATIVA (VERIFICAR EN CADA ESCENA):          ║
+    ║    - ¿El protagonista tiene las habilidades para esta acción?   ║
+    ║    - ¿Los recursos usados tienen origen explicado?              ║
+    ║    - ¿Hay más de 1 coincidencia afortunada? → ELIMINAR          ║
+    ║    - ¿El personaje sabe cosas que no debería saber?             ║
+    ║    - ¿Las heridas/consecuencias anteriores se respetan?         ║
     ╚══════════════════════════════════════════════════════════════════╝
 
     SALIDA REQUERIDA (JSON):
@@ -318,6 +337,19 @@ export const PROMPTS_V2 = {
     ║    - Repetir el mismo gesto (tocarse anillo, cicatriz, etc.)    ║
     ║    - Más de 2 veces por capítulo = ERROR                        ║
     ║    → USA gestos variados según la emoción del momento.          ║
+    ║                                                                  ║
+    ║ ❌ FALTA DE CREDIBILIDAD (VERIFICAR SIEMPRE):                   ║
+    ║    - Habilidades no justificadas: Si el protagonista hackea,    ║
+    ║      pelea, habla idiomas → debe tener formación previa.        ║
+    ║    - Recursos sin origen: Dinero, armas, vehículos, contactos   ║
+    ║      → deben tener explicación lógica.                          ║
+    ║    - Coincidencias excesivas: Máximo 1 coincidencia afortunada  ║
+    ║      por novela. El resto debe ser GANADO por el protagonista.  ║
+    ║    - Conocimiento imposible: El personaje NO puede saber cosas  ║
+    ║      que no ha investigado/descubierto.                         ║
+    ║    - Falta de consecuencias: Heridas, delitos, enemigos deben   ║
+    ║      tener repercusiones en capítulos posteriores.              ║
+    ║    → PREGÚNTATE: ¿Un lector atento lo creería?                  ║
     ╚══════════════════════════════════════════════════════════════════╝
     
     SALIDA: Solo el texto de la narrativa. Sin comentarios, sin marcadores.
@@ -360,6 +392,17 @@ export const PROMPTS_V2 = {
     ║                                                                  ║
     ║ ❌ MULETILLA FÍSICA: Si un gesto/descripción se repite          ║
     ║    más de 2 veces en el capítulo → ESTILO - 2 puntos.           ║
+    ║                                                                  ║
+    ║ ❌ FALTA DE CREDIBILIDAD:                                       ║
+    ║    - Habilidad no justificada (protagonista hace algo sin       ║
+    ║      formación previa) → LÓGICA = 5 máximo.                     ║
+    ║    - Recurso sin origen (dinero, arma, contacto mágico)         ║
+    ║      → LÓGICA = 5 máximo.                                       ║
+    ║    - Coincidencia conveniente (2ª o más en la novela)           ║
+    ║      → LÓGICA - 2 puntos.                                       ║
+    ║    - Conocimiento imposible (sabe sin haber investigado)        ║
+    ║      → LÓGICA = 4 máximo.                                       ║
+    ║    - Herida/consecuencia ignorada → LÓGICA = 5 máximo.          ║
     ╚══════════════════════════════════════════════════════════════════╝
 
     REGLAS DE APROBACIÓN:
