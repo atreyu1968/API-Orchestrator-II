@@ -115,32 +115,46 @@ export class OrchestratorV2 {
   private async initializeConsistencyDatabase(projectId: number, worldBible: any, genre: string): Promise<void> {
     console.log(`[OrchestratorV2] Initializing consistency database for project ${projectId}`);
     
-    const existingEntities = await storage.getWorldEntitiesByProject(projectId);
-    if (existingEntities.length > 0) {
-      console.log(`[OrchestratorV2] Consistency DB already initialized (${existingEntities.length} entities)`);
-      return;
+    try {
+      console.log(`[OrchestratorV2] Checking existing entities...`);
+      const existingEntities = await storage.getWorldEntitiesByProject(projectId);
+      if (existingEntities.length > 0) {
+        console.log(`[OrchestratorV2] Consistency DB already initialized (${existingEntities.length} entities)`);
+        this.callbacks.onAgentStatus("consistency", "completed", `Using ${existingEntities.length} existing entities`);
+        return;
+      }
+
+      const characters = worldBible.characters || [];
+      const rules = worldBible.worldRules || [];
+      console.log(`[OrchestratorV2] Extracting entities from ${characters.length} characters and ${rules.length} rules...`);
+
+      const { entities, rules: extractedRules } = await universalConsistencyAgent.extractInitialEntities(
+        characters,
+        rules,
+        genre,
+        projectId
+      );
+
+      console.log(`[OrchestratorV2] Creating ${entities.length} entities in database...`);
+      for (let i = 0; i < entities.length; i++) {
+        await storage.createWorldEntity(entities[i]);
+        if ((i + 1) % 10 === 0) {
+          console.log(`[OrchestratorV2] Created ${i + 1}/${entities.length} entities...`);
+        }
+      }
+
+      console.log(`[OrchestratorV2] Creating ${extractedRules.length} rules in database...`);
+      for (const rule of extractedRules) {
+        await storage.createWorldRule(rule);
+      }
+
+      console.log(`[OrchestratorV2] Initialized: ${entities.length} entities, ${extractedRules.length} rules`);
+      this.callbacks.onAgentStatus("consistency", "completed", `Initialized ${entities.length} entities, ${extractedRules.length} rules`);
+    } catch (error) {
+      console.error(`[OrchestratorV2] Error initializing consistency database:`, error);
+      // Don't fail the entire pipeline for consistency errors - continue without
+      this.callbacks.onAgentStatus("consistency", "error", `Error: ${error instanceof Error ? error.message : 'Unknown'}`);
     }
-
-    const characters = worldBible.characters || [];
-    const rules = worldBible.worldRules || [];
-
-    const { entities, rules: extractedRules } = await universalConsistencyAgent.extractInitialEntities(
-      characters,
-      rules,
-      genre,
-      projectId
-    );
-
-    for (const entity of entities) {
-      await storage.createWorldEntity(entity);
-    }
-
-    for (const rule of extractedRules) {
-      await storage.createWorldRule(rule);
-    }
-
-    console.log(`[OrchestratorV2] Initialized: ${entities.length} entities, ${extractedRules.length} rules`);
-    this.callbacks.onAgentStatus("consistency", "completed", `Initialized ${entities.length} entities, ${extractedRules.length} rules`);
   }
 
   private async getConsistencyContext(projectId: number): Promise<{
