@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { AgentCard } from "@/components/agent-card";
 import { ProcessFlow } from "@/components/process-flow";
 import { ConsoleOutput, type LogEntry } from "@/components/console-output";
-import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ConfirmDialog, ResumeDialog } from "@/components/confirm-dialog";
 import { DuplicateManager } from "@/components/duplicate-manager";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
@@ -442,6 +442,23 @@ export default function Dashboard() {
     onError: (error) => {
       console.error("[Resume] Error:", error);
       toast({ title: "Error", description: "No se pudo reanudar la generación", variant: "destructive" });
+    },
+  });
+
+  const restartFromScratchMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/restart-from-scratch`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/agent-statuses"] });
+      toast({ title: "Reinicio completo", description: "Generando novela desde cero" });
+      addLog("success", "Reiniciando generación desde cero...");
+      setCompletedStages([]);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "No se pudo reiniciar el proyecto", variant: "destructive" });
     },
   });
 
@@ -1142,14 +1159,19 @@ export default function Dashboard() {
         }}
       />
 
-      <ConfirmDialog
+      <ResumeDialog
         open={confirmDialog === "resume"}
         onOpenChange={(open) => !open && setConfirmDialog(null)}
-        title="Continuar generación"
-        description="¿Continuar la generación desde donde se detuvo?"
-        confirmText="Continuar"
-        onConfirm={() => {
+        title="Reanudar o reiniciar"
+        description="¿Quieres continuar desde donde se detuvo o reiniciar desde cero? Reiniciar eliminará todos los capítulos y la World Bible actual."
+        continueText="Continuar"
+        restartText="Reiniciar desde cero"
+        onContinue={() => {
           if (currentProject) resumeProjectMutation.mutate(currentProject.id);
+          setConfirmDialog(null);
+        }}
+        onRestart={() => {
+          if (currentProject) restartFromScratchMutation.mutate(currentProject.id);
           setConfirmDialog(null);
         }}
       />

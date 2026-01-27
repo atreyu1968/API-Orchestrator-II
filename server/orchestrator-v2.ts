@@ -25,7 +25,7 @@ import type { Project, Chapter, InsertPlotThread, WorldEntity, WorldRuleRecord, 
 import { consistencyViolations } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
-import { isProjectCancelledFromDb } from "./agents";
+import { isProjectCancelledFromDb, generateGenerationToken, isGenerationTokenValid } from "./agents";
 import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 
 interface OrchestratorV2Callbacks {

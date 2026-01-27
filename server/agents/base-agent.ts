@@ -183,6 +183,29 @@ function isConnectionError(error: any): boolean {
 
 const activeAbortControllers = new Map<number, AbortController>();
 
+// Generation tokens to invalidate old cycles when a new one starts
+const generationTokens = new Map<number, string>();
+
+export function generateGenerationToken(projectId: number): string {
+  const token = `gen_${projectId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  generationTokens.set(projectId, token);
+  console.log(`[BaseAgent] New generation token for project ${projectId}: ${token}`);
+  return token;
+}
+
+export function getGenerationToken(projectId: number): string | undefined {
+  return generationTokens.get(projectId);
+}
+
+export function isGenerationTokenValid(projectId: number, token: string): boolean {
+  const currentToken = generationTokens.get(projectId);
+  const isValid = currentToken === token;
+  if (!isValid && currentToken) {
+    console.log(`[BaseAgent] Token mismatch for project ${projectId}: expected ${currentToken}, got ${token}`);
+  }
+  return isValid;
+}
+
 export function registerProjectAbortController(projectId: number): AbortController {
   const controller = new AbortController();
   activeAbortControllers.set(projectId, controller);

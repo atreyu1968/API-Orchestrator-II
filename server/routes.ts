@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { OrchestratorV2 } from "./orchestrator-v2";
 import { queueManager } from "./queue-manager";
-import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, consistencyViolations } from "@shared/schema";
+import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, consistencyViolations, worldEntities, worldRulesTable, worldBibles } from "@shared/schema";
 import { eq, desc } from "drizzle-orm";
 import multer from "multer";
 import mammoth from "mammoth";
@@ -1040,6 +1040,102 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error resuming generation:", error);
       res.status(500).json({ error: "Failed to resume generation" });
+    }
+  });
+
+  app.post("/api/projects/:id/restart-from-scratch", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      console.log(`[Restart] Starting restart from scratch for project ${id}`);
+      
+      const project = await storage.getProject(id);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // First cancel any running generation
+      cancelProject(id);
+      
+      // Delete all chapters
+      const chapters = await storage.getChaptersByProject(id);
+      for (const chapter of chapters) {
+        await storage.deleteChapter(chapter.id);
+      }
+      console.log(`[Restart] Deleted ${chapters.length} chapters`);
+
+      // Delete World Bible
+      await db.delete(worldBibles).where(eq(worldBibles.projectId, id));
+      console.log(`[Restart] Deleted World Bible`);
+
+      // Delete consistency data
+      await db.delete(consistencyViolations).where(eq(consistencyViolations.projectId, id));
+      await db.delete(worldEntities).where(eq(worldEntities.projectId, id));
+      await db.delete(worldRulesTable).where(eq(worldRulesTable.projectId, id));
+      console.log(`[Restart] Deleted consistency data`);
+
+      // Reset project
+      await storage.updateProject(id, { 
+        status: "pending",
+        currentChapter: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalThinkingTokens: 0,
+        revisionCycle: 0,
+        finalReviewResult: null
+      });
+
+      // Reset agent statuses
+      for (const agentName of ["architect", "ghostwriter", "editor", "copyeditor", "final-reviewer", "global-architect", "chapter-architect", "ghostwriter-v2", "smart-editor", "summarizer", "narrative-director", "consistency"]) {
+        await storage.updateAgentStatus(id, agentName, { status: "idle", currentTask: "Preparando reinicio..." });
+      }
+
+      res.json({ message: "Project reset successfully", projectId: id });
+      console.log(`[Restart] Project ${id} reset complete, ready to start fresh`);
+
+      // Start new generation
+      await storage.updateProject(id, { status: "generating" });
+      
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try {
+              stream.write(message);
+            } catch (e) {
+              console.error("Error writing to stream:", e);
+            }
+          });
+        }
+      };
+
+      const orchestrator = new OrchestratorV2({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message || "" });
+          sendToStreams({ type: "agent_status", role, status, message });
+        },
+        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+          await storage.updateProject(id, { currentChapter: chapterNumber });
+          sendToStreams({ type: "chapter_complete", chapterNumber, wordCount, chapterTitle });
+        },
+        onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          sendToStreams({ type: "scene_complete", chapterNumber, sceneNumber, totalScenes, wordCount });
+        },
+        onProjectComplete: async () => {
+          sendToStreams({ type: "generation_complete" });
+        },
+        onError: async (error) => {
+          console.error(`[Restart] Generation error for project ${id}:`, error);
+          sendToStreams({ type: "error", error: String(error) });
+        },
+      });
+
+      orchestrator.generateNovel(project).catch(console.error);
+
+    } catch (error) {
+      console.error("Error restarting project:", error);
+      res.status(500).json({ error: "Failed to restart project" });
     }
   });
 
