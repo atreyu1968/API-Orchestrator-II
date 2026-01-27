@@ -84,6 +84,17 @@ interface ExportResult {
   markdown: string;
 }
 
+interface NativeBetaReaderResult {
+  verdict: string;
+  overallScore: number;
+  fluencyScore: number;
+  genreAdherenceScore: number;
+  culturalAdaptationScore: number;
+  issuesCount: number;
+  correctionsApplied: number;
+  genreFeedback: string;
+}
+
 const INPUT_PRICE_PER_MILLION = 0.80;
 const OUTPUT_PRICE_PER_MILLION = 6.50;
 
@@ -189,6 +200,7 @@ export default function ExportPage() {
   const [projectSearch, setProjectSearch] = useState("");
   const [translationSearch, setTranslationSearch] = useState("");
   const [useLitTranslators2, setUseLitTranslators2] = useState(true);
+  const [nativeBetaResult, setNativeBetaResult] = useState<NativeBetaReaderResult | null>(null);
   
   const savedState = loadTranslationState();
   const [translationProgress, setTranslationProgress] = useState<TranslationProgress>({
@@ -321,11 +333,25 @@ export default function ExportPage() {
       }));
     });
 
+    eventSource.addEventListener("native_review", (event) => {
+      const data = JSON.parse(event.data);
+      setNativeBetaResult(data);
+      setTranslationProgress(prev => ({
+        ...prev,
+        chapterTitle: `Revisión nativa: ${data.correctionsApplied} correcciones aplicadas`,
+      }));
+    });
+
     eventSource.addEventListener("complete", (event) => {
       const data = JSON.parse(event.data);
       eventSource.close();
       setEventSourceRef(null);
       saveTranslationState(null);
+      
+      // Store native beta result from complete event if available
+      if (data.nativeBetaReaderResult) {
+        setNativeBetaResult(data.nativeBetaReaderResult);
+      }
       
       // Update local state to show it's done
       setTranslationProgress({
@@ -1150,6 +1176,61 @@ export default function ExportPage() {
                           </span>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {nativeBetaResult && (
+                    <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-md text-sm space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+                          <Sparkles className="h-4 w-4" />
+                          <span className="font-medium">Revisión Nativa Completada</span>
+                        </div>
+                        <Badge variant={nativeBetaResult.verdict === "APPROVED" ? "default" : "secondary"}>
+                          {nativeBetaResult.verdict === "APPROVED" ? "Aprobado" : nativeBetaResult.verdict === "NEEDS_REVISION" ? "Revisado" : "Corregido"}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Calidad general:</span>
+                          <span className="font-medium">{nativeBetaResult.overallScore}/10</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Fluidez:</span>
+                          <span className="font-medium">{nativeBetaResult.fluencyScore}/10</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Adecuación género:</span>
+                          <span className="font-medium">{nativeBetaResult.genreAdherenceScore}/10</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Adaptación cultural:</span>
+                          <span className="font-medium">{nativeBetaResult.culturalAdaptationScore}/10</span>
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-xs pt-1 border-t border-emerald-500/20">
+                        <span className="text-muted-foreground">Problemas detectados:</span>
+                        <span className="font-medium">{nativeBetaResult.issuesCount}</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">Correcciones aplicadas:</span>
+                        <span className="font-medium text-emerald-600 dark:text-emerald-400">{nativeBetaResult.correctionsApplied}</span>
+                      </div>
+                      {nativeBetaResult.genreFeedback && (
+                        <div className="text-xs text-muted-foreground pt-1 border-t border-emerald-500/20 italic">
+                          {nativeBetaResult.genreFeedback}
+                        </div>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-xs h-7"
+                        onClick={() => setNativeBetaResult(null)}
+                        data-testid="button-dismiss-native-review"
+                      >
+                        <X className="h-3 w-3 mr-1" />
+                        Cerrar resumen
+                      </Button>
                     </div>
                   )}
 
