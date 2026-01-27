@@ -226,30 +226,50 @@ export class BetaReaderAgent {
 
       onStatus?.('beta-reader', `Corrigiendo Capítulo ${fix.chapter_number}: ${fix.issue_type}...`);
 
-      const { newContent, tokenUsage: rewriteUsage } = await this.applyFix(
-        chapter.content,
-        fix,
-        project.genre
-      );
+      try {
+        console.log(`[BetaReader] Calling API to fix Chapter ${fix.chapter_number}...`);
+        
+        const { newContent, tokenUsage: rewriteUsage } = await this.applyFix(
+          chapter.content,
+          fix,
+          project.genre
+        );
 
-      await this.logUsage(projectId, 'beta-reader-rewriter', this.writerModel, rewriteUsage);
+        if (!newContent || newContent.length < 100) {
+          console.error(`[BetaReader] ERROR: Empty or invalid response for Chapter ${fix.chapter_number}`);
+          onStatus?.('beta-reader', `Error: Respuesta vacía para Capítulo ${fix.chapter_number}`);
+          continue;
+        }
 
-      await storage.updateChapter(chapter.id, {
-        content: newContent,
-        wordCount: newContent.split(/\s+/).length,
-      });
+        if (newContent === chapter.content) {
+          console.log(`[BetaReader] WARNING: Content unchanged for Chapter ${fix.chapter_number}`);
+          onStatus?.('beta-reader', `Sin cambios en Capítulo ${fix.chapter_number}`);
+          continue;
+        }
 
-      await storage.createEditingQueueItem({
-        projectId,
-        chapterId: chapter.id,
-        chapterNumber: fix.chapter_number,
-        issueType: fix.issue_type,
-        severity: fix.severity.toLowerCase(),
-        instruction: fix.specific_fix,
-        status: 'completed',
-      });
+        await this.logUsage(projectId, 'beta-reader-rewriter', this.writerModel, rewriteUsage);
 
-      console.log(`[BetaReader] Fixed Chapter ${fix.chapter_number}`);
+        await storage.updateChapter(chapter.id, {
+          content: newContent,
+          wordCount: newContent.split(/\s+/).length,
+        });
+
+        await storage.createEditingQueueItem({
+          projectId,
+          chapterId: chapter.id,
+          chapterNumber: fix.chapter_number,
+          issueType: fix.issue_type,
+          severity: fix.severity.toLowerCase(),
+          instruction: fix.specific_fix,
+          status: 'completed',
+        });
+
+        console.log(`[BetaReader] Successfully fixed Chapter ${fix.chapter_number}`);
+        onStatus?.('beta-reader', `Capítulo ${fix.chapter_number} corregido`);
+      } catch (error) {
+        console.error(`[BetaReader] ERROR fixing Chapter ${fix.chapter_number}:`, error);
+        onStatus?.('beta-reader', `Error corrigiendo Capítulo ${fix.chapter_number}: ${error instanceof Error ? error.message : 'Error desconocido'}`);
+      }
     }
 
     onStatus?.('beta-reader', `Completado: ${fixesToApply.length} capítulos mejorados`);
