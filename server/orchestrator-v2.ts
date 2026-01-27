@@ -1161,7 +1161,7 @@ export class OrchestratorV2 {
         // CRITICAL: Set status to final_review_in_progress to prevent auto-recovery from interrupting
         console.log(`[OrchestratorV2] Project has score ${currentScore}/10 (< 9), running FinalReviewer...`);
         await storage.updateProject(project.id, { status: "final_review_in_progress" });
-        await this.runFinalReviewOnly(project, 3);
+        await this.runFinalReviewOnly(project, 5);
       }
 
     } catch (error) {
@@ -1333,7 +1333,7 @@ export class OrchestratorV2 {
    * Run final review only - V2 version with auto-correction
    * Uses FinalReviewer for comprehensive analysis and auto-corrects problematic chapters
    */
-  async runFinalReviewOnly(project: Project, maxCycles: number = 2): Promise<void> {
+  async runFinalReviewOnly(project: Project, maxCycles: number = 5): Promise<void> {
     console.log(`[OrchestratorV2] Running final review for project ${project.id}`);
     
     try {
@@ -1420,20 +1420,32 @@ export class OrchestratorV2 {
 
         console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}, issues: ${issues?.length || 0}`);
 
-        // ORCHESTRATOR SAFETY NET: If capitulos_para_reescribir is empty but there are critical/major issues,
-        // extract chapters from those issues to trigger auto-correction
+        // ORCHESTRATOR SAFETY NET: If capitulos_para_reescribir is empty but there are ANY issues,
+        // extract chapters from ALL issues to trigger auto-correction (not just critical/major)
         if ((!capitulos_para_reescribir || capitulos_para_reescribir.length === 0) && issues && issues.length > 0) {
           const extractedChapters: number[] = [];
           for (const issue of issues) {
-            if ((issue.severidad === "critica" || issue.severidad === "mayor") && 
-                issue.capitulos_afectados?.length > 0) {
+            // Extract from ALL issues that have chapter info and correction instructions
+            if (issue.capitulos_afectados?.length > 0 && issue.instrucciones_correccion) {
               extractedChapters.push(...issue.capitulos_afectados);
             }
           }
           if (extractedChapters.length > 0) {
             capitulos_para_reescribir = Array.from(new Set(extractedChapters));
             finalResult.capitulos_para_reescribir = capitulos_para_reescribir;
-            console.log(`[OrchestratorV2] SAFETY NET: Extracted ${capitulos_para_reescribir.length} chapters from ${issues.filter(i => i.severidad === "critica" || i.severidad === "mayor").length} critical/major issues: ${capitulos_para_reescribir.join(", ")}`);
+            console.log(`[OrchestratorV2] SAFETY NET: Extracted ${capitulos_para_reescribir.length} chapters from ${issues.length} issues with correction instructions: ${capitulos_para_reescribir.join(", ")}`);
+          } else {
+            // Last resort: extract from ALL issues even without explicit instructions
+            for (const issue of issues) {
+              if (issue.capitulos_afectados?.length > 0) {
+                extractedChapters.push(...issue.capitulos_afectados);
+              }
+            }
+            if (extractedChapters.length > 0) {
+              capitulos_para_reescribir = Array.from(new Set(extractedChapters));
+              finalResult.capitulos_para_reescribir = capitulos_para_reescribir;
+              console.log(`[OrchestratorV2] LAST RESORT: Extracted ${capitulos_para_reescribir.length} chapters from ALL issues: ${capitulos_para_reescribir.join(", ")}`);
+            }
           }
         }
 
@@ -1446,14 +1458,25 @@ export class OrchestratorV2 {
           break;
         }
         
-        // Score < 9: need to correct. If no chapters extracted, mark for manual intervention
+        // Score < 9: If we STILL have no chapters to fix despite having issues, 
+        // the FinalReviewer didn't provide actionable feedback - log and continue to next cycle
         if ((capitulos_para_reescribir?.length || 0) === 0) {
-          console.log(`[OrchestratorV2] Score ${puntuacion_global} < 9 but no chapters to rewrite. Will mark as failed_final_review for manual intervention.`);
-          break;
+          if (issues && issues.length > 0) {
+            // Log that we have issues but can't determine which chapters to fix
+            console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 with ${issues.length} issues but no actionable chapter references. Issues: ${issues.map(i => i.categoria).join(", ")}`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `FinalReviewer detectó ${issues.length} problemas pero sin referencias de capítulos accionables. Requiere revisión del prompt.`,
+              agentRole: "final-reviewer",
+            });
+          }
+          console.log(`[OrchestratorV2] Score ${puntuacion_global} < 9 but no chapters to rewrite. Continuing to next cycle...`);
+          continue; // Try next cycle instead of breaking
         }
 
-        // Auto-correct problematic chapters
-        if (capitulos_para_reescribir && capitulos_para_reescribir.length > 0 && currentCycle < maxCycles) {
+        // Auto-correct problematic chapters - ALWAYS try to correct, even in last cycle
+        if (capitulos_para_reescribir && capitulos_para_reescribir.length > 0) {
           console.log(`[OrchestratorV2] Starting auto-correction for ${capitulos_para_reescribir.length} chapters`);
           this.callbacks.onAgentStatus("smart-editor", "active", `Auto-corrigiendo ${capitulos_para_reescribir.length} capítulo(s)...`);
 
@@ -1624,8 +1647,27 @@ export class OrchestratorV2 {
         this.callbacks.onAgentStatus("final-reviewer", "completed", `${veredicto} (${puntuacion_global}/10)`);
         this.callbacks.onProjectComplete();
       } else {
-        this.callbacks.onAgentStatus("final-reviewer", "error", `${veredicto} (${puntuacion_global}/10) - ${capitulos_para_reescribir?.length || 0} capítulos requieren revisión manual`);
-        this.callbacks.onError(`El manuscrito obtuvo ${puntuacion_global}/10 con veredicto ${veredicto}. Revisa los capítulos problemáticos manualmente.`);
+        // Build detailed error message with specific issues
+        const issuesSummary = issues && issues.length > 0
+          ? issues.map((i: any) => `[${i.severidad?.toUpperCase() || 'ISSUE'}] Cap ${(i.capitulos_afectados || []).join(', ')}: ${i.descripcion?.substring(0, 150) || i.categoria}`).join(' | ')
+          : 'Sin detalles de problemas específicos';
+        
+        const chaptersToFix = capitulos_para_reescribir?.length || 0;
+        const criticalIssues = issues?.filter((i: any) => i.severidad === 'critica')?.length || 0;
+        const majorIssues = issues?.filter((i: any) => i.severidad === 'mayor')?.length || 0;
+        
+        console.log(`[OrchestratorV2] Final review failed: ${puntuacion_global}/10. Issues: ${issuesSummary}`);
+        
+        // Log detailed issues to activity log for visibility
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: `Problemas detectados: ${criticalIssues} críticos, ${majorIssues} mayores. ${issuesSummary.substring(0, 500)}`,
+          agentRole: "final-reviewer",
+        });
+        
+        this.callbacks.onAgentStatus("final-reviewer", "error", `${veredicto} (${puntuacion_global}/10) - ${criticalIssues} críticos, ${majorIssues} mayores, ${chaptersToFix} caps a reescribir`);
+        this.callbacks.onError(`Manuscrito ${puntuacion_global}/10: ${resumen_general?.substring(0, 200) || issuesSummary.substring(0, 200)}`);
       }
     } catch (error) {
       console.error("[OrchestratorV2] Final review error:", error);
