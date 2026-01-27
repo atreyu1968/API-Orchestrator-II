@@ -11,6 +11,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ProjectProvider, useProject } from "@/lib/project-context";
 import { ProjectSelector } from "@/components/project-selector";
 import { LoginScreen } from "@/components/login-screen";
+import { HelpModal } from "@/components/help-modal";
 import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import ManuscriptPage from "@/pages/manuscript";
@@ -82,6 +83,7 @@ function AuthenticatedApp() {
               <SidebarTrigger data-testid="button-sidebar-toggle" />
               <div className="flex items-center gap-3">
                 <GlobalProjectSelector />
+                <HelpModal />
                 <ThemeToggle />
               </div>
             </header>
