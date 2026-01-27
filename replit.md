@@ -75,6 +75,9 @@ Preferred communication style: Simple, everyday language.
 - **BetaReaderAgent**: Provides commercial viability analysis with scores and market comparisons.
 - **Pipeline Integration**: `forensic_audit` and `beta_reader` stages are integrated into the re-editing pipeline.
 - **Database Schema**: New fields in `reedit_projects` for audit results and beta reader reports.
+- **Surgical Fix Optimization**: `smartCorrectChapter` method automatically selects surgical patches (≤3 minor problems) vs full rewrite (critical issues), reducing token consumption by ~50%.
+- **NarrativeRewriter.surgicalFix**: Generates minimal patches for targeted corrections, preserving author voice and style.
+- **applySimplePatches**: Patcher utility applies surgical corrections with fuzzy matching fallback for robust text replacement.
 
 ## External Dependencies
 

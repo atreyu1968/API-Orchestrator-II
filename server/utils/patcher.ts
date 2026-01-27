@@ -247,3 +247,47 @@ function calculateSimilarity(a: string, b: string): number {
   const union = aSet.size + bSet.size - intersection;
   return intersection / union;
 }
+
+/**
+ * Simplified patch interface for surgical fixes
+ */
+export interface SimplePatch {
+  original: string;
+  replacement: string;
+}
+
+/**
+ * Result interface with both property names for compatibility
+ */
+export interface SimplePatchResult {
+  success: boolean;
+  patchedContent: string;  // Alias for patchedText
+  appliedCount: number;
+  failedCount: number;
+}
+
+/**
+ * Apply simple patches (original → replacement) to text.
+ * This is a simplified interface for surgical corrections.
+ * Considers partial success: if at least one patch applies, returns success.
+ */
+export function applySimplePatches(text: string, patches: SimplePatch[]): SimplePatchResult {
+  const convertedPatches: Patch[] = patches.map((p, i) => ({
+    original_text_snippet: p.original,
+    replacement_text: p.replacement,
+    reason: `Surgical fix #${i + 1}`
+  }));
+  
+  const result = applyPatches(text, convertedPatches);
+  
+  // Consider partial success: if at least one patch applied, treat as success
+  // This preserves token efficiency even when some patches fail
+  const hasAppliedPatches = result.appliedPatches > 0;
+  
+  return {
+    success: hasAppliedPatches,
+    patchedContent: result.patchedText,
+    appliedCount: result.appliedPatches,
+    failedCount: result.failedPatches.length
+  };
+}

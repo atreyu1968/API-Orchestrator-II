@@ -19,6 +19,7 @@ import {
   type ForensicViolation 
 } from "../agents/forensic-consistency-auditor";
 import { BetaReaderAgent, type BetaReaderReport } from "../agents/beta-reader";
+import { applySimplePatches, type SimplePatchResult } from "../utils/patcher";
 
 function getChapterSortOrder(chapterNumber: number): number {
   if (chapterNumber === 0) return -1000;
@@ -934,6 +935,78 @@ Reescribe el capítulo COMPLETO integrando las correcciones de forma natural. Ma
     result.tokenUsage = response.tokenUsage;
     return result;
   }
+
+  /**
+   * Surgical fix - Apply targeted patches instead of full chapter rewrite
+   * Much more token-efficient for minor issues
+   */
+  async surgicalFix(
+    chapterContent: string,
+    chapterNumber: number,
+    problems: Array<{ descripcion: string; severidad: string; accionSugerida?: string; tipo?: string }>,
+    worldBible: any,
+    language: string
+  ): Promise<{ patches: Array<{ original: string; replacement: string }>; tokenUsage?: any; resumenCambios?: string }> {
+    const worldBibleSummary = JSON.stringify({
+      personajes: worldBible?.personajes?.slice(0, 10)?.map((p: any) => ({ nombre: p.nombre, rol: p.rol })) || [],
+      ubicaciones: worldBible?.ubicaciones?.slice(0, 5)?.map((u: any) => u.nombre) || [],
+    });
+
+    const problemsList = problems.map((p, i) => 
+      `${i + 1}. [${p.severidad?.toUpperCase()}] ${p.descripcion}${p.accionSugerida ? ` -> ${p.accionSugerida}` : ""}`
+    ).join("\n");
+
+    const prompt = `CORRECCIÓN QUIRÚRGICA del Capítulo ${chapterNumber}
+
+IDIOMA: ${language}
+
+PROBLEMAS A CORREGIR:
+${problemsList}
+
+BIBLIA DEL MUNDO:
+${worldBibleSummary}
+
+CAPÍTULO:
+${chapterContent}
+
+INSTRUCCIONES:
+1. Identifica SOLO las frases o párrafos que necesitan corrección
+2. Genera parches MÍNIMOS - NO reescribas el capítulo completo
+3. Cada parche debe tener al menos 30 caracteres en el original para garantizar unicidad
+4. Mantén el estilo del autor
+
+RESPONDE EN JSON:
+{
+  "analisis": "Breve análisis de los problemas encontrados",
+  "patches": [
+    {
+      "original": "texto exacto a reemplazar (mín 30 chars)",
+      "replacement": "texto corregido"
+    }
+  ],
+  "resumenCambios": "Resumen de las correcciones aplicadas"
+}`;
+
+    console.log(`[StructuralFixer] Surgical fix for chapter ${chapterNumber} with ${problems.length} problems`);
+    
+    const response = await this.generateContent(prompt);
+    let patches: Array<{ original: string; replacement: string }> = [];
+    let resumenCambios = "";
+    
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        patches = (result.patches || []).filter((p: any) => p.original && p.replacement && p.original.length >= 20);
+        resumenCambios = result.resumenCambios || "";
+        console.log(`[StructuralFixer] Generated ${patches.length} surgical patches for chapter ${chapterNumber}`);
+      }
+    } catch (e) {
+      console.error("[StructuralFixer] Failed to parse surgical fix response:", e);
+    }
+    
+    return { patches, tokenUsage: response.tokenUsage, resumenCambios };
+  }
 }
 
 // NarrativeRewriter Agent - Advanced agent that actually rewrites narrative content
@@ -1189,6 +1262,86 @@ RESPONDE ÚNICAMENTE CON JSON VÁLIDO.`;
     return result;
   }
 
+  /**
+   * Surgical fix - Apply targeted patches instead of full chapter rewrite
+   * Much more token-efficient for minor issues (1-3 problems)
+   */
+  async surgicalFix(
+    chapterContent: string,
+    chapterNumber: number,
+    problems: Array<{ id?: string; tipo: string; descripcion: string; severidad: string; accionSugerida?: string }>,
+    worldBible: any,
+    language: string
+  ): Promise<{ patches: Array<{ original: string; replacement: string }>; tokenUsage?: any; resumenCambios?: string }> {
+    const worldBibleSummary = JSON.stringify({
+      personajes: worldBible?.personajes?.slice(0, 8)?.map((p: any) => ({ nombre: p.nombre, rol: p.rol })) || [],
+      ubicaciones: worldBible?.ubicaciones?.slice(0, 5)?.map((u: any) => u.nombre) || [],
+    });
+
+    const problemsList = problems.map((p, i) => 
+      `${i + 1}. [${(p.severidad || 'media').toUpperCase()}] ${p.tipo}: ${p.descripcion}${p.accionSugerida ? ` -> ${p.accionSugerida}` : ""}`
+    ).join("\n");
+
+    const prompt = `CORRECCIÓN QUIRÚRGICA - Capítulo ${chapterNumber}
+
+IDIOMA: ${language}
+
+PROBLEMAS A CORREGIR:
+${problemsList}
+
+BIBLIA DEL MUNDO:
+${worldBibleSummary}
+
+CAPÍTULO:
+${chapterContent}
+
+═══════════════════════════════════════════════════════════════
+INSTRUCCIONES CRÍTICAS:
+═══════════════════════════════════════════════════════════════
+1. Identifica SOLO las frases o párrafos que causan cada problema
+2. Genera parches MÍNIMOS - NO reescribas el capítulo completo
+3. Cada parche "original" debe tener al menos 30 caracteres para garantizar unicidad
+4. Mantén el estilo y vocabulario exacto del autor
+5. Si un problema se resuelve cambiando 1 palabra, cambia SOLO esa palabra
+
+RESPONDE EN JSON:
+{
+  "analisis": "Breve descripción de los problemas y dónde están",
+  "patches": [
+    {
+      "original": "texto exacto a reemplazar (mín 30 chars, copiar literalmente del texto)",
+      "replacement": "texto corregido manteniendo estilo del autor"
+    }
+  ],
+  "resumenCambios": "Resumen de las correcciones quirúrgicas aplicadas"
+}`;
+
+    console.log(`[NarrativeRewriter] Surgical fix for chapter ${chapterNumber} with ${problems.length} problems`);
+    
+    const response = await this.generateContent(prompt);
+    let patches: Array<{ original: string; replacement: string }> = [];
+    let resumenCambios = "";
+    
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        patches = (result.patches || []).filter((p: any) => 
+          p.original && p.replacement && p.original.length >= 30
+        );
+        resumenCambios = result.resumenCambios || "";
+        console.log(`[NarrativeRewriter] Generated ${patches.length} surgical patches for chapter ${chapterNumber}`);
+        patches.forEach((p, i) => {
+          console.log(`  ${i + 1}. "${p.original.substring(0, 50)}..." → "${p.replacement.substring(0, 50)}..."`);
+        });
+      }
+    } catch (e) {
+      console.error("[NarrativeRewriter] Failed to parse surgical fix response:", e);
+    }
+    
+    return { patches, tokenUsage: response.tokenUsage, resumenCambios };
+  }
+
   private buildWorldBibleContext(worldBible: any): string {
     if (!worldBible) return "No hay Biblia del Mundo disponible.";
     
@@ -1429,6 +1582,75 @@ export class ReeditOrchestrator {
       this.totalThinkingTokens += response.tokenUsage.thinkingTokens || 0;
     }
   }
+
+  /**
+   * Smart chapter correction: uses surgical fix for minor issues, full rewrite for critical ones
+   * This saves significant tokens when only small fixes are needed
+   */
+  private async smartCorrectChapter(
+    chapterContent: string,
+    chapterNumber: number,
+    problems: Array<{ id?: string; tipo: string; descripcion: string; severidad: string; accionSugerida?: string }>,
+    worldBible: any,
+    adjacentContext: { previousChapter?: string; nextChapter?: string },
+    language: string,
+    userInstructions?: string
+  ): Promise<{ content: string | null; method: 'surgical' | 'full' | 'failed' }> {
+    // Determine if surgical fix is appropriate
+    const hasCriticalIssues = problems.some((p: any) => 
+      p.severidad === 'critica' || p.severidad === 'critical'
+    );
+    const useSurgicalFix = problems.length <= 3 && !hasCriticalIssues;
+    
+    // Try surgical fix first for minor issues
+    if (useSurgicalFix) {
+      console.log(`[ReeditOrchestrator] Using SURGICAL FIX for chapter ${chapterNumber} (${problems.length} minor problems)`);
+      try {
+        const surgicalResult = await this.narrativeRewriter.surgicalFix(
+          chapterContent,
+          chapterNumber,
+          problems,
+          worldBible || {},
+          language
+        );
+        this.trackTokens(surgicalResult);
+        
+        if (surgicalResult.patches && surgicalResult.patches.length > 0) {
+          const patchResult: SimplePatchResult = applySimplePatches(chapterContent, surgicalResult.patches);
+          if (patchResult.success && patchResult.patchedContent) {
+            console.log(`[ReeditOrchestrator] Applied ${patchResult.appliedCount} surgical patches to chapter ${chapterNumber}`);
+            return { content: patchResult.patchedContent, method: 'surgical' };
+          }
+        }
+        console.log(`[ReeditOrchestrator] Surgical fix produced no valid patches for chapter ${chapterNumber}, falling back to full rewrite`);
+      } catch (err) {
+        console.error(`[ReeditOrchestrator] Surgical fix error for chapter ${chapterNumber}:`, err);
+      }
+    }
+    
+    // Full rewrite for critical issues or when surgical fix fails
+    console.log(`[ReeditOrchestrator] Using FULL REWRITE for chapter ${chapterNumber} (${problems.length} problems, critical: ${hasCriticalIssues})`);
+    try {
+      const rewriteResult = await this.narrativeRewriter.rewriteChapter(
+        chapterContent,
+        chapterNumber,
+        problems,
+        worldBible || {},
+        adjacentContext,
+        language,
+        userInstructions
+      );
+      this.trackTokens(rewriteResult);
+      
+      if (rewriteResult.capituloReescrito) {
+        return { content: rewriteResult.capituloReescrito, method: 'full' };
+      }
+    } catch (err) {
+      console.error(`[ReeditOrchestrator] Full rewrite error for chapter ${chapterNumber}:`, err);
+    }
+    
+    return { content: null, method: 'failed' };
+  }
   
   /**
    * Generate a hash for an issue to track if it has been resolved.
@@ -1648,8 +1870,11 @@ export class ReeditOrchestrator {
       };
 
       try {
-        const rewriteResult = await this.narrativeRewriter.rewriteChapter(
-          chapter.editedContent || chapter.originalContent,
+        const chapterContent = chapter.editedContent || chapter.originalContent;
+        
+        // Use smartCorrectChapter which automatically chooses surgical fix or full rewrite
+        const correctionResult = await this.smartCorrectChapter(
+          chapterContent,
           chapterNum,
           problems,
           worldBible || {},
@@ -1657,13 +1882,12 @@ export class ReeditOrchestrator {
           "español",
           userInstructions || undefined
         );
-        this.trackTokens(rewriteResult);
         await this.updateHeartbeat(projectId);
 
-        if (rewriteResult.capituloReescrito) {
-          const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
+        if (correctionResult.content) {
+          const wordCount = correctionResult.content.split(/\s+/).filter((w: string) => w.length > 0).length;
           await storage.updateReeditChapter(chapter.id, {
-            editedContent: rewriteResult.capituloReescrito,
+            editedContent: correctionResult.content,
             wordCount,
           });
           
@@ -1682,9 +1906,9 @@ export class ReeditOrchestrator {
             }
           }
           
-          // Save change history for this chapter (matching main correction pipeline)
+          // Save change history for this chapter
           const issuesSummary = chapterIssues.map((i: any) => i.description?.substring(0, 300) || "").join("; ");
-          const changesSummary = (rewriteResult.cambiosRealizados?.join("; ") || "Contenido reescrito por usuario").substring(0, 500);
+          const changesSummary = `Corrección ${correctionResult.method === 'surgical' ? 'quirúrgica' : 'completa'}: ${problems.length} problemas`;
           let existingHistory = chapterChangeHistory.get(chapterNum) || [];
           existingHistory.push({
             issue: issuesSummary,
@@ -3465,37 +3689,35 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           
           try {
             const adjacentContext = this.buildAdjacentChapterContext(validChapters, chapNum);
+            const chapterContent = chapter.editedContent || chapter.originalContent;
+            const formattedProblems = chapterProblems.map((p: any, idx: number) => ({
+              id: `${p.source}-${idx + 1}`,
+              tipo: p.tipo || 'structural',
+              descripcion: p.descripcion,
+              severidad: p.severidad || 'mayor',
+              accionSugerida: p.accionSugerida,
+              fuente: p.source
+            }));
             
-            const rewriteResult = await this.narrativeRewriter.rewriteChapter(
-              chapter.editedContent || chapter.originalContent,
+            // Use smartCorrectChapter for automatic surgical/full decision
+            const correctionResult = await this.smartCorrectChapter(
+              chapterContent,
               chapNum,
-              chapterProblems.map((p: any, idx: number) => ({
-                id: `${p.source}-${idx + 1}`,
-                tipo: p.tipo || 'structural',
-                descripcion: p.descripcion,
-                severidad: p.severidad || 'mayor',
-                accionSugerida: p.accionSugerida,
-                fuente: p.source
-              })),
+              formattedProblems,
               worldBibleResult,
               adjacentContext,
               detectedLang,
               userRewriteInstructions || undefined
             );
-            this.trackTokens(rewriteResult);
             
-            const contentToCompare = chapter.editedContent || chapter.originalContent;
-            const hasChanges = rewriteResult.cambiosRealizados?.length > 0 || 
-                              (rewriteResult.capituloReescrito && rewriteResult.capituloReescrito !== contentToCompare);
+            const hasChanges = correctionResult.content && correctionResult.content !== chapterContent;
             
-            if (rewriteResult.capituloReescrito && hasChanges) {
-              // Update originalContent with rewritten version AND set editedContent
-              // This is key for optimization: rewritten chapters already have final content
-              const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
+            if (correctionResult.content && hasChanges) {
+              const wordCount = correctionResult.content.split(/\s+/).filter((w: string) => w.length > 0).length;
               
               await storage.updateReeditChapter(chapter.id, {
-                originalContent: rewriteResult.capituloReescrito,
-                editedContent: rewriteResult.capituloReescrito, // Skip CopyEditor for this chapter
+                originalContent: correctionResult.content,
+                editedContent: correctionResult.content,
                 wordCount,
                 processingStage: "completed",
               });
@@ -3506,14 +3728,14 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                 problemsTotal: chapterProblems.length,
                 problemsArchitect: architectCount,
                 problemsQA: qaCount,
-                changes: rewriteResult.cambiosRealizados?.length || 0,
-                confidence: rewriteResult.verificacionInterna?.confianzaEnCorreccion || 0,
-                summary: rewriteResult.resumenEjecutivo
+                changes: formattedProblems.length,
+                confidence: 8,
+                summary: `Corrección ${correctionResult.method === 'surgical' ? 'quirúrgica' : 'completa'}`
               });
               
-              // SAVE CHANGE HISTORY for intelligent resolution validation (max 10 entries per chapter)
+              // SAVE CHANGE HISTORY for intelligent resolution validation
               const issuesSummaryNR = chapterProblems.map((p: any) => (p.descripcion || "").substring(0, 300)).join("; ");
-              const changesSummaryNR = (rewriteResult.cambiosRealizados?.join("; ") || "Contenido reescrito").substring(0, 500);
+              const changesSummaryNR = `${correctionResult.method === 'surgical' ? 'Parches quirúrgicos' : 'Reescritura completa'}: ${formattedProblems.length} problemas`;
               let existingHistoryNR = chapterChangeHistoryNR.get(chapNum) || [];
               existingHistoryNR.push({
                 issue: issuesSummaryNR,
@@ -3523,14 +3745,13 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
               if (existingHistoryNR.length > 10) existingHistoryNR = existingHistoryNR.slice(-10);
               chapterChangeHistoryNR.set(chapNum, existingHistoryNR);
               
-              // Persist change history to database
               await storage.updateReeditProject(projectId, {
                 chapterChangeHistory: Object.fromEntries(chapterChangeHistoryNR) as any,
               });
               
-              console.log(`[ReeditOrchestrator] Chapter ${chapNum} rewritten (consolidated): ${rewriteResult.cambiosRealizados?.length || 0} changes, confidence: ${rewriteResult.verificacionInterna?.confianzaEnCorreccion || 'N/A'}/10`);
+              console.log(`[ReeditOrchestrator] Chapter ${chapNum} corrected (${correctionResult.method}): ${formattedProblems.length} problems fixed`);
             } else {
-              console.log(`[ReeditOrchestrator] Chapter ${chapNum}: No effective changes from consolidated rewriting`);
+              console.log(`[ReeditOrchestrator] Chapter ${chapNum}: No effective changes from consolidated correction`);
             }
           } catch (rewriteError) {
             console.error(`[ReeditOrchestrator] Error rewriting chapter ${chapNum}:`, rewriteError);
@@ -4286,8 +4507,10 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                 nextChapter: nextChapter?.editedContent?.substring(0, 2000),
               };
 
-              const rewriteResult = await this.narrativeRewriter.rewriteChapter(
-                chapter.editedContent || chapter.originalContent,
+              // Use smartCorrectChapter for automatic surgical/full decision
+              const chapterContent = chapter.editedContent || chapter.originalContent;
+              const correctionResult = await this.smartCorrectChapter(
+                chapterContent,
                 chapter.chapterNumber,
                 problems,
                 worldBibleForReview || {},
@@ -4295,24 +4518,23 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                 "español",
                 userInstructions || undefined
               );
-              this.trackTokens(rewriteResult);
               await this.updateHeartbeat(projectId);
 
-              if (rewriteResult.capituloReescrito) {
-                const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
+              if (correctionResult.content) {
+                const wordCount = correctionResult.content.split(/\s+/).filter((w: string) => w.length > 0).length;
                 await storage.updateReeditChapter(chapter.id, {
-                  editedContent: rewriteResult.capituloReescrito,
+                  editedContent: correctionResult.content,
                   wordCount,
                 });
                 
                 // Increment correction count for this chapter to prevent infinite loops
                 const currentCount = chapterCorrectionCounts.get(chapter.chapterNumber) || 0;
                 chapterCorrectionCounts.set(chapter.chapterNumber, currentCount + 1);
-                console.log(`[ReeditOrchestrator] Chapter ${chapter.chapterNumber} corrected (count: ${currentCount + 1}/${MAX_CORRECTIONS_PER_CHAPTER})`);
+                console.log(`[ReeditOrchestrator] Chapter ${chapter.chapterNumber} corrected via ${correctionResult.method} (count: ${currentCount + 1}/${MAX_CORRECTIONS_PER_CHAPTER})`);
                 
                 // SAVE CHANGE HISTORY for intelligent resolution validation (max 10 entries per chapter)
                 const issuesSummary = chapterIssues.map(i => i.descripcion.substring(0, 300)).join("; ");
-                const changesSummary = (rewriteResult.cambiosRealizados?.join("; ") || "Contenido reescrito").substring(0, 500);
+                const changesSummary = `Corrección ${correctionResult.method === 'surgical' ? 'quirúrgica' : 'completa'}: ${problems.length} problemas`;
                 let existingHistory = chapterChangeHistory.get(chapter.chapterNumber) || [];
                 existingHistory.push({
                   issue: issuesSummary,
@@ -4930,8 +5152,10 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
               nextChapter: nextChapter?.editedContent?.substring(0, 2000),
             };
 
-            const rewriteResult = await this.narrativeRewriter.rewriteChapter(
-              chapter.editedContent || chapter.originalContent,
+            // Use smartCorrectChapter for automatic surgical/full decision
+            const chapterContent = chapter.editedContent || chapter.originalContent;
+            const correctionResult = await this.smartCorrectChapter(
+              chapterContent,
               chapter.chapterNumber,
               problems,
               worldBibleForReview || {},
@@ -4939,25 +5163,24 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
               "español",
               userInstructions || undefined
             );
-            this.trackTokens(rewriteResult);
             await this.updateHeartbeat(projectId);
 
-            console.log(`[ReeditOrchestrator] FRO Rewrite result for chapter ${chapter.chapterNumber}: has capituloReescrito=${!!rewriteResult.capituloReescrito}, length=${rewriteResult.capituloReescrito?.length || 0}`);
-            if (rewriteResult.capituloReescrito) {
-              const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
+            console.log(`[ReeditOrchestrator] FRO correction result for chapter ${chapter.chapterNumber}: method=${correctionResult.method}, has content=${!!correctionResult.content}`);
+            if (correctionResult.content) {
+              const wordCount = correctionResult.content.split(/\s+/).filter((w: string) => w.length > 0).length;
               await storage.updateReeditChapter(chapter.id, {
-                editedContent: rewriteResult.capituloReescrito,
+                editedContent: correctionResult.content,
                 wordCount,
               });
               
               // Increment correction count for this chapter to prevent infinite loops
               const currentCountFRO = chapterCorrectionCountsFRO.get(chapter.chapterNumber) || 0;
               chapterCorrectionCountsFRO.set(chapter.chapterNumber, currentCountFRO + 1);
-              console.log(`[ReeditOrchestrator] FRO: Chapter ${chapter.chapterNumber} corrected (count: ${currentCountFRO + 1}/${MAX_CORRECTIONS_PER_CHAPTER_FRO})`);
+              console.log(`[ReeditOrchestrator] FRO: Chapter ${chapter.chapterNumber} corrected via ${correctionResult.method} (count: ${currentCountFRO + 1}/${MAX_CORRECTIONS_PER_CHAPTER_FRO})`);
               
               // SAVE CHANGE HISTORY for intelligent resolution validation (max 10 entries per chapter)
               const issuesSummaryFRO = chapterIssuesFRO.map(i => i.descripcion.substring(0, 300)).join("; ");
-              const changesSummaryFRO = (rewriteResult.cambiosRealizados?.join("; ") || "Contenido reescrito").substring(0, 500);
+              const changesSummaryFRO = `Corrección ${correctionResult.method === 'surgical' ? 'quirúrgica' : 'completa'}: ${problems.length} problemas`;
               let existingHistoryFRO = chapterChangeHistoryFRO.get(chapter.chapterNumber) || [];
               existingHistoryFRO.push({
                 issue: issuesSummaryFRO,
@@ -5162,8 +5385,10 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           nextChapter: nextChapter?.editedContent?.substring(0, 2000),
         };
 
-        const rewriteResult = await this.narrativeRewriter.rewriteChapter(
-          chapter.editedContent || chapter.originalContent,
+        // Use smartCorrectChapter for automatic surgical/full decision
+        const chapterContent = chapter.editedContent || chapter.originalContent;
+        const correctionResult = await this.smartCorrectChapter(
+          chapterContent,
           chapter.chapterNumber,
           problems,
           worldBible || {},
@@ -5171,15 +5396,14 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           "español",
           userInstructions || undefined
         );
-        this.trackTokens(rewriteResult);
 
-        if (rewriteResult.capituloReescrito) {
-          const wordCount = rewriteResult.capituloReescrito.split(/\s+/).filter((w: string) => w.length > 0).length;
+        if (correctionResult.content) {
+          const wordCount = correctionResult.content.split(/\s+/).filter((w: string) => w.length > 0).length;
           await storage.updateReeditChapter(chapter.id, {
-            editedContent: rewriteResult.capituloReescrito,
+            editedContent: correctionResult.content,
             wordCount,
           });
-          console.log(`[ReeditOrchestrator] Fixed chapter ${chapter.chapterNumber}: ${wordCount} words`);
+          console.log(`[ReeditOrchestrator] Fixed chapter ${chapter.chapterNumber} via ${correctionResult.method}: ${wordCount} words`);
         }
       } catch (err) {
         console.error(`[ReeditOrchestrator] Error fixing chapter ${chapter.chapterNumber}:`, err);
