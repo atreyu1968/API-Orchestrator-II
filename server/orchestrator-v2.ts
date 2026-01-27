@@ -1402,9 +1402,26 @@ export class OrchestratorV2 {
         }
 
         finalResult = reviewResult.result;
-        const { veredicto, puntuacion_global, issues, capitulos_para_reescribir } = finalResult;
+        let { veredicto, puntuacion_global, issues, capitulos_para_reescribir } = finalResult;
 
-        console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}`);
+        console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}, issues: ${issues?.length || 0}`);
+
+        // ORCHESTRATOR SAFETY NET: If capitulos_para_reescribir is empty but there are critical/major issues,
+        // extract chapters from those issues to trigger auto-correction
+        if ((!capitulos_para_reescribir || capitulos_para_reescribir.length === 0) && issues && issues.length > 0) {
+          const extractedChapters: number[] = [];
+          for (const issue of issues) {
+            if ((issue.severidad === "critica" || issue.severidad === "mayor") && 
+                issue.capitulos_afectados?.length > 0) {
+              extractedChapters.push(...issue.capitulos_afectados);
+            }
+          }
+          if (extractedChapters.length > 0) {
+            capitulos_para_reescribir = Array.from(new Set(extractedChapters));
+            finalResult.capitulos_para_reescribir = capitulos_para_reescribir;
+            console.log(`[OrchestratorV2] SAFETY NET: Extracted ${capitulos_para_reescribir.length} chapters from ${issues.filter(i => i.severidad === "critica" || i.severidad === "mayor").length} critical/major issues: ${capitulos_para_reescribir.join(", ")}`);
+          }
+        }
 
         // If approved or no chapters to rewrite, we're done
         if (veredicto === "APROBADO" || (capitulos_para_reescribir?.length || 0) === 0) {
