@@ -9,6 +9,7 @@ export interface SmartEditorInput {
   chapterContent: string;
   sceneBreakdown: any;
   worldBible: any;
+  additionalContext?: string;
 }
 
 export interface SurgicalFixInput {
@@ -64,11 +65,16 @@ export class SmartEditorAgent extends BaseAgent {
   async execute(input: SmartEditorInput): Promise<AgentResponse & { parsed?: SmartEditorOutput }> {
     console.log(`[SmartEditor] Evaluating chapter (${input.chapterContent.length} chars)...`);
     
-    const prompt = PROMPTS_V2.SMART_EDITOR(
+    let prompt = PROMPTS_V2.SMART_EDITOR(
       input.chapterContent,
       input.sceneBreakdown,
       input.worldBible
     );
+
+    // Add additional context if provided (e.g., issues from FinalReviewer)
+    if (input.additionalContext) {
+      prompt = `${input.additionalContext}\n\n${prompt}`;
+    }
 
     const response = await this.generateContent(prompt);
     

@@ -19,6 +19,7 @@ import {
   type ScenePlan
 } from "./agents/v2";
 import { universalConsistencyAgent } from "./agents/v2/universal-consistency";
+import { FinalReviewerAgent, type FinalReviewerResult, type FinalReviewIssue } from "./agents/final-reviewer";
 import { applyPatches, type PatchResult } from "./utils/patcher";
 import type { TokenUsage } from "./agents/base-agent";
 import type { Project, Chapter, InsertPlotThread, WorldEntity, WorldRuleRecord, EntityRelationship } from "@shared/schema";
@@ -43,6 +44,7 @@ export class OrchestratorV2 {
   private smartEditor = new SmartEditorAgent();
   private summarizer = new SummarizerAgent();
   private narrativeDirector = new NarrativeDirectorAgent();
+  private finalReviewer = new FinalReviewerAgent();
   private callbacks: OrchestratorV2Callbacks;
   
   private cumulativeTokens = {
@@ -1300,17 +1302,19 @@ export class OrchestratorV2 {
   }
 
   /**
-   * Run final review only - V2 simplified version
-   * V2 pipeline handles editing during generation, so this mainly validates and marks complete
+   * Run final review only - V2 version with auto-correction
+   * Uses FinalReviewer for comprehensive analysis and auto-corrects problematic chapters
    */
-  async runFinalReviewOnly(project: Project): Promise<void> {
+  async runFinalReviewOnly(project: Project, maxCycles: number = 2): Promise<void> {
     console.log(`[OrchestratorV2] Running final review for project ${project.id}`);
     
     try {
-      this.callbacks.onAgentStatus("smart-editor", "active", "Ejecutando revisión final v2...");
+      this.callbacks.onAgentStatus("final-reviewer", "active", "Ejecutando revisión final completa...");
       
       const chapters = await storage.getChaptersByProject(project.id);
-      const completedChapters = chapters.filter(c => c.status === "completed" || c.status === "approved");
+      const completedChapters = chapters
+        .filter(c => c.status === "completed" || c.status === "approved")
+        .sort((a, b) => a.chapterNumber - b.chapterNumber);
       
       if (completedChapters.length === 0) {
         this.callbacks.onError("No hay capítulos completados para revisar");
@@ -1323,18 +1327,24 @@ export class OrchestratorV2 {
         return;
       }
 
+      let guiaEstilo = "";
+      if (project.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(project.styleGuideId);
+        if (styleGuide) guiaEstilo = styleGuide.content;
+      }
+
       const worldBibleData = {
         characters: worldBible.characters || [],
         rules: worldBible.worldRules || [],
       };
 
-      let totalScore = 0;
-      let reviewedCount = 0;
+      let currentCycle = 0;
+      let finalResult: FinalReviewerResult | null = null;
 
-      // Review each chapter with Smart Editor
-      for (let i = 0; i < completedChapters.length; i++) {
-        const chapter = completedChapters[i];
-        
+      while (currentCycle < maxCycles) {
+        currentCycle++;
+        console.log(`[OrchestratorV2] Final review cycle ${currentCycle}/${maxCycles}`);
+
         if (await isProjectCancelledFromDb(project.id)) {
           console.log(`[OrchestratorV2] Final review cancelled for project ${project.id}`);
           await this.updateProjectTokens(project.id);
@@ -1342,67 +1352,172 @@ export class OrchestratorV2 {
           return;
         }
 
-        this.callbacks.onAgentStatus("smart-editor", "active", `Revisando capítulo ${chapter.chapterNumber} (${i + 1}/${completedChapters.length})...`);
+        // Refresh chapters from storage to get any updates from previous cycle
+        const freshChapters = await storage.getChaptersByProject(project.id);
+        const currentChapters = freshChapters
+          .filter(c => c.status === "completed" || c.status === "approved")
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
 
-        const editResult = await this.smartEditor.execute({
-          chapterContent: chapter.content || "",
-          sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
+        // Prepare chapters for FinalReviewer
+        const chaptersForReview = currentChapters.map(c => ({
+          numero: c.chapterNumber,
+          titulo: c.title || `Capítulo ${c.chapterNumber}`,
+          contenido: c.content || "",
+        }));
+
+        this.callbacks.onAgentStatus("final-reviewer", "active", `Analizando manuscrito completo (ciclo ${currentCycle})...`);
+
+        // Run FinalReviewer
+        const reviewResult = await this.finalReviewer.execute({
+          projectTitle: project.title,
+          chapters: chaptersForReview,
           worldBible: worldBibleData,
+          guiaEstilo,
+          pasadaNumero: currentCycle,
         });
 
-        this.addTokenUsage(editResult.tokenUsage);
+        this.addTokenUsage(reviewResult.tokenUsage);
+        await this.logAiUsage(project.id, "final-reviewer", "deepseek-reasoner", reviewResult.tokenUsage);
 
-        if (editResult.parsed) {
-          const avgScore = (editResult.parsed.logic_score + editResult.parsed.style_score) / 2;
-          totalScore += avgScore;
-          reviewedCount++;
+        if (!reviewResult.parsed) {
+          console.error("[OrchestratorV2] FinalReviewer failed to parse result");
+          this.callbacks.onError("Error al analizar el manuscrito");
+          await storage.updateProject(project.id, { status: "error" });
+          return;
+        }
 
-          // Always update quality score
-          const updateData: any = { qualityScore: Math.round(avgScore) };
+        finalResult = reviewResult.parsed;
+        const { veredicto, puntuacion_global, issues, capitulos_para_reescribir } = finalResult;
 
-          // Apply patches if needed
-          if (editResult.parsed.patches && editResult.parsed.patches.length > 0) {
-            const patchResult = applyPatches(chapter.content || "", editResult.parsed.patches);
-            if (patchResult.appliedPatches > 0) {
-              updateData.content = patchResult.patchedText;
-              updateData.wordCount = patchResult.patchedText.split(/\s+/).length;
+        console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}`);
+
+        // If approved or no chapters to rewrite, we're done
+        if (veredicto === "APROBADO" || (capitulos_para_reescribir?.length || 0) === 0) {
+          break;
+        }
+
+        // Auto-correct problematic chapters
+        if (capitulos_para_reescribir && capitulos_para_reescribir.length > 0 && currentCycle < maxCycles) {
+          this.callbacks.onAgentStatus("smart-editor", "active", `Auto-corrigiendo ${capitulos_para_reescribir.length} capítulo(s)...`);
+
+          for (const chapNum of capitulos_para_reescribir) {
+            if (await isProjectCancelledFromDb(project.id)) {
+              await this.updateProjectTokens(project.id);
+              await storage.updateProject(project.id, { status: "paused" });
+              return;
+            }
+
+            const chapter = currentChapters.find(c => c.chapterNumber === chapNum);
+            if (!chapter) continue;
+
+            // Get issues for this chapter
+            const chapterIssues = issues.filter(i => i.capitulos_afectados?.includes(chapNum));
+            if (chapterIssues.length === 0) continue;
+
+            // Check if any issue is critical - if so, use surgicalFix instead
+            const hasCriticalIssue = chapterIssues.some(i => i.severidad === "critica");
+
+            this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum}${hasCriticalIssue ? ' (crítico)' : ''}...`);
+
+            // Build correction prompt from issues
+            const issuesDescription = chapterIssues.map(i => 
+              `- [${i.severidad.toUpperCase()}] ${i.categoria}: ${i.descripcion}\n  Corrección: ${i.instrucciones_correccion}`
+            ).join("\n");
+
+            let correctedContent: string | null = null;
+
+            if (hasCriticalIssue) {
+              // Use surgicalFix for critical issues - it does a more thorough rewrite
+              const fixResult = await this.smartEditor.surgicalFix({
+                chapterContent: chapter.content || "",
+                errorDescription: issuesDescription,
+                consistencyConstraints: JSON.stringify(worldBibleData.characters?.slice(0, 5) || []),
+              });
+
+              this.addTokenUsage(fixResult.tokenUsage);
+              await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
+
+              if (fixResult.parsed?.corrected_text) {
+                correctedContent = fixResult.parsed.corrected_text;
+              }
+            } else {
+              // Use SmartEditor patches for non-critical issues
+              const editResult = await this.smartEditor.execute({
+                chapterContent: chapter.content || "",
+                sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
+                worldBible: worldBibleData,
+                additionalContext: `PROBLEMAS DETECTADOS POR EL CRÍTICO (CORREGIR OBLIGATORIAMENTE):\n${issuesDescription}`,
+              });
+
+              this.addTokenUsage(editResult.tokenUsage);
+              await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapNum);
+
+              if (editResult.parsed) {
+                // Apply patches if available
+                if (editResult.parsed.patches && editResult.parsed.patches.length > 0) {
+                  const patchResult = applyPatches(chapter.content || "", editResult.parsed.patches);
+                  if (patchResult.appliedPatches > 0) {
+                    correctedContent = patchResult.patchedText;
+                  }
+                }
+                
+                // If no patches applied but needs_rewrite is true, use surgicalFix as fallback
+                if (!correctedContent && editResult.parsed.needs_rewrite) {
+                  const fixResult = await this.smartEditor.surgicalFix({
+                    chapterContent: chapter.content || "",
+                    errorDescription: issuesDescription,
+                  });
+                  this.addTokenUsage(fixResult.tokenUsage);
+                  if (fixResult.parsed?.corrected_text) {
+                    correctedContent = fixResult.parsed.corrected_text;
+                  }
+                }
+              }
+            }
+
+            // Update chapter if we have corrected content
+            if (correctedContent) {
+              const wordCount = correctedContent.split(/\s+/).length;
+              await storage.updateChapter(chapter.id, {
+                content: correctedContent,
+                wordCount,
+                qualityScore: 8, // Assume improvement
+              });
+              
+              this.callbacks.onChapterComplete(
+                chapter.chapterNumber,
+                wordCount,
+                chapter.title || `Capítulo ${chapter.chapterNumber}`
+              );
             }
           }
-
-          await storage.updateChapter(chapter.id, updateData);
-          
-          // Emit chapter complete callback
-          const wordCount = updateData.content 
-            ? updateData.content.split(/\s+/).length 
-            : (chapter.content?.split(/\s+/).length || 0);
-          this.callbacks.onChapterComplete(
-            chapter.chapterNumber,
-            wordCount,
-            chapter.title || `Capítulo ${chapter.chapterNumber}`
-          );
         }
       }
 
       await this.updateProjectTokens(project.id);
 
-      const averageScore = reviewedCount > 0 ? totalScore / reviewedCount : 0;
-      const approved = averageScore >= 7;
+      // Determine final status based on review result
+      if (!finalResult) {
+        await storage.updateProject(project.id, { status: "error" });
+        this.callbacks.onError("No se pudo completar la revisión final");
+        return;
+      }
+
+      const { veredicto, puntuacion_global, resumen_general, justificacion_puntuacion, analisis_bestseller, issues, capitulos_para_reescribir } = finalResult;
+      const approved = veredicto === "APROBADO" || veredicto === "APROBADO_CON_RESERVAS";
 
       await storage.updateProject(project.id, { 
         status: approved ? "completed" : "failed_final_review",
-        finalReviewResult: { 
-          approved, 
-          averageScore: Math.round(averageScore * 10) / 10,
-          chaptersReviewed: reviewedCount,
-        }
+        finalScore: puntuacion_global,
+        finalReviewResult: finalResult as any,
       });
 
       if (approved) {
-        this.callbacks.onAgentStatus("smart-editor", "completed", `Revisión aprobada (${averageScore.toFixed(1)}/10)`);
+        this.callbacks.onAgentStatus("final-reviewer", "completed", `${veredicto} (${puntuacion_global}/10)`);
         this.callbacks.onProjectComplete();
       } else {
-        this.callbacks.onAgentStatus("smart-editor", "error", `Puntuación insuficiente (${averageScore.toFixed(1)}/10)`);
-        this.callbacks.onError(`El manuscrito obtuvo ${averageScore.toFixed(1)}/10, por debajo del mínimo de 7`);
+        this.callbacks.onAgentStatus("final-reviewer", "error", `${veredicto} (${puntuacion_global}/10) - ${capitulos_para_reescribir?.length || 0} capítulos requieren revisión manual`);
+        this.callbacks.onError(`El manuscrito obtuvo ${puntuacion_global}/10 con veredicto ${veredicto}. Revisa los capítulos problemáticos manualmente.`);
       }
     } catch (error) {
       console.error("[OrchestratorV2] Final review error:", error);
