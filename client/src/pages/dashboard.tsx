@@ -842,24 +842,29 @@ export default function Dashboard() {
                       <div className="mt-4 pt-4 border-t border-border/50">
                         <p className="text-sm font-medium mb-2">Issues Documentados ({(currentProject.finalReviewResult as any).issues.length})</p>
                         <div className="space-y-2 max-h-48 overflow-y-auto">
-                          {((currentProject.finalReviewResult as any).issues as Array<{capitulo: number; problema: string; severidad: string; instrucciones_correccion: string}>).map((issue, idx) => (
+                          {((currentProject.finalReviewResult as any).issues as Array<{categoria: string; descripcion: string; severidad: string; capitulos_afectados: number[]; instrucciones_correccion: string}>).map((issue, idx) => (
                             <div 
                               key={idx} 
                               className="text-xs p-2 rounded bg-background/50 border border-border/30"
                               data-testid={`issue-${idx}`}
                             >
-                              <div className="flex items-center gap-2 mb-1">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
                                 <Badge 
                                   variant={issue.severidad === "critica" ? "destructive" : issue.severidad === "mayor" ? "secondary" : "outline"}
                                   className="text-[10px] px-1.5 py-0"
                                 >
                                   {issue.severidad}
                                 </Badge>
-                                <span className="text-muted-foreground">
-                                  {issue.capitulo === 0 ? "Prólogo" : issue.capitulo === -1 ? "Epílogo" : `Cap. ${issue.capitulo}`}
-                                </span>
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                  {issue.categoria?.replace(/_/g, ' ')}
+                                </Badge>
+                                {issue.capitulos_afectados?.length > 0 && (
+                                  <span className="text-muted-foreground">
+                                    Cap. {issue.capitulos_afectados.map(c => c === 0 ? 'Prólogo' : c === -1 ? 'Epílogo' : c).join(', ')}
+                                  </span>
+                                )}
                               </div>
-                              <p className="text-foreground">{issue.problema}</p>
+                              <p className="text-foreground">{issue.descripcion}</p>
                               {issue.instrucciones_correccion && (
                                 <p className="text-muted-foreground mt-1 italic">{issue.instrucciones_correccion}</p>
                               )}
