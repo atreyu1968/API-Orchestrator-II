@@ -792,7 +792,8 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
-      if (project.status !== "completed" && project.status !== "approved") {
+      const allowedStatuses = ["completed", "approved", "awaiting_final_review"];
+      if (!allowedStatuses.includes(project.status)) {
         return res.status(400).json({ 
           error: "Solo se pueden criticar proyectos completados",
           currentStatus: project.status 
@@ -1162,8 +1163,9 @@ export async function registerRoutes(
       }
 
       // Reset audit flags to allow full re-analysis
+      // Use 'final_review_in_progress' to prevent auto-recovery from treating this as a normal generation
       await storage.updateProject(id, { 
-        status: "generating",
+        status: "final_review_in_progress",
         revisionCycle: 0,
         finalReviewResult: null,
         voiceAuditCompleted: false,
