@@ -700,6 +700,17 @@ export class QueueManager {
       onAgentStatus: async (role, status, message) => {
         self.updateHeartbeat();
         console.log(`[Queue V2] ${project.title} - ${role}: ${status}`, message || "");
+        
+        // Update agent status in database for UI display
+        try {
+          await storage.updateAgentStatus(project.id, role, { 
+            status, 
+            currentTask: message || undefined 
+          });
+        } catch (err) {
+          console.error(`[Queue V2] Failed to update agent status:`, err);
+        }
+        
         if (message) {
           try {
             await storage.createActivityLog({
