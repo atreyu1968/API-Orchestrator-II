@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, ExternalLink, Loader2 } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, ExternalLink, Loader2, BookOpen } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
@@ -407,6 +407,21 @@ export default function Dashboard() {
     },
   });
 
+  const critiqueMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/critique`);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Análisis iniciado", description: "El Crítico está evaluando la novela..." });
+      addLog("info", "Beta Reader iniciado - analizando viabilidad comercial", "beta-reader");
+      setCurrentStage("beta-reader");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
   const resumeProjectMutation = useMutation({
     mutationFn: async (id: number) => {
       console.log("[Resume] Sending resume request for project:", id);
@@ -676,6 +691,16 @@ export default function Dashboard() {
                   )}
                   {currentProject.status === "completed" && (
                     <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => critiqueMutation.mutate(currentProject.id)}
+                        disabled={critiqueMutation.isPending}
+                        data-testid="button-critique"
+                      >
+                        <BookOpen className="h-4 w-4 mr-2" />
+                        {critiqueMutation.isPending ? "Analizando..." : "Criticar"}
+                      </Button>
                       <Button
                         variant="outline"
                         size="sm"
