@@ -587,7 +587,7 @@ export default function Dashboard() {
         <h3 className="text-sm font-medium text-muted-foreground">
           Pipeline por Escenas
         </h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <AgentCard 
             name={agentNames["global-architect"]}
             role="global-architect"

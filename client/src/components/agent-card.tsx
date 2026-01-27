@@ -84,49 +84,51 @@ export function AgentCard({ name, role, status, currentTask, progress = 0, lastA
 
   return (
     <Card 
-      className={`transition-all duration-300 ${isActive ? "ring-1 ring-primary/30" : ""}`}
+      className={`transition-all duration-300 flex flex-col ${isActive ? "ring-1 ring-primary/30" : ""}`}
       data-testid={`card-agent-${role}`}
     >
-      <CardHeader className="flex flex-row items-center justify-between gap-2 pb-2">
+      <CardHeader className="pb-2">
         <div className="flex items-center gap-3">
           <div className={`p-2 rounded-md ${roleColors[role]}`}>
             {roleIcons[role]}
           </div>
-          <div>
-            <CardTitle className="text-base font-medium">{name}</CardTitle>
-            <p className="text-xs text-muted-foreground capitalize">{role}</p>
+          <div className="min-w-0 flex-1">
+            <CardTitle className="text-sm font-medium truncate">{name}</CardTitle>
           </div>
         </div>
-        <Badge 
-          className={`${statusColors[status]} text-xs font-medium uppercase tracking-wide`}
-          data-testid={`badge-agent-status-${role}`}
-        >
-          {isActive && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-          {statusLabels[status]}
-        </Badge>
       </CardHeader>
-      <CardContent className="space-y-3">
-        {currentTask && (
-          <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]" data-testid={`text-task-${role}`}>
-            {currentTask}
-          </p>
-        )}
-        {!currentTask && (
-          <p className="text-sm text-muted-foreground/50 min-h-[2.5rem] italic">
-            Sin tarea asignada
-          </p>
-        )}
+      <CardContent className="flex-1 flex flex-col justify-between space-y-3 pt-0">
+        <div className="min-h-[2rem]">
+          {currentTask && (
+            <p className="text-xs text-muted-foreground line-clamp-2" data-testid={`text-task-${role}`}>
+              {currentTask}
+            </p>
+          )}
+          {!currentTask && (
+            <p className="text-xs text-muted-foreground/50 italic">
+              Sin tarea asignada
+            </p>
+          )}
+        </div>
         {isActive && progress > 0 && (
           <div className="space-y-1">
-            <Progress value={progress} className="h-1.5" />
-            <p className="text-xs text-muted-foreground text-right">{progress}%</p>
+            <Progress value={progress} className="h-1" />
           </div>
         )}
-        {lastActivity && (
-          <p className="text-xs text-muted-foreground">
-            Última actividad: {new Date(lastActivity).toLocaleTimeString("es-ES")}
-          </p>
-        )}
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50">
+          <Badge 
+            className={`${statusColors[status]} text-xs font-medium uppercase tracking-wide`}
+            data-testid={`badge-agent-status-${role}`}
+          >
+            {isActive && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+            {statusLabels[status]}
+          </Badge>
+          {lastActivity && (
+            <p className="text-[10px] text-muted-foreground">
+              {new Date(lastActivity).toLocaleTimeString("es-ES", { hour: '2-digit', minute: '2-digit' })}
+            </p>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
