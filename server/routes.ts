@@ -5948,13 +5948,29 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         onStrategyReady: (strategy) => {
           sendEvent("strategy", strategy);
         },
+        onNativeBetaReaderComplete: (result) => {
+          sendEvent("native_review", {
+            verdict: result.final_verdict,
+            overallScore: result.overall_score,
+            fluencyScore: result.fluency_score,
+            genreAdherenceScore: result.genre_adherence_score,
+            culturalAdaptationScore: result.cultural_adaptation_score,
+            issuesCount: result.issues?.length || 0,
+            correctionsApplied: result.corrections?.length || 0,
+            genreFeedback: result.genre_feedback,
+          });
+        },
       });
+
+      // Get genre from project if available
+      const projectGenre = (project as any).genre || 'default';
 
       const result = await orchestrator.startTranslation(
         translation.id,
         fullText,
         sourceLanguage,
-        targetLanguage
+        targetLanguage,
+        projectGenre
       );
 
       sendEvent("complete", {
@@ -5965,6 +5981,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         layoutScore: await storage.getTranslation(translation.id).then(t => t?.layoutScore || 0),
         naturalnessScore: await storage.getTranslation(translation.id).then(t => t?.naturalnessScore || 0),
         tokens: result.tokens,
+        nativeBetaReaderResult: result.nativeBetaReaderResult ? {
+          verdict: result.nativeBetaReaderResult.final_verdict,
+          overallScore: result.nativeBetaReaderResult.overall_score,
+          fluencyScore: result.nativeBetaReaderResult.fluency_score,
+          genreAdherenceScore: result.nativeBetaReaderResult.genre_adherence_score,
+          issuesCount: result.nativeBetaReaderResult.issues?.length || 0,
+        } : undefined,
       });
 
       cleanup();

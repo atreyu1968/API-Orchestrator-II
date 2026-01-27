@@ -3,11 +3,13 @@ import { TRANSLATION_PROMPTS, TRANSLATION_MODELS } from "./agents/translation-pr
 import { applyPatches } from "./utils/patcher";
 import { storage } from "./storage";
 import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
+import { NativeBetaReaderAgent, NativeBetaReaderResult } from "./agents/native-beta-reader";
 
 interface TranslationCallbacks {
   onStatusChange: (status: string, message?: string) => void;
   onChunkComplete: (chunkNumber: number, totalChunks: number) => void;
   onStrategyReady: (strategy: TranslationStrategy) => void;
+  onNativeBetaReaderComplete?: (result: NativeBetaReaderResult) => void;
 }
 
 interface TranslationStrategy {
@@ -26,6 +28,7 @@ export class TranslationOrchestrator {
   private openai: OpenAI;
   private cumulativeTokens: TokenUsage = { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 };
   private callbacks: TranslationCallbacks;
+  private nativeBetaReader: NativeBetaReaderAgent;
 
   constructor(callbacks: TranslationCallbacks) {
     const apiKey = process.env.DEEPSEEK_TRANSLATOR_API_KEY || process.env.DEEPSEEK_API_KEY;
@@ -37,6 +40,7 @@ export class TranslationOrchestrator {
       baseURL: "https://api.deepseek.com",
     });
     this.callbacks = callbacks;
+    this.nativeBetaReader = new NativeBetaReaderAgent();
   }
 
   private addTokenUsage(usage?: TokenUsage) {
@@ -84,8 +88,9 @@ export class TranslationOrchestrator {
     translationId: number,
     fullText: string,
     sourceLang: string,
-    targetLang: string
-  ): Promise<{ content: string; metadata: TranslationStrategy; tokens: TokenUsage }> {
+    targetLang: string,
+    genre: string = 'default'
+  ): Promise<{ content: string; metadata: TranslationStrategy; tokens: TokenUsage; nativeBetaReaderResult?: NativeBetaReaderResult }> {
     this.callbacks.onStatusChange("analyzing", "Analizando estilo y tipografía...");
 
     const strategyResult = await this.callAI(
@@ -184,20 +189,59 @@ export class TranslationOrchestrator {
     const layoutScore = chunks.length > 0 ? Math.round(avgLayoutScore / chunks.length) : 0;
     const naturalnessScore = chunks.length > 0 ? Math.round(avgNaturalnessScore / chunks.length) : 0;
 
+    // === NATIVE BETA READER STAGE ===
+    // Review translated text as a native speaker of the target language
+    this.callbacks.onStatusChange("native_review", `Lector beta nativo revisando en ${targetLang}...`);
+
+    let nativeBetaReaderResult: NativeBetaReaderResult | undefined;
+    let finalContent = finalDoc.trim();
+
+    try {
+      const nativeReview = await this.nativeBetaReader.reviewTranslation(
+        translationId,
+        finalContent,
+        targetLang,
+        genre
+      );
+
+      nativeBetaReaderResult = nativeReview.result;
+      this.addTokenUsage(nativeReview.tokenUsage);
+
+      // Apply corrections if any
+      if (nativeBetaReaderResult.corrections && nativeBetaReaderResult.corrections.length > 0) {
+        console.log(`[TranslationOrchestrator] Applying ${nativeBetaReaderResult.corrections.length} native corrections...`);
+        finalContent = await this.nativeBetaReader.applyCorrections(
+          finalContent,
+          nativeBetaReaderResult.corrections
+        );
+      }
+
+      // Notify callback if provided
+      if (this.callbacks.onNativeBetaReaderComplete) {
+        this.callbacks.onNativeBetaReaderComplete(nativeBetaReaderResult);
+      }
+
+      console.log(`[TranslationOrchestrator] Native review complete: ${nativeBetaReaderResult.final_verdict}, score: ${nativeBetaReaderResult.overall_score}/10`);
+    } catch (err) {
+      console.error("[TranslationOrchestrator] Native beta reader failed, continuing without native review:", err);
+      nativeBetaReaderResult = undefined;
+    }
+
     await storage.updateTranslation(translationId, {
-      markdown: finalDoc.trim(),
+      markdown: finalContent,
       layoutScore,
       naturalnessScore,
       status: "completed",
       chaptersTranslated: chunks.length,
     });
 
-    this.callbacks.onStatusChange("completed", "Traducción completada");
+    this.callbacks.onStatusChange("completed", "Traducción completada con revisión nativa");
 
     return {
-      content: finalDoc.trim(),
+      content: finalContent,
       metadata: strategy,
       tokens: this.cumulativeTokens,
+      nativeBetaReaderResult,
     };
   }
 

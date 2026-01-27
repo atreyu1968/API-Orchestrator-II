@@ -1,7 +1,8 @@
 export const TRANSLATION_MODELS = {
   STRATEGIST: "deepseek-reasoner",
   DRAFTER: "deepseek-chat",
-  PROOFREADER: "deepseek-chat"
+  PROOFREADER: "deepseek-chat",
+  NATIVE_BETA_READER: "deepseek-chat"
 };
 
 export const TRANSLATION_PROMPTS = {
