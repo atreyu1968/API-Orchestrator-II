@@ -1672,6 +1672,137 @@ export async function registerRoutes(
     }
   });
 
+  // LitAgents 2.1: Re-validate existing chapters with the Guardian
+  app.post("/api/projects/:id/revalidate-chapters", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid project ID" });
+      }
+      
+      const project = await storage.getProject(id);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const chapters = await storage.getChaptersByProject(id);
+      if (chapters.length === 0) {
+        return res.json({ message: "No chapters to revalidate", violations: [] });
+      }
+
+      const entities = await db.select().from(worldEntities)
+        .where(eq(worldEntities.projectId, id));
+      const rules = await db.select().from(worldRulesTable)
+        .where(eq(worldRulesTable.projectId, id));
+
+      if (entities.length === 0 && rules.length === 0) {
+        return res.status(400).json({ 
+          error: "No consistency database found. Generate or resume the project first to initialize the Guardian." 
+        });
+      }
+
+      // Clear existing violations before revalidation to avoid duplicates
+      await db.delete(consistencyViolations)
+        .where(eq(consistencyViolations.projectId, id));
+
+      const { universalConsistencyAgent } = await import("./agents/v2/universal-consistency");
+      
+      const context = {
+        entities: entities.map(e => ({
+          name: e.name,
+          type: e.type,
+          attributes: e.attributes || {},
+          status: e.status,
+          lastSeenChapter: e.lastSeenChapter || undefined,
+        })),
+        rules: rules.map(r => ({
+          ruleDescription: r.ruleDescription,
+          category: r.category || 'GENERAL',
+        })),
+        relationships: [] as { subject: string; target: string; relationType: string; meta?: any }[],
+      };
+
+      const results: { chapterNumber: number; title: string; isValid: boolean; issues: string[]; error?: string }[] = [];
+      let totalViolations = 0;
+      let errorsEncountered = 0;
+
+      for (const chapter of chapters) {
+        const chapterText = chapter.editedContent || chapter.originalContent || "";
+        if (!chapterText) continue;
+
+        try {
+          const result = await universalConsistencyAgent.validateChapter(
+            chapterText,
+            project.genre,
+            context.entities,
+            context.rules,
+            context.relationships,
+            chapter.chapterNumber
+          );
+
+          const issues: string[] = [];
+          
+          if (!result.isValid && result.criticalError) {
+            issues.push(`CRÍTICO: ${result.criticalError}`);
+            await storage.createConsistencyViolation({
+              projectId: id,
+              chapterNumber: chapter.chapterNumber,
+              violationType: 'CONTRADICTION',
+              severity: 'critical',
+              description: result.criticalError,
+              affectedEntities: [],
+              wasAutoFixed: false,
+            });
+            totalViolations++;
+          }
+
+          if (result.warnings && result.warnings.length > 0) {
+            for (const warning of result.warnings) {
+              issues.push(warning);
+              await storage.createConsistencyViolation({
+                projectId: id,
+                chapterNumber: chapter.chapterNumber,
+                violationType: 'WARNING',
+                severity: 'major',
+                description: warning,
+                affectedEntities: [],
+                wasAutoFixed: false,
+              });
+              totalViolations++;
+            }
+          }
+
+          results.push({
+            chapterNumber: chapter.chapterNumber,
+            title: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+            isValid: result.isValid && (!result.warnings || result.warnings.length === 0),
+            issues,
+          });
+        } catch (chapterError) {
+          errorsEncountered++;
+          results.push({
+            chapterNumber: chapter.chapterNumber,
+            title: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+            isValid: false,
+            issues: [],
+            error: `Validation failed: ${chapterError instanceof Error ? chapterError.message : 'Unknown error'}`,
+          });
+        }
+      }
+
+      res.json({
+        message: `Revalidated ${chapters.length} chapters. Found ${totalViolations} issues.${errorsEncountered > 0 ? ` (${errorsEncountered} chapters had errors)` : ''}`,
+        chaptersValidated: chapters.length,
+        totalViolations,
+        errorsEncountered,
+        results,
+      });
+    } catch (error) {
+      console.error("Error revalidating chapters:", error);
+      res.status(500).json({ error: "Failed to revalidate chapters" });
+    }
+  });
+
   app.get("/api/projects/:id/thought-logs", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);

@@ -1,10 +1,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { WorldBibleDisplay } from "@/components/world-bible-display";
+import { WorldBibleDisplay, type ConsistencyEntity, type ConsistencyRule } from "@/components/world-bible-display";
 import { Badge } from "@/components/ui/badge";
 import { Globe, AlertTriangle, CheckCircle } from "lucide-react";
 import { useProject } from "@/lib/project-context";
 import type { WorldBible } from "@shared/schema";
+
+interface ConsistencyDatabase {
+  entities: ConsistencyEntity[];
+  rules: ConsistencyRule[];
+}
 
 interface ConsistencyViolation {
   id: number;
@@ -32,6 +37,13 @@ export default function WorldBiblePage() {
 
   const { data: violations } = useQuery<ConsistencyViolation[]>({
     queryKey: ["/api/projects", currentProject?.id, "consistency-violations"],
+    enabled: !!currentProject?.id,
+    staleTime: 30000,
+    refetchInterval: isGenerating ? 10000 : false,
+  });
+
+  const { data: consistencyDb } = useQuery<ConsistencyDatabase>({
+    queryKey: ["/api/projects", currentProject?.id, "consistency-database"],
     enabled: !!currentProject?.id,
     staleTime: 30000,
     refetchInterval: isGenerating ? 10000 : false,
@@ -127,7 +139,11 @@ export default function WorldBiblePage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <WorldBibleDisplay worldBible={worldBible || null} />
+                <WorldBibleDisplay 
+                  worldBible={worldBible || null} 
+                  consistencyEntities={consistencyDb?.entities || []}
+                  consistencyRules={consistencyDb?.rules || []}
+                />
               </CardContent>
             </Card>
 

@@ -2,8 +2,25 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Clock, Users, BookOpen, Shield, Heart, Skull, GitBranch, Activity } from "lucide-react";
+import { Clock, Users, BookOpen, Shield, Heart, Skull, GitBranch, Activity, Eye } from "lucide-react";
 import type { WorldBible, Character, TimelineEvent, WorldRule, PlotOutline } from "@shared/schema";
+
+export interface ConsistencyEntity {
+  id: number;
+  name: string;
+  type: string;
+  status: string;
+  attributes: Record<string, unknown>;
+  lastSeenChapter: number | null;
+}
+
+export interface ConsistencyRule {
+  id: number;
+  description: string;
+  category: string;
+  isActive: boolean;
+  sourceChapter: number | null;
+}
 
 // Helper function to safely convert any value to a displayable string
 // Handles objects with keys like {tipo, numero, descripcion, elementos_sensoriales, etc.}
@@ -65,6 +82,8 @@ interface PersistentInjury {
 
 interface WorldBibleDisplayProps {
   worldBible: WorldBible | null;
+  consistencyEntities?: ConsistencyEntity[];
+  consistencyRules?: ConsistencyRule[];
 }
 
 function TimelineTab({ events }: { events: TimelineEvent[] }) {
@@ -375,6 +394,111 @@ function PersistentInjuriesTab({ injuries }: { injuries: PersistentInjury[] }) {
   );
 }
 
+function GuardianTab({ entities, rules }: { entities: ConsistencyEntity[]; rules: ConsistencyRule[] }) {
+  const hasData = entities.length > 0 || rules.length > 0;
+
+  if (!hasData) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <Eye className="h-12 w-12 text-muted-foreground/30 mb-4" />
+        <p className="text-muted-foreground text-sm">Sin datos del Guardián de Consistencia</p>
+        <p className="text-muted-foreground/60 text-xs mt-1">
+          Se inicializará automáticamente durante la generación
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <ScrollArea className="h-[400px]">
+      <div className="space-y-6 pr-4">
+        {entities.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Entidades Rastreadas ({entities.length})
+            </h3>
+            <div className="grid gap-2">
+              {entities.map((entity) => {
+                const attrs = entity.attributes as { role?: string; appearance?: { eyes?: string; hair?: string } };
+                return (
+                  <Card key={entity.id} data-testid={`guardian-entity-${entity.id}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <CardTitle className="text-sm font-medium flex items-center gap-2">
+                          {entity.status === "dead" && <Skull className="h-4 w-4 text-destructive" />}
+                          {entity.name}
+                        </CardTitle>
+                        <div className="flex gap-1">
+                          <Badge variant="outline" className="text-xs">{entity.type}</Badge>
+                          <Badge 
+                            variant={entity.status === "active" ? "secondary" : "destructive"} 
+                            className="text-xs"
+                          >
+                            {entity.status}
+                          </Badge>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-1">
+                      {attrs.role && (
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Rol:</span> {attrs.role}
+                        </p>
+                      )}
+                      {attrs.appearance?.eyes && (
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Ojos:</span> {attrs.appearance.eyes}
+                        </p>
+                      )}
+                      {attrs.appearance?.hair && (
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Cabello:</span> {attrs.appearance.hair}
+                        </p>
+                      )}
+                      {entity.lastSeenChapter !== null && entity.lastSeenChapter > 0 && (
+                        <Badge variant="secondary" className="text-xs mt-1">
+                          Último cap: {entity.lastSeenChapter}
+                        </Badge>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {rules.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Reglas de Consistencia ({rules.length})
+            </h3>
+            <div className="space-y-2">
+              {rules.map((rule) => (
+                <div 
+                  key={rule.id} 
+                  className="bg-card border border-card-border rounded-md p-3"
+                  data-testid={`guardian-rule-${rule.id}`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm">{rule.description}</p>
+                    <Badge variant="outline" className="text-xs shrink-0">{rule.category}</Badge>
+                  </div>
+                  {rule.sourceChapter && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Establecida en Cap. {rule.sourceChapter}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </ScrollArea>
+  );
+}
+
 function PlotTab({ plotOutline }: { plotOutline: PlotOutline | null }) {
   const plotAny = plotOutline as any;
   const hasContent = plotOutline && (
@@ -543,7 +667,7 @@ function PlotTab({ plotOutline }: { plotOutline: PlotOutline | null }) {
   );
 }
 
-export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
+export function WorldBibleDisplay({ worldBible, consistencyEntities = [], consistencyRules = [] }: WorldBibleDisplayProps) {
   if (!worldBible) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -601,6 +725,13 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
             <Badge variant="secondary" className="ml-1 text-xs">{persistentInjuries.length}</Badge>
           )}
         </TabsTrigger>
+        <TabsTrigger value="guardian" className="gap-1.5">
+          <Eye className="h-4 w-4" />
+          Guardián
+          {consistencyEntities.length > 0 && (
+            <Badge variant="secondary" className="ml-1 text-xs">{consistencyEntities.length}</Badge>
+          )}
+        </TabsTrigger>
       </TabsList>
       
       <TabsContent value="plot">
@@ -625,6 +756,10 @@ export function WorldBibleDisplay({ worldBible }: WorldBibleDisplayProps) {
 
       <TabsContent value="injuries">
         <PersistentInjuriesTab injuries={persistentInjuries} />
+      </TabsContent>
+
+      <TabsContent value="guardian">
+        <GuardianTab entities={consistencyEntities} rules={consistencyRules} />
       </TabsContent>
     </Tabs>
   );
