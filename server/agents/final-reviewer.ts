@@ -911,21 +911,27 @@ REGLAS:
       orphan_chapters: allOrphanChapters,
     };
 
-    // SAFETY NET: If capitulos_para_reescribir is empty but there are issues with instrucciones_correccion,
-    // automatically extract chapters from issues with severity "critica" or "mayor"
+    // SAFETY NET: If capitulos_para_reescribir is empty but there are issues with severity "critica" or "mayor",
+    // automatically extract chapters from those issues (no longer requires instrucciones_correccion)
     if (combinedResult.capitulos_para_reescribir.length === 0 && combinedResult.issues.length > 0) {
       const chaptersFromIssues: number[] = [];
       for (const issue of combinedResult.issues) {
+        // Extract chapters from any issue with severity "critica" or "mayor" that has capitulos_afectados
         if ((issue.severidad === "critica" || issue.severidad === "mayor") && 
-            issue.instrucciones_correccion && 
             issue.capitulos_afectados?.length > 0) {
           chaptersFromIssues.push(...issue.capitulos_afectados);
         }
       }
       if (chaptersFromIssues.length > 0) {
         combinedResult.capitulos_para_reescribir = Array.from(new Set(chaptersFromIssues));
-        console.log(`[FinalReviewer] SAFETY NET: Extracted ${combinedResult.capitulos_para_reescribir.length} chapters from issues: ${combinedResult.capitulos_para_reescribir.join(", ")}`);
+        console.log(`[FinalReviewer] SAFETY NET: Extracted ${combinedResult.capitulos_para_reescribir.length} chapters from ${combinedResult.issues.filter(i => i.severidad === "critica" || i.severidad === "mayor").length} critical/major issues: ${combinedResult.capitulos_para_reescribir.join(", ")}`);
       }
+    }
+    
+    // SAFETY NET 2: If veredicto is REQUIERE_REVISION but no chapters to rewrite, log warning
+    if ((combinedResult.veredicto === "REQUIERE_REVISION" || combinedResult.puntuacion_global < 8) && 
+        combinedResult.capitulos_para_reescribir.length === 0) {
+      console.warn(`[FinalReviewer] WARNING: veredicto=${combinedResult.veredicto}, score=${combinedResult.puntuacion_global} but no chapters to rewrite. Issues count: ${combinedResult.issues.length}`);
     }
 
     // Save debug info
