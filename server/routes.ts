@@ -1,9 +1,11 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
 import { OrchestratorV2 } from "./orchestrator-v2";
 import { queueManager } from "./queue-manager";
-import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema } from "@shared/schema";
+import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, consistencyViolations } from "@shared/schema";
+import { eq, desc } from "drizzle-orm";
 import multer from "multer";
 import mammoth from "mammoth";
 import { generateManuscriptDocx } from "./services/docx-exporter";
@@ -1527,6 +1529,19 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching world bible:", error);
       res.status(500).json({ error: "Failed to fetch world bible" });
+    }
+  });
+
+  app.get("/api/projects/:id/consistency-violations", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const violations = await db.select().from(consistencyViolations)
+        .where(eq(consistencyViolations.projectId, id))
+        .orderBy(desc(consistencyViolations.createdAt));
+      res.json(violations);
+    } catch (error) {
+      console.error("Error fetching consistency violations:", error);
+      res.status(500).json({ error: "Failed to fetch consistency violations" });
     }
   });
 
