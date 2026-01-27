@@ -11,6 +11,12 @@ export interface SmartEditorInput {
   worldBible: any;
 }
 
+export interface SurgicalFixInput {
+  chapterContent: string;
+  errorDescription: string;
+  consistencyConstraints?: string;
+}
+
 export interface SmartEditorOutput {
   logic_score: number;
   style_score: number;
@@ -99,5 +105,74 @@ export class SmartEditorAgent extends BaseAgent {
         patches: []
       }
     };
+  }
+
+  /**
+   * Surgical fix for consistency violations - more token-efficient than full rewrite
+   */
+  async surgicalFix(input: SurgicalFixInput): Promise<AgentResponse & { patches?: Patch[], fullContent?: string }> {
+    console.log(`[SmartEditor] Surgical fix for consistency error (${input.chapterContent.length} chars)...`);
+    
+    const surgicalPrompt = `CORRECCIÓN QUIRÚRGICA DE CONTINUIDAD
+
+ERROR DETECTADO:
+${input.errorDescription}
+
+${input.consistencyConstraints ? `RESTRICCIONES DE CONSISTENCIA:\n${input.consistencyConstraints}\n` : ''}
+
+CONTENIDO DEL CAPÍTULO:
+${input.chapterContent}
+
+INSTRUCCIONES:
+1. Identifica SOLO las frases o párrafos que contienen el error de continuidad
+2. Genera parches QUIRÚRGICOS mínimos para corregir el error
+3. NO reescribas el capítulo completo - solo las partes afectadas
+4. Mantén el estilo y tono del autor original
+
+Responde en JSON:
+{
+  "error_analysis": "Breve análisis del error y dónde está",
+  "patches": [
+    {
+      "original": "texto exacto a reemplazar (mín 20 chars)",
+      "replacement": "texto corregido"
+    }
+  ],
+  "correction_summary": "Resumen de los cambios realizados"
+}`;
+
+    const response = await this.generateContent(surgicalPrompt);
+    
+    if (response.error) {
+      return response;
+    }
+
+    try {
+      let cleanContent = response.content
+        .replace(/```json\s*/g, '')
+        .replace(/```\s*/g, '')
+        .trim();
+      
+      const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const patches: Patch[] = (parsed.patches || []).map((p: any) => ({
+          original: p.original,
+          replacement: p.replacement
+        }));
+        
+        console.log(`[SmartEditor] Surgical fix: ${patches.length} patches generated`);
+        if (parsed.correction_summary) {
+          console.log(`[SmartEditor] Summary: ${parsed.correction_summary}`);
+        }
+        
+        return { ...response, patches };
+      }
+    } catch (e) {
+      console.error("[SmartEditor] Failed to parse surgical fix response:", e);
+    }
+
+    // If parsing fails, return the full content as fallback
+    return { ...response, fullContent: response.content };
   }
 }

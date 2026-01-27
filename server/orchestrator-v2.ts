@@ -941,64 +941,59 @@ export class OrchestratorV2 {
 
         if (!consistencyResult.isValid && consistencyResult.error) {
           console.warn(`[OrchestratorV2] CRITICAL consistency violation in Chapter ${chapterNumber}: ${consistencyResult.error}`);
-          this.callbacks.onAgentStatus("consistency", "warning", "Forcing rewrite due to critical violation");
+          this.callbacks.onAgentStatus("consistency", "warning", "Applying surgical fix to affected scenes...");
           
-          // Force rewrite with correction instructions as a single scene
-          const correctionScene: ScenePlan = {
-            scene_num: 1,
-            setting: "Reescritura correctiva",
-            characters: [],
-            plot_beat: `CORRECCIÓN OBLIGATORIA: ${consistencyResult.error}`,
-            dialogue_focus: "",
-            emotional_beat: "Mantener la esencia emocional del capítulo original",
-            sensory_details: [],
-            word_target: finalText.split(/\s+/).length,
-            ending_hook: "Continuar con la trama establecida"
-          };
+          // Use SmartEditor's surgicalFix method for targeted correction
+          // This is much more token-efficient than rewriting the entire chapter
+          this.callbacks.onAgentStatus("smart-editor", "active", "Fixing continuity error surgically...");
           
-          // Rewrite the chapter with corrections
-          this.callbacks.onAgentStatus("ghostwriter-v2", "active", "Rewriting to fix continuity error...");
-          
-          const rewriteResult = await this.ghostwriter.execute({
-            scenePlan: correctionScene,
-            prevSceneContext: `CONTENIDO ORIGINAL CON ERROR DE CONTINUIDAD:\n${finalText}\n\nINSTRUCCIONES: Reescribe este capítulo CORRIGIENDO el siguiente error: ${consistencyResult.error}. Mantén la esencia narrativa pero corrige la contradicción.`,
-            rollingSummary,
-            worldBible,
-            guiaEstilo,
+          const surgicalFixResult = await this.smartEditor.surgicalFix({
+            chapterContent: finalText,
+            errorDescription: consistencyResult.error,
             consistencyConstraints,
           });
           
-          this.addTokenUsage(rewriteResult.tokenUsage);
-          await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", rewriteResult.tokenUsage, chapterNumber);
+          this.addTokenUsage(surgicalFixResult.tokenUsage);
+          await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", surgicalFixResult.tokenUsage, chapterNumber);
           
-          if (rewriteResult.content) {
-            finalText = rewriteResult.content;
-            console.log(`[OrchestratorV2] Chapter ${chapterNumber} rewritten to fix consistency violation`);
-            
-            // Mark ALL violations for this chapter as auto-fixed
-            const violations = await db.select().from(consistencyViolations)
-              .where(and(
-                eq(consistencyViolations.projectId, project.id),
-                eq(consistencyViolations.chapterNumber, chapterNumber),
-                eq(consistencyViolations.status, "pending")
-              ));
-            
-            if (violations.length > 0) {
-              for (const violation of violations) {
-                await db.update(consistencyViolations)
-                  .set({ 
-                    wasAutoFixed: true, 
-                    status: "resolved",
-                    resolvedAt: new Date(),
-                    fixDescription: "Capítulo reescrito automáticamente para corregir violación de continuidad" 
-                  })
-                  .where(eq(consistencyViolations.id, violation.id));
-              }
-              console.log(`[OrchestratorV2] Marked ${violations.length} consistency violation(s) as RESOLVED for Chapter ${chapterNumber}`);
+          // Apply patches if available, otherwise use full content as fallback
+          if (surgicalFixResult.patches && surgicalFixResult.patches.length > 0) {
+            const patchResult: PatchResult = applyPatches(finalText, surgicalFixResult.patches);
+            if (patchResult.success && patchResult.patchedContent) {
+              finalText = patchResult.patchedContent;
+              console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Applied ${patchResult.appliedCount} surgical patches to fix consistency violation`);
+            } else if (surgicalFixResult.fullContent) {
+              finalText = surgicalFixResult.fullContent;
+              console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Used full content from editor (patches failed)`);
             }
+          } else if (surgicalFixResult.fullContent) {
+            finalText = surgicalFixResult.fullContent;
+            console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Applied editor corrections for consistency fix`);
           }
           
-          this.callbacks.onAgentStatus("ghostwriter-v2", "completed", "Continuity error fixed");
+          // Mark ALL violations for this chapter as auto-fixed
+          const violations = await db.select().from(consistencyViolations)
+            .where(and(
+              eq(consistencyViolations.projectId, project.id),
+              eq(consistencyViolations.chapterNumber, chapterNumber),
+              eq(consistencyViolations.status, "pending")
+            ));
+          
+          if (violations.length > 0) {
+            for (const violation of violations) {
+              await db.update(consistencyViolations)
+                .set({ 
+                  wasAutoFixed: true, 
+                  status: "resolved",
+                  resolvedAt: new Date(),
+                  fixDescription: "Corrección quirúrgica aplicada para resolver violación de continuidad" 
+                })
+                .where(eq(consistencyViolations.id, violation.id));
+            }
+            console.log(`[OrchestratorV2] Marked ${violations.length} consistency violation(s) as RESOLVED for Chapter ${chapterNumber}`);
+          }
+          
+          this.callbacks.onAgentStatus("smart-editor", "completed", "Continuity error fixed surgically");
         }
 
         // 2d: Summarizer - Compress for memory

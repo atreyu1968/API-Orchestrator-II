@@ -3,7 +3,7 @@
 export { GlobalArchitectAgent, type GlobalArchitectInput, type GlobalArchitectOutput } from './global-architect';
 export { ChapterArchitectAgent, type ChapterArchitectInput, type ChapterArchitectOutput, type ScenePlan } from './chapter-architect';
 export { GhostwriterV2Agent, type GhostwriterV2Input } from './ghostwriter-v2';
-export { SmartEditorAgent, type SmartEditorInput, type SmartEditorOutput } from './smart-editor';
+export { SmartEditorAgent, type SmartEditorInput, type SmartEditorOutput, type SurgicalFixInput } from './smart-editor';
 export { SummarizerAgent, type SummarizerInput } from './summarizer';
 export { NarrativeDirectorAgent, type NarrativeDirectorInput, type NarrativeDirectorOutput, type PlotThread, type ThreadUpdate } from './narrative-director';
 
