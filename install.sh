@@ -148,23 +148,24 @@ else
     CURRENT_SECURE_COOKIES="false"
 fi
 
-cat > "$CONFIG_DIR/env" << EOF
-NODE_ENV=production
-PORT=$APP_PORT
-DATABASE_URL=$DATABASE_URL
-SESSION_SECRET=$SESSION_SECRET
-SECURE_COOKIES=$CURRENT_SECURE_COOKIES
-# Contraseña de acceso (dejar vacío para desactivar)
-LITAGENTS_PASSWORD=$LITAGENTS_PASSWORD
-# DeepSeek API Keys (3 claves para gestión de cuotas)
-DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
-DEEPSEEK_TRANSLATOR_API_KEY=$DEEPSEEK_TRANSLATOR_API_KEY
-DEEPSEEK_REEDITOR_API_KEY=$DEEPSEEK_REEDITOR_API_KEY
-# Gemini API (alternativa)
-GEMINI_API_KEY=$GEMINI_API_KEY
-AI_INTEGRATIONS_GEMINI_API_KEY=$GEMINI_API_KEY
-AI_INTEGRATIONS_GEMINI_BASE_URL=https://generativelanguage.googleapis.com
-EOF
+# Escribir archivo env con printf para evitar expansión de caracteres especiales
+{
+    printf 'NODE_ENV=production\n'
+    printf 'PORT=%s\n' "$APP_PORT"
+    printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+    printf 'SESSION_SECRET=%s\n' "$SESSION_SECRET"
+    printf 'SECURE_COOKIES=%s\n' "$CURRENT_SECURE_COOKIES"
+    printf '# Contraseña de acceso (dejar vacío para desactivar)\n'
+    printf 'LITAGENTS_PASSWORD=%s\n' "$LITAGENTS_PASSWORD"
+    printf '# DeepSeek API Keys (3 claves para gestión de cuotas)\n'
+    printf 'DEEPSEEK_API_KEY=%s\n' "$DEEPSEEK_API_KEY"
+    printf 'DEEPSEEK_TRANSLATOR_API_KEY=%s\n' "$DEEPSEEK_TRANSLATOR_API_KEY"
+    printf 'DEEPSEEK_REEDITOR_API_KEY=%s\n' "$DEEPSEEK_REEDITOR_API_KEY"
+    printf '# Gemini API (alternativa)\n'
+    printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY"
+    printf 'AI_INTEGRATIONS_GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY"
+    printf 'AI_INTEGRATIONS_GEMINI_BASE_URL=https://generativelanguage.googleapis.com\n'
+} > "$CONFIG_DIR/env"
 chmod 600 "$CONFIG_DIR/env"
 chown root:root "$CONFIG_DIR/env"
 print_success "Configuración guardada en $CONFIG_DIR/env"
