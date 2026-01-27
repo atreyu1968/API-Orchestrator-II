@@ -1,4 +1,4 @@
-import { Check, Brain, Pencil, Eye, ArrowRight, Layers, Scissors, Compass } from "lucide-react";
+import { Check, Brain, Pencil, Eye, ArrowRight, Layers, Scissors, Compass, Shield, BookOpen } from "lucide-react";
 
 export type AgentRole = 
   | "global-architect" 
@@ -7,6 +7,8 @@ export type AgentRole =
   | "smart-editor" 
   | "summarizer" 
   | "narrative-director"
+  | "universal-consistency"
+  | "beta-reader"
   | "orchestrator"
   | "system";
 
@@ -21,9 +23,11 @@ const stages: { role: AgentRole; name: string; icon: React.ReactNode }[] = [
   { role: "global-architect", name: "Arquitecto Global", icon: <Brain className="h-4 w-4" /> },
   { role: "chapter-architect", name: "Diseñador Escenas", icon: <Layers className="h-4 w-4" /> },
   { role: "ghostwriter-v2", name: "Escritor Escenas", icon: <Pencil className="h-4 w-4" /> },
+  { role: "universal-consistency", name: "Guardián", icon: <Shield className="h-4 w-4" /> },
   { role: "smart-editor", name: "Editor Inteligente", icon: <Eye className="h-4 w-4" /> },
   { role: "summarizer", name: "Compresor", icon: <Scissors className="h-4 w-4" /> },
   { role: "narrative-director", name: "Director Narrativo", icon: <Compass className="h-4 w-4" /> },
+  { role: "beta-reader", name: "El Crítico", icon: <BookOpen className="h-4 w-4" /> },
 ];
 
 function getStageStatus(role: AgentRole, currentStage: AgentRole | null, completedStages: AgentRole[]): StageStatus {

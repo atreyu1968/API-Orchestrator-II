@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Pencil, Brain, Eye, FileText, Loader2, ClipboardCheck, Shield, AudioWaveform, Search, AlertTriangle } from "lucide-react";
 
-type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer" | "continuity-sentinel" | "voice-auditor" | "semantic-detector" | "global-architect" | "chapter-architect" | "ghostwriter-v2" | "smart-editor" | "summarizer" | "narrative-director";
+type AgentRole = "architect" | "ghostwriter" | "editor" | "copyeditor" | "final-reviewer" | "continuity-sentinel" | "voice-auditor" | "semantic-detector" | "global-architect" | "chapter-architect" | "ghostwriter-v2" | "smart-editor" | "summarizer" | "narrative-director" | "universal-consistency" | "beta-reader";
 type AgentStatusType = "idle" | "thinking" | "writing" | "editing" | "reviewing" | "polishing" | "completed" | "error" | "analyzing" | "warning";
 
 interface AgentCardProps {
@@ -30,6 +30,8 @@ const roleIcons: Record<AgentRole, React.ReactNode> = {
   "smart-editor": <Eye className="h-5 w-5" />,
   "summarizer": <FileText className="h-5 w-5" />,
   "narrative-director": <ClipboardCheck className="h-5 w-5" />,
+  "universal-consistency": <Shield className="h-5 w-5" />,
+  "beta-reader": <Eye className="h-5 w-5" />,
 };
 
 const roleColors: Record<AgentRole, string> = {
@@ -47,6 +49,8 @@ const roleColors: Record<AgentRole, string> = {
   "smart-editor": "bg-rose-500/10 text-rose-600 dark:text-rose-400",
   "summarizer": "bg-sky-500/10 text-sky-600 dark:text-sky-400",
   "narrative-director": "bg-orange-500/10 text-orange-600 dark:text-orange-400",
+  "universal-consistency": "bg-teal-500/10 text-teal-600 dark:text-teal-400",
+  "beta-reader": "bg-pink-500/10 text-pink-600 dark:text-pink-400",
 };
 
 const statusColors: Record<AgentStatusType, string> = {

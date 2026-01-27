@@ -37,6 +37,8 @@ const agentNames: Record<string, string> = {
   "smart-editor": "Editor Inteligente",
   "summarizer": "Compresor",
   "narrative-director": "Director Narrativo",
+  "universal-consistency": "Guardián de Continuidad",
+  "beta-reader": "El Crítico",
 };
 
 function sortChaptersForDisplay(chapters: Chapter[]): Chapter[] {
@@ -398,7 +400,7 @@ export default function Dashboard() {
       toast({ title: "Proyecto completado", description: "El manuscrito ha sido marcado como finalizado" });
       addLog("success", "Proyecto marcado como completado (forzado)");
       setCurrentStage(null);
-      setCompletedStages(["global-architect", "chapter-architect", "ghostwriter-v2", "smart-editor", "summarizer", "narrative-director"]);
+      setCompletedStages(["global-architect", "chapter-architect", "ghostwriter-v2", "universal-consistency", "smart-editor", "summarizer", "narrative-director", "beta-reader"]);
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo completar el proyecto", variant: "destructive" });
@@ -615,6 +617,16 @@ export default function Dashboard() {
             name={agentNames["narrative-director"]}
             role="narrative-director"
             {...getAgentStatus("narrative-director")}
+          />
+          <AgentCard 
+            name={agentNames["universal-consistency"]}
+            role="universal-consistency"
+            {...getAgentStatus("universal-consistency")}
+          />
+          <AgentCard 
+            name={agentNames["beta-reader"]}
+            role="beta-reader"
+            {...getAgentStatus("beta-reader")}
           />
         </div>
       </div>
