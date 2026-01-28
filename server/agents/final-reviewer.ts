@@ -833,28 +833,36 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
       pasadaInfo = "\n\nEsta es tu PASADA #1 - AUDITORÍA COMPLETA. Reporta máximo 3 issues por tramo (los más graves). OBJETIVO: puntuación 9+.";
     } else if (input.pasadaNumero && input.pasadaNumero >= 2) {
       const prevScore = input.puntuacionPasadaAnterior || 8;
-      pasadaInfo = `\n\nEsta es tu PASADA #${input.pasadaNumero} - VERIFICACIÓN DE CORRECCIONES.
+      const numCorrected = input.issuesPreviosCorregidos?.length || 0;
+      pasadaInfo = `\n\nEsta es tu PASADA #${input.pasadaNumero} - SOLO VERIFICACIÓN DE CORRECCIONES (NO es una auditoría nueva).
 
 ═══════════════════════════════════════════════════════════════════
 PUNTUACIÓN DE LA PASADA ANTERIOR: ${prevScore}/10
-Tu puntuación en esta pasada debe ser >= ${prevScore}/10 (los problemas anteriores se corrigieron)
+ISSUES CORREGIDOS DESDE LA PASADA ANTERIOR: ${numCorrected}
+PUNTUACIÓN ESPERADA EN ESTA PASADA: >= ${prevScore}/10 (idealmente ${Math.min(prevScore + 1, 10)}/10)
 ═══════════════════════════════════════════════════════════════════
 
-ISSUES YA CORREGIDOS EN PASADAS ANTERIORES (NO REPORTAR DE NUEVO):
+LISTA DE ISSUES QUE SE CORRIGIERON (VERIFICA que se arreglaron, NO los re-reportes):
 ${input.issuesPreviosCorregidos?.map(i => `- ${i}`).join("\n") || "Ninguno"}
 
-REGLAS CRÍTICAS DE CONSISTENCIA:
-1. NO reportes issues de la lista anterior - YA fueron corregidos (verifica que se corrigieron, no los re-reportes)
-2. Solo reporta problemas GENUINAMENTE NUEVOS o REGRESIONES específicas introducidas por las correcciones
-3. Puedes reportar todos los issues que detectes, sin límite
-4. La puntuación debe ser >= ${prevScore}/10 - NO puede bajar sin justificación explícita de REGRESIÓN
-5. Si detectas que una corrección empeoró algo específico, repórtalo como "REGRESIÓN: [descripción]"
-6. NO "descubras" problemas que existían antes pero no reportaste - eso sería inconsistente
-7. Si puntuación >= 9 → APROBADO
+⚠️ ESTA PASADA NO ES UNA AUDITORÍA NUEVA. Tu trabajo es:
+1. VERIFICAR que los issues de la lista anterior se corrigieron correctamente
+2. DETECTAR si alguna corrección introdujo una REGRESIÓN (nuevo problema causado por el arreglo)
+3. Reportar SOLO regresiones o issues críticos que se pasaron por alto en pasadas anteriores
+4. Mantener un máximo de 3 issues por tramo (igual que pasada 1)
 
-⚠️ REGLA DE ORO: Si en la pasada ${input.pasadaNumero - 1} diste ${prevScore}/10 y se corrigieron los issues reportados, 
-la puntuación de ESTA pasada debe ser MAYOR o igual a ${prevScore}/10. 
-Solo puede bajar si las correcciones introdujeron REGRESIONES (y debes listarlas explícitamente).`;
+REGLAS DE PUNTUACIÓN:
+- Si los ${numCorrected} issues se corrigieron bien → puntuación debe SUBIR a ${Math.min(prevScore + 1, 10)}/10
+- Si los issues se corrigieron parcialmente → puntuación se mantiene en ${prevScore}/10
+- SOLO puede bajar si hay REGRESIONES GRAVES (nuevos problemas introducidos por las correcciones)
+
+⛔ PROHIBIDO:
+- NO hagas una nueva auditoría completa buscando issues que antes no reportaste
+- NO "descubras" 20 nuevos problemas que existían antes pero ignoraste
+- NO reportes variaciones de issues ya corregidos
+- NO bajes la puntuación sin justificar EXPLÍCITAMENTE qué EMPEORÓ
+
+Si no hay regresiones y los issues se corrigieron, la puntuación debe ser >= ${prevScore}/10.`;
     }
 
     // Calculate tranches
