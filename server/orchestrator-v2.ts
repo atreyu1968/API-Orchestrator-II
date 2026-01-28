@@ -2066,10 +2066,17 @@ ${decisions.join('\n')}
 
       let currentCycle = 0;
       let finalResult: FinalReviewerResult | null = null;
+      // Track corrected issues between cycles to inform FinalReviewer
+      let correctedIssuesSummaries: string[] = [];
+      // Track previous cycle score for consistency enforcement
+      let previousCycleScore: number | undefined = undefined;
 
       while (currentCycle < maxCycles) {
         currentCycle++;
         console.log(`[OrchestratorV2] Final review cycle ${currentCycle}/${maxCycles}`);
+        if (correctedIssuesSummaries.length > 0) {
+          console.log(`[OrchestratorV2] Passing ${correctedIssuesSummaries.length} previously corrected issues to FinalReviewer`);
+        }
 
         if (await isProjectCancelledFromDb(project.id)) {
           console.log(`[OrchestratorV2] Final review cancelled for project ${project.id}`);
@@ -2094,12 +2101,15 @@ ${decisions.join('\n')}
         this.callbacks.onAgentStatus("final-reviewer", "active", `Analizando manuscrito completo (ciclo ${currentCycle})...`);
 
         // Run FinalReviewer with progress callback for tranche visibility
+        // Pass previously corrected issues and score so FinalReviewer maintains consistency
         const reviewResult = await this.finalReviewer.execute({
           projectTitle: project.title,
           chapters: chaptersForReview,
           worldBible: worldBibleData,
           guiaEstilo,
           pasadaNumero: currentCycle,
+          issuesPreviosCorregidos: correctedIssuesSummaries.length > 0 ? correctedIssuesSummaries : undefined,
+          puntuacionPasadaAnterior: previousCycleScore,
           onTrancheProgress: (currentTranche, totalTranches, chaptersInTranche) => {
             this.callbacks.onAgentStatus(
               "final-reviewer", 
@@ -2125,6 +2135,20 @@ ${decisions.join('\n')}
         let { veredicto, puntuacion_global, issues, capitulos_para_reescribir } = finalResult;
 
         console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}, issues: ${issues?.length || 0}`);
+        
+        // Detect score regression - this should not happen normally
+        if (previousCycleScore !== undefined && puntuacion_global < previousCycleScore) {
+          console.warn(`[OrchestratorV2] ⚠️ SCORE REGRESSION: Score dropped from ${previousCycleScore} to ${puntuacion_global} in cycle ${currentCycle}`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warn",
+            message: `Puntuación bajó de ${previousCycleScore} a ${puntuacion_global} en ciclo ${currentCycle}. Esto puede indicar inconsistencia del revisor o regresiones introducidas por las correcciones.`,
+            agentRole: "final-reviewer",
+          });
+        }
+        
+        // Save current score for next cycle
+        previousCycleScore = puntuacion_global;
 
         // ORCHESTRATOR SAFETY NET: If capitulos_para_reescribir is empty but there are ANY issues,
         // extract chapters from ALL issues to trigger auto-correction (not just critical/major)
@@ -2327,6 +2351,11 @@ ${decisions.join('\n')}
                 chapter.title || `Capítulo ${chapter.chapterNumber}`
               );
               correctedCount++;
+              
+              // Track corrected issues for next cycle
+              for (const issue of chapterIssues) {
+                correctedIssuesSummaries.push(`Cap ${chapNum}: ${issue.categoria} - ${issue.descripcion.substring(0, 100)}`);
+              }
             } else {
               // If no changes, force multiple retry attempts with increasingly aggressive instructions
               console.log(`[OrchestratorV2] Chapter ${chapNum} unchanged - forcing aggressive rewrite`);
@@ -2370,6 +2399,11 @@ ${decisions.join('\n')}
                     this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum} corregido en reintento ${attempt} (${wordCount} palabras)`);
                     correctedCount++;
                     retrySuccess = true;
+                    
+                    // Track corrected issues for next cycle
+                    for (const issue of chapterIssues) {
+                      correctedIssuesSummaries.push(`Cap ${chapNum}: ${issue.categoria} - ${issue.descripcion.substring(0, 100)}`);
+                    }
                   } else {
                     console.log(`[OrchestratorV2] Chapter ${chapNum} still unchanged after retry ${attempt} (no patches or same content)`);
                   }

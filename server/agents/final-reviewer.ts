@@ -11,6 +11,7 @@ interface FinalReviewerInput {
   guiaEstilo: string;
   pasadaNumero?: number;
   issuesPreviosCorregidos?: string[];
+  puntuacionPasadaAnterior?: number;
   userInstructions?: string;
   onTrancheProgress?: (currentTranche: number, totalTranches: number, chaptersInTranche: string) => void;
 }
@@ -831,15 +832,29 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
     if (input.pasadaNumero === 1) {
       pasadaInfo = "\n\nEsta es tu PASADA #1 - AUDITORÍA COMPLETA. Reporta máximo 3 issues por tramo (los más graves). OBJETIVO: puntuación 9+.";
     } else if (input.pasadaNumero && input.pasadaNumero >= 2) {
-      pasadaInfo = `\n\nEsta es tu PASADA #${input.pasadaNumero} - VERIFICACIÓN Y RE-EVALUACIÓN.
+      const prevScore = input.puntuacionPasadaAnterior || 8;
+      pasadaInfo = `\n\nEsta es tu PASADA #${input.pasadaNumero} - VERIFICACIÓN DE CORRECCIONES.
+
+═══════════════════════════════════════════════════════════════════
+PUNTUACIÓN DE LA PASADA ANTERIOR: ${prevScore}/10
+Tu puntuación en esta pasada debe ser >= ${prevScore}/10 (los problemas anteriores se corrigieron)
+═══════════════════════════════════════════════════════════════════
 
 ISSUES YA CORREGIDOS EN PASADAS ANTERIORES (NO REPORTAR DE NUEVO):
 ${input.issuesPreviosCorregidos?.map(i => `- ${i}`).join("\n") || "Ninguno"}
 
-REGLAS:
-1. NO reportes issues de la lista anterior - YA fueron corregidos
-2. Solo reporta problemas NUEVOS
-3. Si puntuación >= 9 → APROBADO`;
+REGLAS CRÍTICAS DE CONSISTENCIA:
+1. NO reportes issues de la lista anterior - YA fueron corregidos (verifica que se corrigieron, no los re-reportes)
+2. Solo reporta problemas GENUINAMENTE NUEVOS o REGRESIONES específicas introducidas por las correcciones
+3. Puedes reportar todos los issues que detectes, sin límite
+4. La puntuación debe ser >= ${prevScore}/10 - NO puede bajar sin justificación explícita de REGRESIÓN
+5. Si detectas que una corrección empeoró algo específico, repórtalo como "REGRESIÓN: [descripción]"
+6. NO "descubras" problemas que existían antes pero no reportaste - eso sería inconsistente
+7. Si puntuación >= 9 → APROBADO
+
+⚠️ REGLA DE ORO: Si en la pasada ${input.pasadaNumero - 1} diste ${prevScore}/10 y se corrigieron los issues reportados, 
+la puntuación de ESTA pasada debe ser MAYOR o igual a ${prevScore}/10. 
+Solo puede bajar si las correcciones introdujeron REGRESIONES (y debes listarlas explícitamente).`;
     }
 
     // Calculate tranches
