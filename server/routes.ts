@@ -6615,7 +6615,24 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       if (project.status === "processing") {
-        return res.status(400).json({ error: "Project is already being processed" });
+        // Check if project is orphaned (no heartbeat in 5 minutes)
+        const heartbeatAge = project.heartbeatAt 
+          ? Date.now() - new Date(project.heartbeatAt).getTime()
+          : Infinity;
+        const ORPHAN_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+        
+        if (heartbeatAge < ORPHAN_THRESHOLD_MS) {
+          return res.status(400).json({ error: "Project is already being processed" });
+        }
+        
+        // Project is orphaned - auto-unlock it
+        console.log(`[ReeditStart] Project ${projectId} appears orphaned (heartbeat ${Math.round(heartbeatAge/1000)}s ago). Auto-unlocking...`);
+        activeReeditOrchestrators.delete(projectId);
+        await storage.updateReeditProject(projectId, {
+          status: "pending",
+          pauseReason: "Proyecto huérfano detectado y reiniciado automáticamente",
+          cancelRequested: false,
+        });
       }
 
       const orchestrator = new ReeditOrchestrator();
@@ -6668,7 +6685,19 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       }
 
       if (project.status === "processing") {
-        return res.status(400).json({ error: "Project is already being processed" });
+        // Check if project is orphaned (no heartbeat in 5 minutes)
+        const heartbeatAge = project.heartbeatAt 
+          ? Date.now() - new Date(project.heartbeatAt).getTime()
+          : Infinity;
+        const ORPHAN_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+        
+        if (heartbeatAge < ORPHAN_THRESHOLD_MS) {
+          return res.status(400).json({ error: "Project is already being processed" });
+        }
+        
+        // Project is orphaned - auto-unlock it
+        console.log(`[AnalyzeStructure] Project ${projectId} appears orphaned. Auto-unlocking...`);
+        activeReeditOrchestrators.delete(projectId);
       }
 
       // Run the analysis pipeline (this may take a while)
