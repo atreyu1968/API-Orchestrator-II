@@ -4,18 +4,21 @@
 import { BaseAgent, AgentResponse } from "../base-agent";
 import { PROMPTS_V2 } from "../agent-prompts-v2";
 
+export interface ChapterOutline {
+  chapter_num: number;
+  title: string;
+  summary: string;
+  key_event: string;
+  emotional_arc?: string;
+}
+
 export interface ChapterArchitectInput {
-  chapterOutline: {
-    chapter_num: number;
-    title: string;
-    summary: string;
-    key_event: string;
-    emotional_arc?: string;
-  };
+  chapterOutline: ChapterOutline;
   worldBible: any;
   previousChapterSummary: string;
   storyState: string;
   consistencyConstraints?: string;
+  fullPlotOutline?: ChapterOutline[]; // Complete plot outline for all chapters
 }
 
 export interface ScenePlan {
@@ -67,6 +70,72 @@ export class ChapterArchitectAgent extends BaseAgent {
     });
   }
 
+  /**
+   * Format the full plot outline as context for coherent scene planning.
+   * Shows past chapters (what already happened), current chapter (what to plan),
+   * and future chapters (what's coming next) for full narrative awareness.
+   */
+  private formatPlotContext(fullOutline: ChapterOutline[], currentChapterNum: number): string {
+    const parts: string[] = [];
+    parts.push("=== CONTEXTO COMPLETO DE LA TRAMA ===");
+    parts.push("IMPORTANTE: Las escenas que diseñes DEBEN ser coherentes con toda la historia, no solo con este capítulo.\n");
+    
+    // Separate past, current, and future chapters
+    const pastChapters = fullOutline.filter(c => c.chapter_num < currentChapterNum);
+    const currentChapter = fullOutline.find(c => c.chapter_num === currentChapterNum);
+    const futureChapters = fullOutline.filter(c => c.chapter_num > currentChapterNum);
+    
+    // Past chapters (summarized to save tokens)
+    if (pastChapters.length > 0) {
+      parts.push("📖 LO QUE YA OCURRIÓ (no contradecir):");
+      for (const ch of pastChapters.slice(-5)) { // Only last 5 chapters for context
+        parts.push(`  Cap ${ch.chapter_num} "${ch.title}": ${ch.summary}`);
+        if (ch.key_event) {
+          parts.push(`    → Evento clave: ${ch.key_event}`);
+        }
+      }
+      if (pastChapters.length > 5) {
+        parts.push(`  [...${pastChapters.length - 5} capítulos anteriores omitidos para brevedad]`);
+      }
+      parts.push("");
+    }
+    
+    // Current chapter (what we're planning - highlighted)
+    if (currentChapter) {
+      parts.push("🎯 CAPÍTULO ACTUAL A DISEÑAR:");
+      parts.push(`  Cap ${currentChapter.chapter_num} "${currentChapter.title}"`);
+      parts.push(`  Trama: ${currentChapter.summary}`);
+      parts.push(`  Evento clave: ${currentChapter.key_event}`);
+      if (currentChapter.emotional_arc) {
+        parts.push(`  Arco emocional: ${currentChapter.emotional_arc}`);
+      }
+      parts.push("");
+    }
+    
+    // Future chapters (what's coming - for foreshadowing and setup)
+    if (futureChapters.length > 0) {
+      parts.push("📅 LO QUE VIENE DESPUÉS (preparar el terreno):");
+      for (const ch of futureChapters.slice(0, 3)) { // Only next 3 chapters
+        parts.push(`  Cap ${ch.chapter_num} "${ch.title}": ${ch.summary}`);
+        if (ch.key_event) {
+          parts.push(`    → Prepara: ${ch.key_event}`);
+        }
+      }
+      if (futureChapters.length > 3) {
+        parts.push(`  [...${futureChapters.length - 3} capítulos futuros más]`);
+      }
+      parts.push("");
+    }
+    
+    parts.push("INSTRUCCIONES:");
+    parts.push("1. Las escenas deben CONECTAR con lo que ya ocurrió");
+    parts.push("2. No introducir elementos que contradigan capítulos anteriores");
+    parts.push("3. Preparar sutilmente los eventos de capítulos futuros (foreshadowing)");
+    parts.push("4. Mantener coherencia con el arco emocional general");
+    
+    return parts.join("\n");
+  }
+
   async execute(input: ChapterArchitectInput): Promise<AgentResponse & { parsed?: ChapterArchitectOutput }> {
     console.log(`[ChapterArchitect] Planning scenes for Chapter ${input.chapterOutline.chapter_num}: "${input.chapterOutline.title}"...`);
     
@@ -77,9 +146,17 @@ export class ChapterArchitectAgent extends BaseAgent {
       input.storyState
     );
 
+    // LitAgents 2.1: Add full plot context for coherent scene planning
+    if (input.fullPlotOutline && input.fullPlotOutline.length > 0) {
+      const currentChapterNum = input.chapterOutline.chapter_num;
+      const plotContext = this.formatPlotContext(input.fullPlotOutline, currentChapterNum);
+      prompt = `${plotContext}\n\n---\n\n${prompt}`;
+      console.log(`[ChapterArchitect] Added full plot context (${input.fullPlotOutline.length} chapters)`);
+    }
+
     // LitAgents 2.1: Inject consistency constraints before planning scenes
     if (input.consistencyConstraints) {
-      prompt = `${input.consistencyConstraints}\n\n---\n\nAHORA, TENIENDO EN CUENTA LAS RESTRICCIONES DE CONSISTENCIA ANTERIORES, diseña las escenas:\n\n${prompt}`;
+      prompt = `${input.consistencyConstraints}\n\n---\n\nAHORA, TENIENDO EN CUENTA LAS RESTRICCIONES DE CONSISTENCIA Y LA TRAMA COMPLETA, diseña las escenas:\n\n${prompt}`;
       console.log(`[ChapterArchitect] Injected consistency constraints (${input.consistencyConstraints.length} chars) - Preventing inconsistent scene planning`);
     }
 

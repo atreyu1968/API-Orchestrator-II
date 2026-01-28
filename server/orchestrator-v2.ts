@@ -1208,6 +1208,7 @@ ${decisions.join('\n')}
           previousChapterSummary: previousSummary,
           storyState,
           consistencyConstraints: enrichedConstraints, // LitAgents 2.1: Inject constraints + thought context
+          fullPlotOutline: outline, // LitAgents 2.1: Full plot context for coherent scene planning
         });
 
         if (chapterPlan.error || !chapterPlan.parsed) {
@@ -1636,13 +1637,16 @@ ${decisions.join('\n')}
     guiaEstilo: string
   ): Promise<{ content: string; summary: string; wordCount: number; sceneBreakdown: ChapterArchitectOutput }> {
     
-    // Plan scenes (note: this helper doesn't have consistency constraints context)
+    // Plan scenes (note: this helper doesn't have full consistency constraints context)
+    // Extract outline from worldBible if available for plot context
+    const fullOutline = worldBible?.plotOutline?.chapters || [];
+    
     const chapterPlan = await this.chapterArchitect.execute({
       chapterOutline,
       worldBible,
       previousChapterSummary,
       storyState: rollingSummary,
-      // consistencyConstraints not available in this simplified helper
+      fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
     });
 
     if (!chapterPlan.parsed) {
@@ -2142,12 +2146,16 @@ ${decisions.join('\n')}
         // Plan scenes for this chapter (WITH constraints)
         this.callbacks.onAgentStatus("chapter-architect", "active", `Planificando escenas para Capítulo ${chapterNum}...`);
         
+        // Get full outline for plot context
+        const fullOutline = worldBibleData?.plotOutline?.chapters || [];
+        
         const chapterPlan = await this.chapterArchitect.execute({
           chapterOutline: tempOutline,
           worldBible: worldBibleData,
           previousChapterSummary: previousSummary,
           storyState: rollingSummary,
           consistencyConstraints,
+          fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
         });
 
         if (!chapterPlan.parsed) {
@@ -2350,12 +2358,16 @@ ${decisions.join('\n')}
         }
 
         // Plan new scenes (WITH constraints)
+        // Get full outline for plot context
+        const fullOutline = worldBibleData?.plotOutline?.chapters || [];
+        
         const chapterPlan = await this.chapterArchitect.execute({
           chapterOutline,
           worldBible: worldBibleData,
           previousChapterSummary: rollingSummary,
           storyState: rollingSummary,
           consistencyConstraints,
+          fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
         });
 
         if (!chapterPlan.parsed) {
@@ -2721,12 +2733,16 @@ ${decisions.join('\n')}
         // Chapter Architect (WITH constraints)
         this.callbacks.onAgentStatus("chapter-architect", "active", `Planning scenes for Chapter ${chapterNumber}...`);
         
+        // Get full outline for plot context
+        const fullOutline = (worldBible as any)?.plotOutline?.chapters || outline;
+        
         const chapterPlan = await this.chapterArchitect.execute({
           chapterOutline,
           worldBible: worldBible as any,
           previousChapterSummary: previousSummary,
           storyState: rollingSummary,
           consistencyConstraints,
+          fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
         });
 
         if (chapterPlan.error || !chapterPlan.parsed) {
