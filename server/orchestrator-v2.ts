@@ -1973,6 +1973,7 @@ ${decisions.join('\n')}
 
           let correctedCount = 0;
           let failedCount = 0;
+          let unchangedCount = 0;
 
           for (const chapNum of capitulos_para_reescribir) {
             if (await isProjectCancelledFromDb(project.id)) {
@@ -2097,7 +2098,7 @@ ${decisions.join('\n')}
               });
               
               console.log(`[OrchestratorV2] Successfully updated Chapter ${chapNum} (${wordCount} words)`);
-              this.callbacks.onAgentStatus("smart-editor", "active", `Capítulo ${chapNum} corregido (${wordCount} palabras)`);
+              this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum} corregido (${wordCount} palabras)`);
               this.callbacks.onChapterComplete(
                 chapter.chapterNumber,
                 wordCount,
@@ -2106,12 +2107,23 @@ ${decisions.join('\n')}
               correctedCount++;
             } else {
               console.log(`[OrchestratorV2] Chapter ${chapNum} unchanged or empty response`);
-              failedCount++;
+              this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum}: sin cambios necesarios`);
+              unchangedCount++;
             }
           }
 
-          console.log(`[OrchestratorV2] Auto-correction complete: ${correctedCount} corrected, ${failedCount} failed`);
-          this.callbacks.onAgentStatus("smart-editor", "completed", `${correctedCount}/${capitulos_para_reescribir.length} capítulos corregidos`);
+          // Clear summary of what happened
+          const totalAttempted = capitulos_para_reescribir.length;
+          let summaryMessage = `Correcciones: ${correctedCount} modificados`;
+          if (unchangedCount > 0) {
+            summaryMessage += `, ${unchangedCount} sin cambios`;
+          }
+          if (failedCount > 0) {
+            summaryMessage += `, ${failedCount} fallidos`;
+          }
+          summaryMessage += ` (de ${totalAttempted} capitulos)`;
+          console.log(`[OrchestratorV2] Auto-correction complete: ${correctedCount} corrected, ${unchangedCount} unchanged, ${failedCount} failed`);
+          this.callbacks.onAgentStatus("smart-editor", "completed", summaryMessage);
         }
       }
 

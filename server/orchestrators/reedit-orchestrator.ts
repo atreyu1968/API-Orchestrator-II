@@ -4427,9 +4427,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
             this.emitProgress({
               projectId,
               stage: "fixing",
-              currentChapter: i + 1,
+              currentChapter: chapter.chapterNumber,
               totalChapters: chaptersNeedingFix.length,
-              message: `Corrigiendo capítulo ${chapter.chapterNumber}: ${chapterIssues.length} issue(s) específicos...`,
+              message: `Corrigiendo capítulo ${chapter.chapterNumber} (${i + 1}/${chaptersNeedingFix.length}): ${chapterIssues.length} problema(s) a resolver...`,
             });
 
             try {
@@ -4486,6 +4486,15 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                 const currentCount = chapterCorrectionCounts.get(chapter.chapterNumber) || 0;
                 chapterCorrectionCounts.set(chapter.chapterNumber, currentCount + 1);
                 console.log(`[ReeditOrchestrator] Chapter ${chapter.chapterNumber} corrected via ${correctionResult.method} (count: ${currentCount + 1}/${MAX_CORRECTIONS_PER_CHAPTER})`);
+                
+                // Emit success message for this chapter
+                this.emitProgress({
+                  projectId,
+                  stage: "fixing",
+                  currentChapter: chapter.chapterNumber,
+                  totalChapters: chaptersNeedingFix.length,
+                  message: `Capitulo ${chapter.chapterNumber} corregido (${i + 1}/${chaptersNeedingFix.length}) - ${chapterIssues.length} problema(s) resuelto(s)`,
+                });
                 
                 // SAVE CHANGE HISTORY for intelligent resolution validation (max 10 entries per chapter)
                 const issuesSummary = chapterIssues.map(i => i.descripcion.substring(0, 300)).join("; ");
@@ -5023,9 +5032,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           this.emitProgress({
             projectId,
             stage: "fixing",
-            currentChapter: i + 1,
+            currentChapter: chapter.chapterNumber,
             totalChapters: chaptersNeedingFix.length,
-            message: `Corrigiendo capítulo ${chapter.chapterNumber}: ${chapterIssuesFRO.length} issue(s) específicos...`,
+            message: `Corrigiendo capítulo ${chapter.chapterNumber} (${i + 1}/${chaptersNeedingFix.length}): ${chapterIssuesFRO.length} problema(s) a resolver...`,
           });
 
           try {
@@ -5083,6 +5092,15 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
               const currentCountFRO = chapterCorrectionCountsFRO.get(chapter.chapterNumber) || 0;
               chapterCorrectionCountsFRO.set(chapter.chapterNumber, currentCountFRO + 1);
               console.log(`[ReeditOrchestrator] FRO: Chapter ${chapter.chapterNumber} corrected via ${correctionResult.method} (count: ${currentCountFRO + 1}/${MAX_CORRECTIONS_PER_CHAPTER_FRO})`);
+              
+              // Emit success message for this chapter
+              this.emitProgress({
+                projectId,
+                stage: "fixing",
+                currentChapter: chapter.chapterNumber,
+                totalChapters: chaptersNeedingFix.length,
+                message: `Capitulo ${chapter.chapterNumber} corregido (${i + 1}/${chaptersNeedingFix.length}) - ${chapterIssuesFRO.length} problema(s) resuelto(s)`,
+              });
               
               // SAVE CHANGE HISTORY for intelligent resolution validation (max 10 entries per chapter)
               const issuesSummaryFRO = chapterIssuesFRO.map(i => i.descripcion.substring(0, 300)).join("; ");
