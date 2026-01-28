@@ -90,6 +90,7 @@ function getStatusBadge(status: string) {
   const statusLabels: Record<string, string> = {
     pending: "Pendiente",
     processing: "Procesando",
+    paused: "Pausado",
     completed: "Completado",
     error: "Error",
     awaiting_instructions: "Esperando Instrucciones",
@@ -98,6 +99,7 @@ function getStatusBadge(status: string) {
   const variants: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; icon: typeof CheckCircle }> = {
     pending: { variant: "outline", icon: Clock },
     processing: { variant: "secondary", icon: Loader2 },
+    paused: { variant: "outline", icon: Pause },
     completed: { variant: "default", icon: CheckCircle },
     error: { variant: "destructive", icon: AlertCircle },
     awaiting_instructions: { variant: "outline", icon: Pause },
@@ -1759,7 +1761,7 @@ export default function ReeditPage() {
                         </Button>
                       </>
                     )}
-                    {selectedProjectData.status === "error" && (
+                    {(selectedProjectData.status === "error" || selectedProjectData.status === "paused") && (
                       <Button
                         onClick={() => resumeMutation.mutate({ projectId: selectedProjectData.id })}
                         disabled={resumeMutation.isPending}
