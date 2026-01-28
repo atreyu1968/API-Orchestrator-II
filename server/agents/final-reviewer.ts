@@ -865,9 +865,13 @@ REGLAS:
       const endIdx = Math.min(startIdx + CHAPTERS_PER_TRANCHE, totalChapters);
       const trancheChapters = sortedChapters.slice(startIdx, endIdx);
       
-      // Notify progress callback if provided
-      const chaptersRange = trancheChapters.map(c => this.getChapterLabel(c.numero)).join(", ");
+      // Notify progress callback if provided - format as range for cleaner UI
       if (input.onTrancheProgress) {
+        const firstChapter = this.getChapterLabel(trancheChapters[0].numero);
+        const lastChapter = this.getChapterLabel(trancheChapters[trancheChapters.length - 1].numero);
+        const chaptersRange = trancheChapters.length > 1 
+          ? `${firstChapter} - ${lastChapter}` 
+          : firstChapter;
         input.onTrancheProgress(t + 1, numTranches, chaptersRange);
       }
       
