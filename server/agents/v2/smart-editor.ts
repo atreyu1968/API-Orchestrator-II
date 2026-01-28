@@ -188,4 +188,56 @@ Responde en JSON:
     // If parsing fails, return the full content as fallback
     return { ...response, fullContent: response.content };
   }
+
+  /**
+   * Full chapter rewrite - last resort when surgical patches fail
+   * Rewrites the entire chapter following correction instructions while preserving style
+   */
+  async fullRewrite(input: SurgicalFixInput): Promise<AgentResponse & { rewrittenContent?: string }> {
+    console.log(`[SmartEditor] Full rewrite for chapter (${input.chapterContent.length} chars)...`);
+    
+    const rewritePrompt = `REESCRITURA COMPLETA DE CAPÍTULO
+
+IMPORTANTE: Los parches quirúrgicos han fallado repetidamente. Debes REESCRIBIR el capítulo completo corrigiendo todos los problemas indicados.
+
+PROBLEMAS A CORREGIR:
+${input.errorDescription}
+
+${input.consistencyConstraints ? `RESTRICCIONES DE CONSISTENCIA QUE DEBES RESPETAR:\n${input.consistencyConstraints}\n` : ''}
+
+CAPÍTULO ORIGINAL:
+${input.chapterContent}
+
+INSTRUCCIONES ESTRICTAS:
+1. Reescribe el capítulo COMPLETO desde el principio hasta el final
+2. CORRIGE todos los problemas indicados arriba
+3. MANTÉN el estilo, tono y voz narrativa del autor original
+4. PRESERVA la estructura general de escenas y la longitud aproximada
+5. NO agregues contenido nuevo que no estaba en el original
+6. NO elimines escenas o eventos importantes del original
+7. El resultado debe ser el capítulo CORREGIDO y COMPLETO
+
+Responde ÚNICAMENTE con el capítulo reescrito, sin explicaciones ni comentarios adicionales.`;
+
+    const response = await this.generateContent(rewritePrompt);
+    
+    if (response.error) {
+      return response;
+    }
+
+    // Clean up the response - remove any markdown formatting
+    let rewrittenContent = response.content
+      .replace(/^```[\w]*\n?/gm, '')
+      .replace(/```$/gm, '')
+      .trim();
+    
+    // Validate the rewrite is substantial
+    if (rewrittenContent.length < input.chapterContent.length * 0.5) {
+      console.warn(`[SmartEditor] Full rewrite seems too short (${rewrittenContent.length} vs original ${input.chapterContent.length})`);
+    }
+    
+    console.log(`[SmartEditor] Full rewrite complete: ${rewrittenContent.length} chars (original: ${input.chapterContent.length})`);
+    
+    return { ...response, rewrittenContent };
+  }
 }

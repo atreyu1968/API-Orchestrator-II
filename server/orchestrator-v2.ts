@@ -1821,13 +1821,9 @@ ${decisions.join('\n')}
             this.addTokenUsage(fixResult.tokenUsage);
 
             if (fixResult.patches && fixResult.patches.length > 0) {
-              // Apply patches
-              let newContent = chapter.content;
-              for (const patch of fixResult.patches) {
-                if (patch.original && patch.replacement && newContent.includes(patch.original)) {
-                  newContent = newContent.replace(patch.original, patch.replacement);
-                }
-              }
+              // Apply patches using patcher for fuzzy matching
+              const patchResult = applyPatches(chapter.content, fixResult.patches);
+              let newContent = patchResult.patchedText;
 
               if (newContent !== chapter.content) {
                 const wordCount = newContent.split(/\s+/).length;
@@ -2412,13 +2408,52 @@ ${decisions.join('\n')}
                 }
               }
               
+              // LAST RESORT: Full chapter rewrite if surgical patches failed
               if (!retrySuccess) {
-                console.error(`[OrchestratorV2] FALLO: Capitulo ${chapNum} no pudo ser corregido tras ${maxRetries} intentos`);
-                this.callbacks.onAgentStatus("smart-editor", "error", `ERROR: Capitulo ${chapNum} no corregido tras ${maxRetries} intentos`);
+                console.log(`[OrchestratorV2] Attempting FULL REWRITE as last resort for Chapter ${chapNum}...`);
+                this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum}: reescritura completa (último recurso)...`);
+                
+                try {
+                  const fullRewriteResult = await this.smartEditor.fullRewrite({
+                    chapterContent: chapter.content || "",
+                    errorDescription: issuesDescription,
+                  });
+                  this.addTokenUsage(fullRewriteResult.tokenUsage);
+                  
+                  if (fullRewriteResult.rewrittenContent && 
+                      fullRewriteResult.rewrittenContent.length > 100 &&
+                      fullRewriteResult.rewrittenContent !== chapter.content) {
+                    const wordCount = fullRewriteResult.rewrittenContent.split(/\s+/).length;
+                    await storage.updateChapter(chapter.id, {
+                      content: fullRewriteResult.rewrittenContent,
+                      wordCount,
+                      qualityScore: 8,
+                    });
+                    console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum} (${wordCount} words)`);
+                    this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum} reescrito completamente (${wordCount} palabras)`);
+                    correctedCount++;
+                    retrySuccess = true;
+                    
+                    // Track corrected issues for next cycle
+                    for (const issue of chapterIssues) {
+                      correctedIssuesSummaries.push(`Cap ${chapNum}: ${issue.categoria} - ${issue.descripcion.substring(0, 100)}`);
+                    }
+                  } else {
+                    console.error(`[OrchestratorV2] Full rewrite produced invalid result for Chapter ${chapNum}`);
+                  }
+                } catch (rewriteError) {
+                  console.error(`[OrchestratorV2] Full rewrite failed for Chapter ${chapNum}:`, rewriteError);
+                }
+              }
+              
+              // If still not successful after full rewrite attempt
+              if (!retrySuccess) {
+                console.error(`[OrchestratorV2] FALLO TOTAL: Capitulo ${chapNum} no pudo ser corregido tras parches y reescritura`);
+                this.callbacks.onAgentStatus("smart-editor", "error", `ERROR: Capitulo ${chapNum} no corregido tras todos los intentos`);
                 failedChaptersDetails.push({
                   chapterNumber: chapNum,
                   title: chapter.title || `Capítulo ${chapNum}`,
-                  error: `No se pudo corregir tras ${maxRetries} reintentos - el texto no cambió`,
+                  error: `No se pudo corregir tras ${maxRetries} parches + reescritura completa`,
                   issues: chapterIssues.map(i => `[${i.severidad}] ${i.descripcion}`)
                 });
                 failedCount++;
