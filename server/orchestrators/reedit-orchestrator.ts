@@ -19,6 +19,7 @@ import {
   type ForensicViolation 
 } from "../agents/forensic-consistency-auditor";
 import { BetaReaderAgent, type BetaReaderReport } from "../agents/beta-reader";
+import { SeriesThreadFixerAgent, type ThreadFixerResult, type ThreadFix } from "../agents/series-thread-fixer";
 import { applySimplePatches, type SimplePatchResult } from "../utils/patcher";
 
 function getChapterSortOrder(chapterNumber: number): number {
@@ -1542,6 +1543,7 @@ export class ReeditOrchestrator {
   private anachronismDetector: AnachronismDetectorAgent;
   private forensicAuditor: ForensicConsistencyAuditor;
   private betaReader: BetaReaderAgent;
+  private seriesThreadFixer: SeriesThreadFixerAgent;
   private expansionAnalyzer: ChapterExpansionAnalyzer;
   private chapterExpander: ChapterExpanderAgent;
   private newChapterGenerator: NewChapterGeneratorAgent;
@@ -1570,6 +1572,7 @@ export class ReeditOrchestrator {
     this.anachronismDetector = new AnachronismDetectorAgent();
     this.forensicAuditor = new ForensicConsistencyAuditor();
     this.betaReader = new BetaReaderAgent();
+    this.seriesThreadFixer = new SeriesThreadFixerAgent();
     this.expansionAnalyzer = new ChapterExpansionAnalyzer();
     this.chapterExpander = new ChapterExpanderAgent();
     this.newChapterGenerator = new NewChapterGeneratorAgent();
@@ -3034,7 +3037,7 @@ export class ReeditOrchestrator {
 
     // Detect resume stage - if project was interrupted, continue from where it left off
     const resumeStage = project.currentStage || "none";
-    const stageOrder = ["none", "analyzing", "forensic_audit", "editing", "world_bible", "expansion", "architect", "qa", "narrative_rewriting", "copyediting", "beta_reader", "reviewing", "completed"];
+    const stageOrder = ["none", "analyzing", "forensic_audit", "editing", "world_bible", "expansion", "architect", "qa", "narrative_rewriting", "copyediting", "beta_reader", "series_thread_fixer", "reviewing", "completed"];
     const resumeStageIndex = stageOrder.indexOf(resumeStage);
     
     if (resumeStageIndex > 0 && resumeStage !== "completed") {
@@ -4057,6 +4060,12 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         await this.updateHeartbeat(projectId);
       } else {
         console.log(`[ReeditOrchestrator] Skipping STAGE 6.5 (beta_reader) - already completed`);
+      }
+
+      // === STAGE 6.6: SERIES THREAD FIXER (if project is part of a series) ===
+      if ((project as any).seriesId) {
+        await this.runSeriesThreadFixerForReedit(projectId, project);
+        await this.updateHeartbeat(projectId);
       }
 
       // === STAGE 7: FINAL REVIEW (with 10/10 twice consecutive logic using full content reviewer) ===
@@ -5250,6 +5259,219 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
     });
 
     console.log(`[ReeditOrchestrator] Full final review completed for project ${projectId}: ${bestsellerScore}/10`);
+  }
+
+  /**
+   * Run SeriesThreadFixer for reedit projects that are part of a series
+   */
+  private async runSeriesThreadFixerForReedit(projectId: number, project: ReeditProject): Promise<void> {
+    const seriesId = (project as any).seriesId as number | null;
+    const seriesOrder = (project as any).seriesOrder as number | null;
+    if (!seriesId) return;
+
+    this.emitProgress({
+      projectId,
+      stage: "series_thread_fixer" as any,
+      currentChapter: 0,
+      totalChapters: 0,
+      message: "Analizando hilos y hitos de la serie...",
+    });
+
+    console.log(`[ReeditOrchestrator] Running SeriesThreadFixer for reedit project ${projectId} in series ${seriesId}`);
+
+    try {
+      // Get series info
+      const series = await storage.getSeries(seriesId);
+      if (!series) {
+        console.log(`[ReeditOrchestrator] Series ${seriesId} not found, skipping thread fixer`);
+        this.emitProgress({
+          projectId,
+          stage: "series_thread_fixer" as any,
+          currentChapter: 0,
+          totalChapters: 0,
+          message: "Serie no encontrada, omitiendo analisis de hilos",
+        });
+        return;
+      }
+
+      // Get milestones and plot threads for this series
+      const milestones = await storage.getMilestonesBySeries(seriesId);
+      const plotThreads = await storage.getPlotThreadsBySeries(seriesId);
+
+      if (milestones.length === 0 && plotThreads.length === 0) {
+        console.log(`[ReeditOrchestrator] No milestones or plot threads defined for series, skipping thread fixer`);
+        this.emitProgress({
+          projectId,
+          stage: "series_thread_fixer" as any,
+          currentChapter: 0,
+          totalChapters: 0,
+          message: "Sin hilos/hitos definidos en la serie",
+        });
+        return;
+      }
+
+      // Get all chapters for this reedit project
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      const chaptersWithContent = chapters
+        .filter(ch => ch.editedContent && ch.editedContent.length > 100)
+        .map(ch => ({
+          id: ch.id,
+          chapterNumber: ch.chapterNumber,
+          title: ch.title || `Capitulo ${ch.chapterNumber}`,
+          content: ch.editedContent || "",
+        }));
+
+      if (chaptersWithContent.length === 0) {
+        console.log(`[ReeditOrchestrator] No chapters with edited content found, skipping thread fixer`);
+        this.emitProgress({
+          projectId,
+          stage: "series_thread_fixer" as any,
+          currentChapter: 0,
+          totalChapters: 0,
+          message: "Sin capitulos con contenido editado",
+        });
+        return;
+      }
+
+      // Get world bible for context
+      const worldBible = await storage.getReeditWorldBibleByProject(projectId);
+
+      // Get context from previous books in the series
+      let previousVolumesContext: string | undefined;
+      if (seriesOrder && seriesOrder > 1) {
+        const seriesProjects = await storage.getProjectsBySeries(seriesId);
+        const previousBooks = seriesProjects
+          .filter(p => p.seriesOrder && p.seriesOrder < seriesOrder && p.status === 'completed')
+          .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+        
+        if (previousBooks.length > 0) {
+          const contexts: string[] = [];
+          for (const prevBook of previousBooks) {
+            const prevWorldBible = await storage.getWorldBibleByProject(prevBook.id);
+            if (prevWorldBible && prevWorldBible.characters) {
+              const chars = Array.isArray(prevWorldBible.characters) ? prevWorldBible.characters : [];
+              contexts.push(`Libro ${prevBook.seriesOrder}: ${prevBook.title} - Personajes: ${chars.slice(0, 5).map((c: any) => c.name || c).join(', ')}`);
+            }
+          }
+          previousVolumesContext = contexts.join('\n');
+        }
+      }
+
+      // Execute SeriesThreadFixer
+      const result = await this.seriesThreadFixer.execute({
+        projectTitle: project.title,
+        seriesTitle: series.title,
+        volumeNumber: seriesOrder || 1,
+        totalVolumes: series.totalPlannedBooks || 1,
+        chapters: chaptersWithContent,
+        milestones: milestones,
+        plotThreads: plotThreads,
+        worldBible: worldBible || {},
+        previousVolumesContext,
+      });
+
+      this.trackTokens(result);
+
+      if (result.error) {
+        console.error(`[ReeditOrchestrator] SeriesThreadFixer error: ${result.error}`);
+        this.emitProgress({
+          projectId,
+          stage: "series_thread_fixer" as any,
+          currentChapter: 0,
+          totalChapters: 0,
+          message: `Error en analisis de hilos: ${result.error.substring(0, 100)}`,
+        });
+        return;
+      }
+
+      const fixerResult = result.result;
+      if (!fixerResult) {
+        console.log(`[ReeditOrchestrator] SeriesThreadFixer returned no result`);
+        return;
+      }
+
+      console.log(`[ReeditOrchestrator] SeriesThreadFixer found ${fixerResult.totalIssuesFound} issues, ${fixerResult.fixes?.length || 0} fixes`);
+
+      // Apply fixes automatically if safe
+      if (fixerResult.fixes && fixerResult.fixes.length > 0 && 
+          (fixerResult.autoFixRecommendation === "safe_to_autofix" || fixerResult.autoFixRecommendation === "review_recommended")) {
+        
+        let appliedFixes = 0;
+        for (const fix of fixerResult.fixes) {
+          if (fix.priority === "optional") continue;
+          
+          const chapter = chaptersWithContent.find(ch => ch.id === fix.chapterId);
+          if (!chapter) continue;
+
+          try {
+            let newContent = chapter.content;
+            
+            if (fix.insertionPoint === "replace" && fix.originalPassage) {
+              if (newContent.includes(fix.originalPassage)) {
+                newContent = newContent.replace(fix.originalPassage, fix.suggestedRevision);
+              }
+            } else if (fix.insertionPoint === "beginning") {
+              newContent = fix.suggestedRevision + "\n\n" + newContent;
+            } else if (fix.insertionPoint === "end") {
+              newContent = newContent + "\n\n" + fix.suggestedRevision;
+            } else if (fix.insertionPoint === "middle") {
+              const paragraphs = newContent.split(/\n\n+/);
+              const midPoint = Math.floor(paragraphs.length / 2);
+              paragraphs.splice(midPoint, 0, fix.suggestedRevision);
+              newContent = paragraphs.join("\n\n");
+            }
+
+            if (newContent !== chapter.content) {
+              const wordCount = newContent.split(/\s+/).length;
+              await storage.updateReeditChapter(fix.chapterId, {
+                editedContent: newContent,
+                wordCount,
+              });
+              appliedFixes++;
+              console.log(`[ReeditOrchestrator] Applied fix to Chapter ${fix.chapterNumber}: ${fix.fixType}`);
+            }
+          } catch (fixError) {
+            console.error(`[ReeditOrchestrator] Error applying fix to Chapter ${fix.chapterNumber}:`, fixError);
+          }
+        }
+
+        this.emitProgress({
+          projectId,
+          stage: "series_thread_fixer" as any,
+          currentChapter: appliedFixes,
+          totalChapters: fixerResult.fixes.length,
+          message: `${appliedFixes} correcciones de hilos/hitos aplicadas`,
+        });
+        console.log(`[ReeditOrchestrator] SeriesThreadFixer applied ${appliedFixes} of ${fixerResult.fixes.length} fixes`);
+      } else {
+        this.emitProgress({
+          projectId,
+          stage: "series_thread_fixer" as any,
+          currentChapter: 0,
+          totalChapters: 0,
+          message: fixerResult.autoFixRecommendation === "manual_intervention_required" 
+            ? "Requiere intervencion manual" 
+            : "Analisis de hilos completado",
+        });
+      }
+
+      // Log unfulfilled milestones
+      if (fixerResult.unfulfilledMilestones && fixerResult.unfulfilledMilestones.length > 0) {
+        console.log(`[ReeditOrchestrator] Unfulfilled milestones: ${fixerResult.unfulfilledMilestones.map(m => m.description).join(', ')}`);
+      }
+
+      await this.saveTokenUsage(projectId);
+
+    } catch (error) {
+      console.error(`[ReeditOrchestrator] SeriesThreadFixer error:`, error);
+      this.emitProgress({
+        projectId,
+        stage: "series_thread_fixer" as any,
+        currentChapter: 0,
+        totalChapters: 0,
+        message: `Error: ${error instanceof Error ? error.message : "Error desconocido"}`,
+      });
+    }
   }
 
   async applyReviewerCorrections(projectId: number): Promise<void> {

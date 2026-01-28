@@ -20,6 +20,7 @@ import {
 } from "./agents/v2";
 import { universalConsistencyAgent } from "./agents/v2/universal-consistency";
 import { FinalReviewerAgent, type FinalReviewerResult, type FinalReviewIssue } from "./agents/final-reviewer";
+import { SeriesThreadFixerAgent, type ThreadFixerResult, type ThreadFix } from "./agents/series-thread-fixer";
 import { applyPatches, type PatchResult } from "./utils/patcher";
 import type { TokenUsage } from "./agents/base-agent";
 import type { Project, Chapter, InsertPlotThread, WorldEntity, WorldRuleRecord, EntityRelationship } from "@shared/schema";
@@ -45,6 +46,7 @@ export class OrchestratorV2 {
   private summarizer = new SummarizerAgent();
   private narrativeDirector = new NarrativeDirectorAgent();
   private finalReviewer = new FinalReviewerAgent();
+  private seriesThreadFixer = new SeriesThreadFixerAgent();
   private callbacks: OrchestratorV2Callbacks;
   
   private cumulativeTokens = {
@@ -1634,6 +1636,11 @@ ${decisions.join('\n')}
         await this.updateProjectTokens(project.id);
       }
 
+      // After all chapters are written, run SeriesThreadFixer if this is a series project
+      if (project.seriesId) {
+        await this.runSeriesThreadFixer(project);
+      }
+
       // After all chapters are written, check if we need to run FinalReviewer
       // Get fresh project data to check current score
       const freshProject = await storage.getProject(project.id);
@@ -1656,6 +1663,173 @@ ${decisions.join('\n')}
       console.error(`[OrchestratorV2] Error:`, error);
       this.callbacks.onError(error instanceof Error ? error.message : String(error));
       await storage.updateProject(project.id, { status: "error" });
+    }
+  }
+
+  /**
+   * Run SeriesThreadFixer to detect and correct unfulfilled milestones and stagnant threads
+   */
+  private async runSeriesThreadFixer(project: Project): Promise<void> {
+    if (!project.seriesId) return;
+
+    this.callbacks.onAgentStatus("series-thread-fixer", "active", "Analizando hilos y hitos de la serie...");
+    console.log(`[OrchestratorV2] Running SeriesThreadFixer for project ${project.id} in series ${project.seriesId}`);
+
+    try {
+      // Get series info
+      const series = await storage.getSeries(project.seriesId);
+      if (!series) {
+        console.log(`[OrchestratorV2] Series ${project.seriesId} not found, skipping thread fixer`);
+        return;
+      }
+
+      // Get milestones and plot threads for this series
+      const milestones = await storage.getMilestonesBySeries(project.seriesId);
+      const plotThreads = await storage.getPlotThreadsBySeries(project.seriesId);
+
+      if (milestones.length === 0 && plotThreads.length === 0) {
+        console.log(`[OrchestratorV2] No milestones or plot threads defined for series, skipping thread fixer`);
+        this.callbacks.onAgentStatus("series-thread-fixer", "completed", "Sin hilos/hitos definidos");
+        return;
+      }
+
+      // Get all chapters for this project
+      const chapters = await storage.getChaptersByProject(project.id);
+      const chaptersWithContent = chapters
+        .filter(ch => ch.content && ch.content.length > 100)
+        .map(ch => ({
+          id: ch.id,
+          chapterNumber: ch.chapterNumber,
+          title: ch.title || `Capitulo ${ch.chapterNumber}`,
+          content: ch.content || "",
+        }));
+
+      if (chaptersWithContent.length === 0) {
+        console.log(`[OrchestratorV2] No chapters with content found, skipping thread fixer`);
+        return;
+      }
+
+      // Get world bible for context
+      const worldBible = await storage.getWorldBibleByProject(project.id);
+
+      // Get context from previous books in the series
+      let previousVolumesContext: string | undefined;
+      if (project.seriesOrder && project.seriesOrder > 1) {
+        const seriesProjects = await storage.getProjectsBySeries(project.seriesId);
+        const previousBooks = seriesProjects
+          .filter(p => p.seriesOrder && p.seriesOrder < project.seriesOrder! && p.status === 'completed')
+          .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+        
+        if (previousBooks.length > 0) {
+          const contexts: string[] = [];
+          for (const prevBook of previousBooks) {
+            const prevWorldBible = await storage.getWorldBibleByProject(prevBook.id);
+            if (prevWorldBible && prevWorldBible.characters) {
+              const chars = Array.isArray(prevWorldBible.characters) ? prevWorldBible.characters : [];
+              contexts.push(`Libro ${prevBook.seriesOrder}: ${prevBook.title} - Personajes: ${chars.slice(0, 5).map((c: any) => c.name || c).join(', ')}`);
+            }
+          }
+          previousVolumesContext = contexts.join('\n');
+        }
+      }
+
+      // Execute SeriesThreadFixer
+      const result = await this.seriesThreadFixer.execute({
+        projectTitle: project.title,
+        seriesTitle: series.title,
+        volumeNumber: project.seriesOrder || 1,
+        totalVolumes: series.totalPlannedBooks || 1,
+        chapters: chaptersWithContent,
+        milestones: milestones,
+        plotThreads: plotThreads,
+        worldBible: worldBible || {},
+        previousVolumesContext,
+      });
+
+      this.addTokenUsage(result.tokenUsage);
+      await this.logAiUsage(project.id, "series-thread-fixer", "deepseek-chat", result.tokenUsage, 0);
+
+      if (result.error) {
+        console.error(`[OrchestratorV2] SeriesThreadFixer error: ${result.error}`);
+        this.callbacks.onAgentStatus("series-thread-fixer", "error", result.error);
+        return;
+      }
+
+      const fixerResult = result.result;
+      if (!fixerResult) {
+        console.log(`[OrchestratorV2] SeriesThreadFixer returned no result`);
+        this.callbacks.onAgentStatus("series-thread-fixer", "completed", "Analisis completado sin resultados");
+        return;
+      }
+
+      console.log(`[OrchestratorV2] SeriesThreadFixer found ${fixerResult.totalIssuesFound} issues, ${fixerResult.fixes?.length || 0} fixes`);
+      this.callbacks.onAgentStatus("series-thread-fixer", "active", 
+        `Encontrados ${fixerResult.totalIssuesFound} problemas, ${fixerResult.fixes?.length || 0} correcciones`);
+
+      // Apply fixes automatically if safe
+      if (fixerResult.fixes && fixerResult.fixes.length > 0 && 
+          (fixerResult.autoFixRecommendation === "safe_to_autofix" || fixerResult.autoFixRecommendation === "review_recommended")) {
+        
+        let appliedFixes = 0;
+        for (const fix of fixerResult.fixes) {
+          if (fix.priority === "optional") continue; // Skip optional fixes
+          
+          const chapter = chaptersWithContent.find(ch => ch.id === fix.chapterId);
+          if (!chapter) continue;
+
+          try {
+            let newContent = chapter.content;
+            
+            if (fix.insertionPoint === "replace" && fix.originalPassage) {
+              // Replace specific passage
+              if (newContent.includes(fix.originalPassage)) {
+                newContent = newContent.replace(fix.originalPassage, fix.suggestedRevision);
+              }
+            } else if (fix.insertionPoint === "beginning") {
+              newContent = fix.suggestedRevision + "\n\n" + newContent;
+            } else if (fix.insertionPoint === "end") {
+              newContent = newContent + "\n\n" + fix.suggestedRevision;
+            } else if (fix.insertionPoint === "middle") {
+              // Insert at roughly the middle of the chapter
+              const paragraphs = newContent.split(/\n\n+/);
+              const midPoint = Math.floor(paragraphs.length / 2);
+              paragraphs.splice(midPoint, 0, fix.suggestedRevision);
+              newContent = paragraphs.join("\n\n");
+            }
+
+            if (newContent !== chapter.content) {
+              const wordCount = newContent.split(/\s+/).length;
+              await storage.updateChapter(fix.chapterId, {
+                content: newContent,
+                wordCount,
+              });
+              appliedFixes++;
+              console.log(`[OrchestratorV2] Applied fix to Chapter ${fix.chapterNumber}: ${fix.fixType}`);
+            }
+          } catch (fixError) {
+            console.error(`[OrchestratorV2] Error applying fix to Chapter ${fix.chapterNumber}:`, fixError);
+          }
+        }
+
+        this.callbacks.onAgentStatus("series-thread-fixer", "completed", 
+          `${appliedFixes} correcciones aplicadas de ${fixerResult.fixes.length}`);
+        console.log(`[OrchestratorV2] SeriesThreadFixer applied ${appliedFixes} of ${fixerResult.fixes.length} fixes`);
+      } else {
+        this.callbacks.onAgentStatus("series-thread-fixer", "completed", 
+          fixerResult.autoFixRecommendation === "manual_intervention_required" 
+            ? "Requiere intervencion manual" 
+            : "Analisis completado");
+      }
+
+      // Log unfulfilled milestones for user awareness
+      if (fixerResult.unfulfilledMilestones && fixerResult.unfulfilledMilestones.length > 0) {
+        console.log(`[OrchestratorV2] Unfulfilled milestones: ${fixerResult.unfulfilledMilestones.map(m => m.description).join(', ')}`);
+      }
+
+    } catch (error) {
+      console.error(`[OrchestratorV2] SeriesThreadFixer error:`, error);
+      this.callbacks.onAgentStatus("series-thread-fixer", "error", 
+        error instanceof Error ? error.message : "Error desconocido");
     }
   }
 
