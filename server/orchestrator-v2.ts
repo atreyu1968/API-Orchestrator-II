@@ -2359,18 +2359,35 @@ ${decisions.join('\n')}
         const chapterSummary = summaryResult.content || `Capítulo ${chapterNum} completado.`;
         rollingSummary = chapterSummary;
 
-        // Save chapter
+        // Save chapter (update if exists, create if not)
         const wordCount = finalText.split(/\s+/).length;
-        await storage.createChapter({
-          projectId: project.id,
-          chapterNumber: chapterNum,
-          title: chapterOutline.title,
-          content: finalText,
-          wordCount,
-          status: "approved",
-          sceneBreakdown: chapterPlan.parsed as any,
-          summary: chapterSummary,
-        });
+        
+        // Check if chapter already exists to prevent duplicates
+        const existingChapter = existingChapters.find(c => c.chapterNumber === chapterNum);
+        
+        if (existingChapter) {
+          await storage.updateChapter(existingChapter.id, {
+            title: chapterOutline.title,
+            content: finalText,
+            wordCount,
+            status: "approved",
+            sceneBreakdown: chapterPlan.parsed as any,
+            summary: chapterSummary,
+          });
+          console.log(`[OrchestratorV2] Updated existing chapter ${chapterNum} (ID: ${existingChapter.id})`);
+        } else {
+          await storage.createChapter({
+            projectId: project.id,
+            chapterNumber: chapterNum,
+            title: chapterOutline.title,
+            content: finalText,
+            wordCount,
+            status: "approved",
+            sceneBreakdown: chapterPlan.parsed as any,
+            summary: chapterSummary,
+          });
+          console.log(`[OrchestratorV2] Created new chapter ${chapterNum}`);
+        }
 
         await storage.updateProject(project.id, { currentChapter: chapterNum });
         this.callbacks.onChapterComplete(chapterNum, wordCount, chapterOutline.title);
@@ -2946,23 +2963,39 @@ ${decisions.join('\n')}
 
         this.callbacks.onAgentStatus("summarizer", "completed", "Chapter compressed");
 
-        // Save chapter
+        // Save chapter (update if exists, create if not - prevents duplicates)
         const wordCount = finalText.split(/\s+/).length;
         
-        await storage.createChapter({
-          projectId: project.id,
-          chapterNumber,
-          title: chapterOutline.title,
-          content: finalText,
-          wordCount,
-          status: "approved",
-          sceneBreakdown: sceneBreakdown as any,
-          summary: chapterSummary,
-          editorFeedback: editorFeedback as any,
-          qualityScore: editorFeedback ? Math.round((editorFeedback.logic_score + editorFeedback.style_score) / 2) : null,
-        });
-
-        console.log(`[OrchestratorV2] Created missing chapter ${chapterNumber}`);
+        // Double-check if chapter exists (may have been created by concurrent process)
+        const existingChapterNow = existingChapters.find(c => c.chapterNumber === chapterNumber);
+        
+        if (existingChapterNow) {
+          await storage.updateChapter(existingChapterNow.id, {
+            title: chapterOutline.title,
+            content: finalText,
+            wordCount,
+            status: "approved",
+            sceneBreakdown: sceneBreakdown as any,
+            summary: chapterSummary,
+            editorFeedback: editorFeedback as any,
+            qualityScore: editorFeedback ? Math.round((editorFeedback.logic_score + editorFeedback.style_score) / 2) : null,
+          });
+          console.log(`[OrchestratorV2] Updated existing chapter ${chapterNumber} (ID: ${existingChapterNow.id})`);
+        } else {
+          await storage.createChapter({
+            projectId: project.id,
+            chapterNumber,
+            title: chapterOutline.title,
+            content: finalText,
+            wordCount,
+            status: "approved",
+            sceneBreakdown: sceneBreakdown as any,
+            summary: chapterSummary,
+            editorFeedback: editorFeedback as any,
+            qualityScore: editorFeedback ? Math.round((editorFeedback.logic_score + editorFeedback.style_score) / 2) : null,
+          });
+          console.log(`[OrchestratorV2] Created missing chapter ${chapterNumber}`);
+        }
         this.callbacks.onChapterComplete(chapterNumber, wordCount, chapterOutline.title);
 
         // Update token counts
