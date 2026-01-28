@@ -830,7 +830,7 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
 
     let pasadaInfo = "";
     if (input.pasadaNumero === 1) {
-      pasadaInfo = "\n\nEsta es tu PASADA #1 - AUDITORÍA COMPLETA. Reporta máximo 3 issues por tramo (los más graves). OBJETIVO: puntuación 9+.";
+      pasadaInfo = "\n\nEsta es tu PASADA #1 - AUDITORÍA COMPLETA. Reporta TODOS los issues que detectes (sin límite). Es CRÍTICO que detectes todos los problemas ahora para que se corrijan en este ciclo. OBJETIVO: puntuación 9+.";
     } else if (input.pasadaNumero && input.pasadaNumero >= 2) {
       const prevScore = input.puntuacionPasadaAnterior || 8;
       const numCorrected = input.issuesPreviosCorregidos?.length || 0;
