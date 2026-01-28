@@ -1016,7 +1016,7 @@ export default function Dashboard() {
                     </>
                   )}
 
-                  {["paused", "cancelled", "error", "failed_final_review", "final_review_in_progress"].includes(currentProject.status) && (
+                  {["paused", "cancelled", "error", "failed_final_review"].includes(currentProject.status) && (
                     <Button
                       variant="default"
                       size="sm"
@@ -1026,6 +1026,20 @@ export default function Dashboard() {
                     >
                       <Play className="h-4 w-4 mr-2" />
                       Continuar
+                    </Button>
+                  )}
+
+                  {currentProject.status === "final_review_in_progress" && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setConfirmDialog("cancel")}
+                      disabled={cancelProjectMutation.isPending}
+                      className="text-destructive hover:text-destructive"
+                      data-testid="button-cancel-final-review"
+                    >
+                      <Ban className="h-4 w-4 mr-2" />
+                      Cancelar
                     </Button>
                   )}
 
