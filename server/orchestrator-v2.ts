@@ -1973,7 +1973,6 @@ ${decisions.join('\n')}
 
           let correctedCount = 0;
           let failedCount = 0;
-          let unchangedCount = 0;
 
           for (const chapNum of capitulos_para_reescribir) {
             if (await isProjectCancelledFromDb(project.id)) {
@@ -2106,24 +2105,71 @@ ${decisions.join('\n')}
               );
               correctedCount++;
             } else {
-              console.log(`[OrchestratorV2] Chapter ${chapNum} unchanged or empty response`);
-              this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum}: sin cambios necesarios`);
-              unchangedCount++;
+              // If no changes, force multiple retry attempts with increasingly aggressive instructions
+              console.log(`[OrchestratorV2] Chapter ${chapNum} unchanged - forcing aggressive rewrite`);
+              let retrySuccess = false;
+              const maxRetries = 3;
+              
+              for (let attempt = 1; attempt <= maxRetries && !retrySuccess; attempt++) {
+                this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum}: reintento ${attempt}/${maxRetries}...`);
+                
+                try {
+                  const aggressiveIssues = `REINTENTO ${attempt}/${maxRetries} - ES OBLIGATORIO MODIFICAR ESTE CAPITULO.\n\nProblemas que DEBEN corregirse:\n${issuesDescription}\n\nINSTRUCCIONES ESTRICTAS:\n- NO devuelvas el texto sin cambios bajo ninguna circunstancia\n- Realiza TODAS las correcciones indicadas\n- Si no ves problemas obvios, mejora la prosa y el ritmo narrativo\n- El texto devuelto DEBE ser diferente al original`;
+                  const retryResult = await this.smartEditor.surgicalFix({
+                    chapterContent: chapter.content || "",
+                    errorDescription: aggressiveIssues,
+                  });
+                  this.addTokenUsage(retryResult.tokenUsage);
+                  
+                  if ((retryResult as any).parsed?.corrected_text && 
+                      (retryResult as any).parsed.corrected_text.length > 100 && 
+                      (retryResult as any).parsed.corrected_text !== chapter.content) {
+                    const correctedText = (retryResult as any).parsed.corrected_text;
+                    const wordCount = correctedText.split(/\s+/).length;
+                    await storage.updateChapter(chapter.id, {
+                      content: correctedText,
+                      wordCount,
+                      qualityScore: 8,
+                    });
+                    console.log(`[OrchestratorV2] Retry ${attempt} successful for Chapter ${chapNum} (${wordCount} words)`);
+                    this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum} corregido en reintento ${attempt} (${wordCount} palabras)`);
+                    correctedCount++;
+                    retrySuccess = true;
+                  } else {
+                    console.log(`[OrchestratorV2] Chapter ${chapNum} still unchanged after retry ${attempt}`);
+                  }
+                } catch (retryError) {
+                  console.error(`[OrchestratorV2] Retry ${attempt} failed for Chapter ${chapNum}:`, retryError);
+                }
+              }
+              
+              if (!retrySuccess) {
+                console.error(`[OrchestratorV2] FALLO: Capitulo ${chapNum} no pudo ser corregido tras ${maxRetries} intentos`);
+                this.callbacks.onAgentStatus("smart-editor", "error", `ERROR: Capitulo ${chapNum} no corregido tras ${maxRetries} intentos`);
+                failedCount++;
+              }
             }
           }
 
           // Clear summary of what happened
           const totalAttempted = capitulos_para_reescribir.length;
-          let summaryMessage = `Correcciones: ${correctedCount} modificados`;
-          if (unchangedCount > 0) {
-            summaryMessage += `, ${unchangedCount} sin cambios`;
-          }
+          let summaryMessage = `Correcciones: ${correctedCount} de ${totalAttempted} capitulos modificados`;
           if (failedCount > 0) {
-            summaryMessage += `, ${failedCount} fallidos`;
+            summaryMessage += ` (${failedCount} fallidos)`;
           }
-          summaryMessage += ` (de ${totalAttempted} capitulos)`;
-          console.log(`[OrchestratorV2] Auto-correction complete: ${correctedCount} corrected, ${unchangedCount} unchanged, ${failedCount} failed`);
+          console.log(`[OrchestratorV2] Auto-correction complete: ${correctedCount} corrected, ${failedCount} failed of ${totalAttempted} total`);
           this.callbacks.onAgentStatus("smart-editor", "completed", summaryMessage);
+          
+          // If any chapters failed to correct, pause for user intervention
+          if (failedCount > 0) {
+            console.error(`[OrchestratorV2] BLOCKING: ${failedCount} chapters could not be corrected after multiple retries`);
+            await storage.updateProject(project.id, { 
+              status: "awaiting_instructions",
+              pauseReason: `${failedCount} capitulo(s) no pudieron corregirse automaticamente tras multiples intentos. Por favor revisa los logs y proporciona instrucciones adicionales.`
+            });
+            this.callbacks.onError(`${failedCount} capitulo(s) no pudieron corregirse. Proceso pausado para revision.`);
+            return;
+          }
         }
       }
 

@@ -40,7 +40,8 @@ import {
   Check,
   X,
   XCircle,
-  Wand2
+  Wand2,
+  RefreshCw
 } from "lucide-react";
 import type { ReeditProject, ReeditChapter, ReeditAuditReport } from "@shared/schema";
 
@@ -1912,17 +1913,23 @@ export default function ReeditPage() {
                                 <Loader2 className="h-5 w-5 animate-spin text-blue-600 dark:text-blue-400" />
                               </div>
                               <div className="flex-1 min-w-0">
-                                {selectedProjectData.currentChapter && selectedProjectData.currentChapter > 0 ? (
-                                  <Badge variant="secondary" className="mb-2 bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
-                                    <Wand2 className="h-3 w-3 mr-1" />
-                                    Reescribiendo Capítulo {selectedProjectData.currentChapter}
+                                <div className="flex flex-wrap items-center gap-2 mb-2">
+                                  <Badge variant="outline" className="bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300" data-testid="badge-revision-cycle">
+                                    <RefreshCw className="h-3 w-3 mr-1" />
+                                    Ciclo {(selectedProjectData.revisionCycle || 0) + 1}
                                   </Badge>
-                                ) : selectedProjectData.currentStage === "reviewing" ? (
-                                  <Badge variant="secondary" className="mb-2 bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
-                                    <Star className="h-3 w-3 mr-1" />
-                                    Revisión Final en Curso
-                                  </Badge>
-                                ) : null}
+                                  {selectedProjectData.currentChapter && selectedProjectData.currentChapter > 0 ? (
+                                    <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300">
+                                      <Wand2 className="h-3 w-3 mr-1" />
+                                      Reescribiendo Capitulo {selectedProjectData.currentChapter}
+                                    </Badge>
+                                  ) : selectedProjectData.currentStage === "reviewing" ? (
+                                    <Badge variant="secondary" className="bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300">
+                                      <Star className="h-3 w-3 mr-1" />
+                                      Revision Final
+                                    </Badge>
+                                  ) : null}
+                                </div>
                                 <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
                                   {selectedProjectData.currentActivity || "Procesando..."}
                                 </p>
