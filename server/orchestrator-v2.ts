@@ -1522,8 +1522,9 @@ ${decisions.join('\n')}
         // Save chapter to database (update if exists, create if not)
         const wordCount = finalText.split(/\s+/).length;
         
-        // Check if chapter already exists (e.g., was reset to pending)
-        const existingChapter = existingChapters.find(c => c.chapterNumber === chapterNumber);
+        // ALWAYS check database directly to prevent duplicates (don't rely on cached list)
+        const freshChapters = await storage.getChaptersByProject(project.id);
+        const existingChapter = freshChapters.find(c => c.chapterNumber === chapterNumber);
         
         if (existingChapter) {
           // Update existing chapter instead of creating a duplicate
@@ -2362,8 +2363,9 @@ ${decisions.join('\n')}
         // Save chapter (update if exists, create if not)
         const wordCount = finalText.split(/\s+/).length;
         
-        // Check if chapter already exists to prevent duplicates
-        const existingChapter = existingChapters.find(c => c.chapterNumber === chapterNum);
+        // ALWAYS check database directly to prevent duplicates (don't rely on cached list)
+        const freshChapters = await storage.getChaptersByProject(project.id);
+        const existingChapter = freshChapters.find(c => c.chapterNumber === chapterNum);
         
         if (existingChapter) {
           await storage.updateChapter(existingChapter.id, {
@@ -2966,8 +2968,9 @@ ${decisions.join('\n')}
         // Save chapter (update if exists, create if not - prevents duplicates)
         const wordCount = finalText.split(/\s+/).length;
         
-        // Double-check if chapter exists (may have been created by concurrent process)
-        const existingChapterNow = existingChapters.find(c => c.chapterNumber === chapterNumber);
+        // ALWAYS check database directly to prevent duplicates (don't rely on cached list)
+        const freshChapters = await storage.getChaptersByProject(project.id);
+        const existingChapterNow = freshChapters.find(c => c.chapterNumber === chapterNumber);
         
         if (existingChapterNow) {
           await storage.updateChapter(existingChapterNow.id, {
