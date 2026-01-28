@@ -39,7 +39,8 @@ import {
   MessageSquare,
   Check,
   X,
-  XCircle
+  XCircle,
+  Wand2
 } from "lucide-react";
 import type { ReeditProject, ReeditChapter, ReeditAuditReport } from "@shared/schema";
 
@@ -1150,6 +1151,9 @@ export default function ReeditPage() {
   const [settingContext, setSettingContext] = useState("");
   const [structuralAnalysisProgress, setStructuralAnalysisProgress] = useState<{stage: string; message: string} | null>(null);
   const [showPlanApprovalDialog, setShowPlanApprovalDialog] = useState(false);
+  
+  // Chapter viewer state
+  const [viewingChapterId, setViewingChapterId] = useState<number | null>(null);
 
   const { data: projects = [], isLoading: projectsLoading } = useQuery<ReeditProject[]>({
     queryKey: ["/api/reedit-projects"],
@@ -1409,6 +1413,23 @@ export default function ReeditPage() {
       toast({ title: "Proyecto Reiniciado", description: "El proyecto usará la versión editada como base para la nueva reedición." });
       queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects"] });
       setShowRestartDialog(false);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const normalizeTitlesMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest("POST", `/api/reedit-projects/${projectId}/normalize-titles`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ 
+        title: "Títulos Normalizados", 
+        description: `Se actualizaron ${data.chaptersUpdated} de ${data.totalChapters} capítulos.` 
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/reedit-projects", selectedProject, "chapters"] });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -2134,46 +2155,122 @@ export default function ReeditPage() {
                   </TabsContent>
 
                   <TabsContent value="chapters">
-                    <ScrollArea className="h-[400px] mt-4">
+                    <div className="mt-4">
+                      {/* Toolbar with normalize button */}
+                      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
+                        <span className="text-sm text-muted-foreground">
+                          {chapters.length} capítulos • {chapters.filter(c => c.editedContent).length} reeditados
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => selectedProjectData && normalizeTitlesMutation.mutate(selectedProjectData.id)}
+                          disabled={normalizeTitlesMutation.isPending || chapters.length === 0}
+                          data-testid="button-normalize-reedit-titles"
+                        >
+                          {normalizeTitlesMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : (
+                            <Wand2 className="h-4 w-4 mr-2" />
+                          )}
+                          Normalizar Títulos
+                        </Button>
+                      </div>
+
                       {chapters.length === 0 ? (
                         <p className="text-center text-muted-foreground py-8">
                           Aún no se han parseado capítulos
                         </p>
-                      ) : (
-                        <div className="space-y-2">
-                          {chapters.map((chapter) => (
-                            <div
-                              key={chapter.id}
-                              data-testid={`card-reedit-chapter-${chapter.id}`}
-                              className="p-3 border rounded-md"
-                            >
-                              <div className="flex items-center justify-between gap-2">
+                      ) : viewingChapterId ? (
+                        /* Chapter content viewer */
+                        (() => {
+                          const viewingChapter = chapters.find(c => c.id === viewingChapterId);
+                          if (!viewingChapter) return null;
+                          const content = viewingChapter.editedContent || viewingChapter.originalContent || "";
+                          return (
+                            <div className="flex flex-col h-[400px]">
+                              <div className="flex items-center justify-between gap-2 pb-3 border-b mb-3">
                                 <div className="flex items-center gap-2">
-                                  <Badge variant="outline">{getChapterBadgeLabel(chapter.chapterNumber)}</Badge>
-                                  <span className="font-medium">{getChapterLabel(chapter.chapterNumber, chapter.title)}</span>
+                                  <Button variant="ghost" size="sm" onClick={() => setViewingChapterId(null)} data-testid="button-back-to-list">
+                                    <ChevronRight className="h-4 w-4 rotate-180" />
+                                    Volver
+                                  </Button>
+                                  <Badge variant="outline">{getChapterBadgeLabel(viewingChapter.chapterNumber)}</Badge>
+                                  <span className="font-medium font-serif">{getChapterLabel(viewingChapter.chapterNumber, viewingChapter.title)}</span>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {chapter.editorScore && (
-                                    <Badge variant="secondary">
-                                      Editor: {chapter.editorScore}/10
-                                    </Badge>
+                                  <Badge variant="secondary">
+                                    {content.split(/\s+/).filter(w => w.length > 0).length.toLocaleString()} palabras
+                                  </Badge>
+                                  {viewingChapter.editedContent && (
+                                    <Badge className="bg-green-500/20 text-green-600">Reeditado</Badge>
                                   )}
-                                  {getStatusBadge(chapter.status)}
                                 </div>
                               </div>
-                              {chapter.editedContent && chapter.originalContent && (
-                                <p className="text-sm text-muted-foreground mt-2">
-                                  {chapter.editedContent.split(/\s+/).length.toLocaleString()} palabras
-                                  {chapter.copyeditorChanges && (
-                                    <span className="ml-2">• Cambios: {chapter.copyeditorChanges.substring(0, 100)}...</span>
-                                  )}
-                                </p>
-                              )}
+                              <ScrollArea className="flex-1">
+                                <article className="prose prose-lg dark:prose-invert max-w-prose mx-auto leading-7 font-serif text-sm">
+                                  <div 
+                                    dangerouslySetInnerHTML={{ 
+                                      __html: content
+                                        .replace(/\n\n/g, '</p><p>')
+                                        .replace(/\n/g, '<br />')
+                                        .replace(/^/, '<p>')
+                                        .replace(/$/, '</p>')
+                                    }} 
+                                  />
+                                </article>
+                              </ScrollArea>
                             </div>
-                          ))}
-                        </div>
+                          );
+                        })()
+                      ) : (
+                        /* Chapter list */
+                        <ScrollArea className="h-[400px]">
+                          <div className="space-y-2">
+                            {chapters.map((chapter) => (
+                              <div
+                                key={chapter.id}
+                                data-testid={`card-reedit-chapter-${chapter.id}`}
+                                className="p-3 border rounded-md hover-elevate cursor-pointer"
+                                onClick={() => (chapter.editedContent || chapter.originalContent) && setViewingChapterId(chapter.id)}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <Badge variant="outline">{getChapterBadgeLabel(chapter.chapterNumber)}</Badge>
+                                    <span className="font-medium">{getChapterLabel(chapter.chapterNumber, chapter.title)}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    {chapter.editorScore && (
+                                      <Badge variant="secondary">
+                                        Editor: {chapter.editorScore}/10
+                                      </Badge>
+                                    )}
+                                    {chapter.editedContent && (
+                                      <Badge className="bg-green-500/20 text-green-600">
+                                        <CheckCircle className="h-3 w-3 mr-1" />
+                                        Reeditado
+                                      </Badge>
+                                    )}
+                                    {getStatusBadge(chapter.status)}
+                                    {(chapter.editedContent || chapter.originalContent) && (
+                                      <Eye className="h-4 w-4 text-muted-foreground" />
+                                    )}
+                                  </div>
+                                </div>
+                                {(chapter.editedContent || chapter.originalContent) && (
+                                  <p className="text-sm text-muted-foreground mt-2">
+                                    {(chapter.editedContent || chapter.originalContent || "").split(/\s+/).filter(w => w.length > 0).length.toLocaleString()} palabras
+                                    {chapter.copyeditorChanges && (
+                                      <span className="ml-2">• {chapter.copyeditorChanges.substring(0, 80)}...</span>
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
                       )}
-                    </ScrollArea>
+                    </div>
                   </TabsContent>
 
                   <TabsContent value="worldbible">

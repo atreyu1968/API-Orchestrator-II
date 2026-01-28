@@ -7073,6 +7073,140 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // Normalize reedit chapter titles (similar to project normalize-titles)
+  app.post("/api/reedit-projects/:id/normalize-titles", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const project = await storage.getReeditProject(projectId);
+      
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const chapters = await storage.getReeditChaptersByProject(projectId);
+      const results: { chapterId: number; chapterNumber: number; oldTitle: string; newTitle: string; headerFixed: boolean }[] = [];
+      
+      // Helper function to normalize title case
+      const toTitleCase = (str: string): string => {
+        return str.replace(/\w\S*/g, (txt) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+      };
+      
+      // Helper function to remove duplicate headers and normalize content
+      const normalizeReeditContent = (content: string, chapterNumber: number, title: string, language: string = "es"): { normalized: string; headerFixed: boolean } => {
+        if (!content || content.trim() === '') return { normalized: content, headerFixed: false };
+        
+        let normalized = content.trim();
+        let headerFixed = false;
+        
+        // Remove chapter headers and separators
+        const headerPatterns = [
+          /^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|PRÓLOGO|Prólogo|PROLOGUE|Prologue|EPÍLOGO|Epílogo|EPILOGUE|Epilogue|NOTA DEL AUTOR|Nota del Autor|AUTHOR'?S?\s*NOTE|Author'?s?\s*Note)[^\n]*\n+/gi,
+          /^---+\s*\n+/gm, // Remove separator lines
+        ];
+        
+        let prevLength = 0;
+        while (normalized.length !== prevLength) {
+          prevLength = normalized.length;
+          for (const pattern of headerPatterns) {
+            pattern.lastIndex = 0;
+            if (normalized.match(pattern)) {
+              normalized = normalized.replace(pattern, '');
+              headerFixed = true;
+            }
+          }
+          normalized = normalized.trim();
+        }
+        
+        // Build proper header
+        let header = '';
+        if (chapterNumber === 0) {
+          header = title && title !== 'Prólogo' ? `# Prólogo: ${title}` : '# Prólogo';
+        } else if (chapterNumber === -1 || chapterNumber === 998) {
+          header = title && title !== 'Epílogo' ? `# Epílogo: ${title}` : '# Epílogo';
+        } else if (chapterNumber === -2 || chapterNumber === 999) {
+          header = title && title !== 'Nota del Autor' ? `# Nota del Autor: ${title}` : '# Nota del Autor';
+        } else {
+          const normalizedTitle = title ? toTitleCase(title.replace(/^Capítulo\s*\d+\s*:?\s*/i, '').trim()) : '';
+          if (normalizedTitle && normalizedTitle.toLowerCase() !== `capítulo ${chapterNumber}`.toLowerCase()) {
+            header = `# Capítulo ${chapterNumber}: ${normalizedTitle}`;
+          } else {
+            header = `# Capítulo ${chapterNumber}`;
+          }
+        }
+        
+        normalized = `${header}\n\n${normalized}`;
+        return { normalized, headerFixed };
+      };
+      
+      // Extract title from content if possible
+      const extractReeditTitleFromContent = (content: string): string | null => {
+        if (!content) return null;
+        const match = content.match(/^#+ *(?:CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter)\s*\d+\s*[:–—-]\s*([^\n]+)/mi);
+        if (match && match[1]) {
+          const extracted = match[1].trim();
+          if (!extracted.match(/^Capítulo\s*\d+$/i) && extracted.length > 0) {
+            return extracted;
+          }
+        }
+        return null;
+      };
+      
+      for (const chapter of chapters) {
+        const oldTitle = chapter.title || '';
+        let newTitle = oldTitle;
+        
+        const isGenericTitle = !oldTitle || 
+          oldTitle.match(/^Capítulo\s*\d+$/i) || 
+          oldTitle === 'Prólogo' || 
+          oldTitle === 'Epílogo' ||
+          oldTitle === 'Nota del Autor';
+        
+        const content = chapter.editedContent || chapter.originalContent;
+        if (isGenericTitle && content) {
+          const extractedTitle = extractReeditTitleFromContent(content);
+          if (extractedTitle) {
+            newTitle = extractedTitle;
+          }
+        }
+        
+        // Normalize content (remove duplicate headers, add proper header)
+        const { normalized, headerFixed } = normalizeReeditContent(
+          content || '',
+          chapter.chapterNumber,
+          newTitle,
+          project.detectedLanguage || 'es'
+        );
+        
+        // Update chapter if there are changes
+        if (newTitle !== oldTitle || headerFixed) {
+          await storage.updateReeditChapter(chapter.id, {
+            title: newTitle,
+            editedContent: normalized,
+          });
+          
+          results.push({
+            chapterId: chapter.id,
+            chapterNumber: chapter.chapterNumber,
+            oldTitle,
+            newTitle,
+            headerFixed,
+          });
+        }
+      }
+      
+      res.json({
+        success: true,
+        message: `Normalizados ${results.length} de ${chapters.length} capítulos`,
+        chaptersUpdated: results.length,
+        totalChapters: chapters.length,
+        details: results,
+      });
+    } catch (error) {
+      console.error("Error normalizing reedit titles:", error);
+      res.status(500).json({ error: "Failed to normalize titles" });
+    }
+  });
+
   app.post("/api/reedit-projects/:id/cancel", async (req: Request, res: Response) => {
     try {
       const projectId = parseInt(req.params.id);
@@ -7484,11 +7618,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
 
         markdown += `## ${chapterTitle}\n\n`;
-        markdown += content.trim() + "\n\n";
-        // Only add divider between chapters, not after the last one
-        if (!isLastChapter) {
-          markdown += "---\n\n";
-        }
+        // Remove any existing separator lines from content before adding
+        const cleanContent = content.trim().replace(/\n---+\n/g, '\n\n');
+        markdown += cleanContent + "\n\n";
+        // No separator lines in export - cleaner manuscript format
         totalWords += content.split(/\s+/).filter((w: string) => w.length > 0).length;
       }
       
@@ -7555,11 +7688,10 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         }
 
         markdown += `## ${chapterTitle}\n\n`;
-        markdown += content.trim() + "\n\n";
-        // Only add divider between chapters, not after the last one
-        if (!isLastChapter) {
-          markdown += "---\n\n";
-        }
+        // Remove any existing separator lines from content before adding
+        const cleanContent = content.trim().replace(/\n---+\n/g, '\n\n');
+        markdown += cleanContent + "\n\n";
+        // No separator lines in export - cleaner manuscript format
       }
       
       const safeTitle = project.title.replace(/[^a-zA-Z0-9áéíóúñüÁÉÍÓÚÑÜ\s-]/g, "").trim();
