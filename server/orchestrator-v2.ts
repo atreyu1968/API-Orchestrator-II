@@ -2121,10 +2121,22 @@ ${decisions.join('\n')}
                   });
                   this.addTokenUsage(retryResult.tokenUsage);
                   
-                  if ((retryResult as any).parsed?.corrected_text && 
-                      (retryResult as any).parsed.corrected_text.length > 100 && 
-                      (retryResult as any).parsed.corrected_text !== chapter.content) {
-                    const correctedText = (retryResult as any).parsed.corrected_text;
+                  let correctedText: string | null = null;
+                  
+                  // surgicalFix returns patches, not parsed.corrected_text
+                  if (retryResult.patches && retryResult.patches.length > 0) {
+                    const patchResult: PatchResult = applyPatches(chapter.content || "", retryResult.patches);
+                    if (patchResult.success && patchResult.patchedContent && patchResult.patchedContent !== chapter.content) {
+                      correctedText = patchResult.patchedContent;
+                      console.log(`[OrchestratorV2] Retry ${attempt}: Applied ${patchResult.appliedCount} patches to Chapter ${chapNum}`);
+                    }
+                  } else if (retryResult.fullContent && retryResult.fullContent !== chapter.content) {
+                    // Fallback: if parsing failed, use full content
+                    correctedText = retryResult.fullContent;
+                    console.log(`[OrchestratorV2] Retry ${attempt}: Using fullContent fallback for Chapter ${chapNum}`);
+                  }
+                  
+                  if (correctedText && correctedText.length > 100) {
                     const wordCount = correctedText.split(/\s+/).length;
                     await storage.updateChapter(chapter.id, {
                       content: correctedText,
@@ -2136,7 +2148,7 @@ ${decisions.join('\n')}
                     correctedCount++;
                     retrySuccess = true;
                   } else {
-                    console.log(`[OrchestratorV2] Chapter ${chapNum} still unchanged after retry ${attempt}`);
+                    console.log(`[OrchestratorV2] Chapter ${chapNum} still unchanged after retry ${attempt} (no patches or same content)`);
                   }
                 } catch (retryError) {
                   console.error(`[OrchestratorV2] Retry ${attempt} failed for Chapter ${chapNum}:`, retryError);
