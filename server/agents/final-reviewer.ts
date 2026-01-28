@@ -976,20 +976,26 @@ REGLAS:
       orphan_chapters: allOrphanChapters,
     };
 
-    // SAFETY NET: If capitulos_para_reescribir is empty but there are issues with severity "critica" or "mayor",
-    // automatically extract chapters from those issues (no longer requires instrucciones_correccion)
+    // SAFETY NET: If capitulos_para_reescribir is empty but there are issues,
+    // automatically extract chapters from ALL issues (not just critical/major)
+    // Philosophy: If we know something is wrong, we MUST attempt to fix it
     if (combinedResult.capitulos_para_reescribir.length === 0 && combinedResult.issues.length > 0) {
       const chaptersFromIssues: number[] = [];
+      const issuesByPriority: { critica: number; mayor: number; menor: number } = { critica: 0, mayor: 0, menor: 0 };
+      
       for (const issue of combinedResult.issues) {
-        // Extract chapters from any issue with severity "critica" or "mayor" that has capitulos_afectados
-        if ((issue.severidad === "critica" || issue.severidad === "mayor") && 
-            issue.capitulos_afectados?.length > 0) {
+        // Extract chapters from ANY issue that has capitulos_afectados
+        if (issue.capitulos_afectados?.length > 0) {
           chaptersFromIssues.push(...issue.capitulos_afectados);
+          // Track issue counts by severity for logging
+          if (issue.severidad === 'critica') issuesByPriority.critica++;
+          else if (issue.severidad === 'mayor') issuesByPriority.mayor++;
+          else issuesByPriority.menor++;
         }
       }
       if (chaptersFromIssues.length > 0) {
         combinedResult.capitulos_para_reescribir = Array.from(new Set(chaptersFromIssues));
-        console.log(`[FinalReviewer] SAFETY NET: Extracted ${combinedResult.capitulos_para_reescribir.length} chapters from ${combinedResult.issues.filter(i => i.severidad === "critica" || i.severidad === "mayor").length} critical/major issues: ${combinedResult.capitulos_para_reescribir.join(", ")}`);
+        console.log(`[FinalReviewer] SAFETY NET: Extracted ${combinedResult.capitulos_para_reescribir.length} chapters from ALL issues (critica: ${issuesByPriority.critica}, mayor: ${issuesByPriority.mayor}, menor: ${issuesByPriority.menor}): chapters ${combinedResult.capitulos_para_reescribir.join(", ")}`);
       }
     }
     

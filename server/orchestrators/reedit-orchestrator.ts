@@ -1600,7 +1600,42 @@ export class ReeditOrchestrator {
     const hasCriticalIssues = problems.some((p: any) => 
       p.severidad === 'critica' || p.severidad === 'critical'
     );
-    const useSurgicalFix = problems.length <= 3 && !hasCriticalIssues;
+    
+    // Issues that ALWAYS require full rewrite (cannot be fixed with simple patches)
+    const requiresFullRewriteTypes = [
+      'timeline', 'temporal', 'tiempo', 
+      'ubicacion', 'geografica', 'geography', 'location',
+      'continuidad_fisica', 'physical', 'injury', 'lesion',
+      'ritmo', 'pacing', 'transition',
+      'coherencia', 'continuity', 'consistency',
+      'estructura', 'structure',
+      'arco', 'arc', 'character_arc'
+    ];
+    
+    const hasStructuralIssues = problems.some((p: any) => {
+      const tipoLower = (p.tipo || '').toLowerCase();
+      const descLower = (p.descripcion || '').toLowerCase();
+      return requiresFullRewriteTypes.some(keyword => 
+        tipoLower.includes(keyword) || descLower.includes(keyword)
+      ) || 
+      // Also detect by description content
+      descLower.includes('teletransport') ||
+      descLower.includes('recuperación milagrosa') ||
+      descLower.includes('miraculous recovery') ||
+      descLower.includes('viaje imposible') ||
+      descLower.includes('impossible travel') ||
+      descLower.includes('herida ignorada') ||
+      descLower.includes('injury ignored') ||
+      descLower.includes('lesión') ||
+      descLower.includes('transición abrupta');
+    });
+    
+    // Only use surgical fix for truly minor issues
+    const useSurgicalFix = problems.length <= 2 && !hasCriticalIssues && !hasStructuralIssues;
+    
+    if (hasStructuralIssues) {
+      console.log(`[ReeditOrchestrator] Chapter ${chapterNumber} has STRUCTURAL issues (coherence/timeline/physical) - forcing FULL REWRITE`);
+    }
     
     // Try surgical fix first for minor issues
     if (useSurgicalFix) {
