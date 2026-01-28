@@ -63,6 +63,9 @@ export const PROMPTS_V2 = {
     3. Establece las reglas del mundo (especialmente si es fantasía/ciencia ficción)
     4. Planifica la estructura de 3 actos con puntos de giro
     5. Define los hilos narrativos que mantendrán la tensión
+    6. **NUEVO**: Crea la LÍNEA TEMPORAL MAESTRA (qué día/momento ocurre cada capítulo)
+    7. **NUEVO**: Crea el MAPA DE UBICACIONES con tiempos de viaje realistas
+    8. **NUEVO**: Define el ESTADO INICIAL de cada personaje principal
 
     ╔══════════════════════════════════════════════════════════════════╗
     ║ REGLAS DE DISEÑO ANTI-CLICHÉ (OBLIGATORIAS EN TODO CAPÍTULO)    ║
@@ -136,6 +139,12 @@ export const PROMPTS_V2 = {
               "eyes": "Color de ojos (INMUTABLE)",
               "hair": "Color y estilo de cabello (INMUTABLE)",
               "distinguishing_features": ["Rasgos distintivos"]
+            },
+            "initial_state": {
+              "location": "Ciudad/lugar donde empieza",
+              "physical_condition": "Sano/heridas previas/discapacidades",
+              "resources": ["Armas", "Dinero aproximado", "Vehículos", "Contactos clave"],
+              "skills": ["Habilidades específicas que posee"]
             }
           }
         ],
@@ -145,10 +154,42 @@ export const PROMPTS_V2 = {
         "settings": [
           {"name": "Nombre del lugar", "description": "Descripción sensorial", "atmosphere": "Atmósfera"}
         ],
-        "themes": ["Tema filosófico/moral 1", "Tema 2"]
+        "themes": ["Tema filosófico/moral 1", "Tema 2"],
+        "location_map": {
+          "primary_locations": [
+            {"name": "Madrid", "type": "ciudad", "key_places": ["Hotel X", "Comisaría Central"]},
+            {"name": "Barcelona", "type": "ciudad", "key_places": ["Puerto", "Barrio Gótico"]}
+          ],
+          "travel_times": [
+            {"from": "Madrid", "to": "Barcelona", "by_car": "6 horas", "by_plane": "1.5 horas", "by_train": "2.5 horas"},
+            {"from": "Centro Madrid", "to": "Aeropuerto Barajas", "by_car": "40 minutos"}
+          ]
+        }
       },
       "plot_threads": [ 
         { "name": "Nombre del hilo narrativo", "description": "Qué impulsa este hilo", "goal": "Resolución esperada" }
+      ],
+      "timeline_master": {
+        "story_duration": "X días/semanas/meses",
+        "start_date": "Día 1 (o fecha concreta si aplica)",
+        "chapter_timeline": [
+          {"chapter": 1, "day": "Día 1", "time_of_day": "mañana", "duration": "4 horas", "location": "Madrid"},
+          {"chapter": 2, "day": "Día 1", "time_of_day": "tarde-noche", "duration": "6 horas", "location": "Madrid"},
+          {"chapter": 3, "day": "Día 2", "time_of_day": "mañana", "duration": "3 horas", "location": "En ruta a Barcelona"}
+        ],
+        "key_temporal_constraints": [
+          "Entre Cap 5 y Cap 6: personaje se recupera de herida (mínimo 3 días)",
+          "Cap 10: debe coincidir con evento lunar/festivo/fecha límite"
+        ]
+      },
+      "character_tracking": [
+        {
+          "character": "Protagonista",
+          "chapter_states": [
+            {"chapter": 1, "location": "Madrid, hotel", "physical_state": "Sano", "emotional_state": "Determinado", "key_possessions": ["Pistola", "Móvil", "500€"]},
+            {"chapter": 5, "location": "Barcelona, hospital", "physical_state": "Herida en hombro izquierdo", "emotional_state": "Frustrado", "key_possessions": ["Pistola confiscada", "Móvil destruido"]}
+          ]
+        }
       ],
       "outline": [
         { 
@@ -157,7 +198,10 @@ export const PROMPTS_V2 = {
           "act": 1,
           "summary": "Sinopsis de 2-3 líneas de lo que ocurre", 
           "key_event": "El evento principal que define el capítulo",
-          "emotional_arc": "De qué emoción a qué emoción viaja el lector"
+          "emotional_arc": "De qué emoción a qué emoción viaja el lector",
+          "temporal_notes": "Día X, mañana/tarde/noche, X horas después del capítulo anterior",
+          "location": "Ciudad/lugar principal donde transcurre",
+          "character_states_entering": "Estado relevante de personajes al empezar (heridas, ubicación previa)"
         }
       ],
       "three_act_structure": {

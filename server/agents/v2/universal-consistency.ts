@@ -60,7 +60,20 @@ export class UniversalConsistencyAgent {
     entities: EntityForPrompt[],
     rules: RuleForPrompt[],
     relationships: RelationshipForPrompt[],
-    chapterNumber: number
+    chapterNumber: number,
+    timelineInfo?: {
+      chapter_timeline?: Array<{ chapter: number; day: string; time_of_day: string; duration?: string; location?: string }>;
+      previous_chapter?: { day: string; time_of_day: string; location?: string };
+      current_chapter?: { day: string; time_of_day: string; location?: string };
+      travel_times?: Array<{ from: string; to: string; by_car?: string; by_plane?: string; by_train?: string }>;
+    },
+    characterStates?: Array<{
+      character: string;
+      current_location?: string;
+      physical_state?: string;
+      active_injuries?: string[];
+      key_possessions?: string[];
+    }>
   ): string {
     const config = getGenreConfig(genre);
 
@@ -83,6 +96,55 @@ export class UniversalConsistencyAgent {
 
     const genreRules = config.critical_rules.map(r => `- ${r}`).join('\n');
 
+    // NEW: Build temporal coherence block
+    let temporalBlock = "";
+    if (timelineInfo) {
+      temporalBlock = `
+🕐 COHERENCIA TEMPORAL (OBLIGATORIA):
+`;
+      if (timelineInfo.previous_chapter) {
+        temporalBlock += `- Capítulo anterior: ${timelineInfo.previous_chapter.day}, ${timelineInfo.previous_chapter.time_of_day}`;
+        if (timelineInfo.previous_chapter.location) {
+          temporalBlock += ` en ${timelineInfo.previous_chapter.location}`;
+        }
+        temporalBlock += `\n`;
+      }
+      if (timelineInfo.current_chapter) {
+        temporalBlock += `- Este capítulo (${chapterNumber}): ${timelineInfo.current_chapter.day}, ${timelineInfo.current_chapter.time_of_day}`;
+        if (timelineInfo.current_chapter.location) {
+          temporalBlock += ` en ${timelineInfo.current_chapter.location}`;
+        }
+        temporalBlock += `\n`;
+      }
+      if (timelineInfo.travel_times && timelineInfo.travel_times.length > 0) {
+        temporalBlock += `\n📍 TIEMPOS DE VIAJE (respetar para transiciones):\n`;
+        timelineInfo.travel_times.slice(0, 8).forEach(t => {
+          const times = [t.by_car && `coche: ${t.by_car}`, t.by_plane && `avión: ${t.by_plane}`, t.by_train && `tren: ${t.by_train}`].filter(Boolean).join(', ');
+          temporalBlock += `- ${t.from} → ${t.to}: ${times}\n`;
+        });
+      }
+    }
+
+    // NEW: Build character state block with injuries/locations
+    let characterStateBlock = "";
+    if (characterStates && characterStates.length > 0) {
+      characterStateBlock = `
+🏥 ESTADO FÍSICO DE PERSONAJES AL INICIO DEL CAPÍTULO:
+`;
+      characterStates.forEach(cs => {
+        characterStateBlock += `- ${cs.character}:\n`;
+        if (cs.current_location) characterStateBlock += `    Ubicación: ${cs.current_location}\n`;
+        if (cs.physical_state) characterStateBlock += `    Estado físico: ${cs.physical_state}\n`;
+        if (cs.active_injuries && cs.active_injuries.length > 0) {
+          characterStateBlock += `    ⚠️ LESIONES ACTIVAS: ${cs.active_injuries.join(', ')}\n`;
+          characterStateBlock += `       → Estas lesiones LIMITAN sus acciones físicas\n`;
+        }
+        if (cs.key_possessions && cs.key_possessions.length > 0) {
+          characterStateBlock += `    Posesiones: ${cs.key_possessions.join(', ')}\n`;
+        }
+      });
+    }
+
     return `
 ⛔ SISTEMA DE CONSISTENCIA UNIVERSAL ACTIVO (${genre.toUpperCase()})
 ═══════════════════════════════════════════════════════════════════
@@ -91,7 +153,8 @@ ESCRIBIENDO CAPÍTULO ${chapterNumber}. Debes respetar ESTRICTAMENTE la Base de 
 El lector notará cualquier contradicción. Las violaciones causarán RECHAZO AUTOMÁTICO.
 
 FOCO DEL GÉNERO: ${config.focus}
-
+${temporalBlock}
+${characterStateBlock}
 📊 ESTADO ACTUAL DE PERSONAJES Y OBJETOS:
 ${entityBlock}
 
@@ -108,9 +171,12 @@ ${genreRules}
 ANTES DE ESCRIBIR CUALQUIER ESCENA, VERIFICA:
 1. ¿Los personajes muertos siguen muertos?
 2. ¿Las coartadas/alibis establecidos se respetan?
-3. ¿Las ubicaciones son físicamente posibles?
+3. ¿Las ubicaciones son físicamente posibles dado el tiempo transcurrido?
 4. ¿Los roles de personajes (detective, víctima, sospechoso) son consistentes?
 5. ¿No hay anacronismos o tecnología imposible para la época?
+6. ¿Las lesiones activas limitan las acciones del personaje?
+7. ¿El tiempo de viaje entre ubicaciones es realista?
+8. ¿El personaje tiene los recursos/posesiones que usa?
 ═══════════════════════════════════════════════════════════════════
 `;
   }

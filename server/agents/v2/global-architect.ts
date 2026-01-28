@@ -36,6 +36,12 @@ export interface GlobalArchitectOutput {
         hair?: string;
         distinguishing_features?: string[];
       };
+      initial_state?: {
+        location?: string;
+        physical_condition?: string;
+        resources?: string[];
+        skills?: string[];
+      };
     }>;
     rules: Array<{
       category: string;
@@ -48,11 +54,47 @@ export interface GlobalArchitectOutput {
       atmosphere: string;
     }>;
     themes?: string[];
+    location_map?: {
+      primary_locations?: Array<{
+        name: string;
+        type?: string;
+        key_places?: string[];
+      }>;
+      travel_times?: Array<{
+        from: string;
+        to: string;
+        by_car?: string;
+        by_plane?: string;
+        by_train?: string;
+      }>;
+    };
   };
   plot_threads: Array<{
     name: string;
     description?: string;
     goal: string;
+  }>;
+  timeline_master?: {
+    story_duration?: string;
+    start_date?: string;
+    chapter_timeline?: Array<{
+      chapter: number;
+      day: string;
+      time_of_day: string;
+      duration?: string;
+      location?: string;
+    }>;
+    key_temporal_constraints?: string[];
+  };
+  character_tracking?: Array<{
+    character: string;
+    chapter_states?: Array<{
+      chapter: number;
+      location?: string;
+      physical_state?: string;
+      emotional_state?: string;
+      key_possessions?: string[];
+    }>;
   }>;
   outline: Array<{
     chapter_num: number;
@@ -61,6 +103,9 @@ export interface GlobalArchitectOutput {
     summary: string;
     key_event: string;
     emotional_arc?: string;
+    temporal_notes?: string;
+    location?: string;
+    character_states_entering?: string;
   }>;
   three_act_structure?: {
     act1: { chapters: number[]; goal: string };

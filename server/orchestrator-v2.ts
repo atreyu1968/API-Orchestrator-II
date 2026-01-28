@@ -109,6 +109,107 @@ export class OrchestratorV2 {
   }
 
   // ============================================
+  // THOUGHT LOG SYSTEM FOR V2 AGENTS
+  // ============================================
+
+  /**
+   * Save agent's reasoning/thinking to thought logs for context sharing
+   */
+  private async saveThoughtLog(
+    projectId: number,
+    agentName: string,
+    agentRole: string,
+    thoughtContent: string,
+    chapterId?: number
+  ): Promise<void> {
+    if (!thoughtContent || thoughtContent.length < 50) return; // Skip trivial thoughts
+    
+    try {
+      // Truncate very long thoughts to prevent DB bloat
+      const truncatedThought = thoughtContent.length > 8000 
+        ? thoughtContent.substring(0, 8000) + "\n\n[...truncado por longitud...]"
+        : thoughtContent;
+      
+      await storage.createThoughtLog({
+        projectId,
+        chapterId: chapterId || null,
+        agentName,
+        agentRole,
+        thoughtContent: truncatedThought,
+      });
+      
+      console.log(`[OrchestratorV2] Saved thought log from ${agentName} (${truncatedThought.length} chars)`);
+    } catch (err) {
+      console.error(`[OrchestratorV2] Failed to save thought log for ${agentName}:`, err);
+    }
+  }
+
+  /**
+   * Get recent thought logs as context for agents
+   * Returns a summary of recent agent reasoning to inform subsequent agents
+   */
+  private async getThoughtContext(projectId: number, limit: number = 10): Promise<string> {
+    try {
+      const logs = await storage.getThoughtLogsByProject(projectId);
+      if (logs.length === 0) return "";
+      
+      // Get the most recent logs
+      const recentLogs = logs.slice(0, limit);
+      
+      const contextLines = recentLogs.map(log => {
+        const preview = log.thoughtContent.substring(0, 500);
+        return `[${log.agentName}] ${preview}${log.thoughtContent.length > 500 ? '...' : ''}`;
+      });
+      
+      return `
+═══════════════════════════════════════════════════════════════════
+📝 CONTEXTO DE RAZONAMIENTO DE AGENTES ANTERIORES:
+═══════════════════════════════════════════════════════════════════
+${contextLines.join('\n\n')}
+═══════════════════════════════════════════════════════════════════
+Usa este contexto para mantener coherencia con las decisiones previas.
+`;
+    } catch (err) {
+      console.error(`[OrchestratorV2] Failed to get thought context:`, err);
+      return "";
+    }
+  }
+
+  /**
+   * Extract key decisions from thought logs for specific chapter
+   * Provides focused context about decisions made for a chapter
+   */
+  private async getChapterDecisionContext(projectId: number, chapterNumber: number): Promise<string> {
+    try {
+      const logs = await storage.getThoughtLogsByProject(projectId);
+      
+      // Filter logs related to this chapter or recent planning
+      const relevantLogs = logs.filter(log => {
+        const content = log.thoughtContent.toLowerCase();
+        return content.includes(`capítulo ${chapterNumber}`) ||
+               content.includes(`chapter ${chapterNumber}`) ||
+               log.agentRole === 'global-architect' ||
+               log.agentRole === 'chapter-architect';
+      }).slice(0, 5);
+      
+      if (relevantLogs.length === 0) return "";
+      
+      const decisions = relevantLogs.map(log => {
+        const preview = log.thoughtContent.substring(0, 400);
+        return `• [${log.agentName}]: ${preview}${log.thoughtContent.length > 400 ? '...' : ''}`;
+      });
+      
+      return `
+🧠 DECISIONES DE PLANIFICACIÓN RELEVANTES:
+${decisions.join('\n')}
+`;
+    } catch (err) {
+      console.error(`[OrchestratorV2] Failed to get chapter decision context:`, err);
+      return "";
+    }
+  }
+
+  // ============================================
   // UNIVERSAL CONSISTENCY MODULE INTEGRATION
   // ============================================
 
@@ -189,6 +290,115 @@ export class OrchestratorV2 {
         meta: r.meta || {},
       })),
     };
+  }
+
+  /**
+   * Extract timeline info from worldBible for consistency constraints
+   * Includes current chapter timing, previous chapter timing, and travel times
+   */
+  private extractTimelineInfo(
+    worldBible: any,
+    currentChapter: number,
+    previousChapter?: number
+  ): {
+    chapter_timeline?: Array<{ chapter: number; day: string; time_of_day: string; duration?: string; location?: string }>;
+    previous_chapter?: { day: string; time_of_day: string; location?: string };
+    current_chapter?: { day: string; time_of_day: string; location?: string };
+    travel_times?: Array<{ from: string; to: string; by_car?: string; by_plane?: string; by_train?: string }>;
+  } | undefined {
+    const result: any = {};
+    
+    // Extract timeline_master if available
+    if (worldBible?.timeline_master?.chapter_timeline) {
+      const timeline = worldBible.timeline_master.chapter_timeline;
+      result.chapter_timeline = timeline;
+      
+      // Find current and previous chapter info
+      const currentInfo = timeline.find((t: any) => t.chapter === currentChapter);
+      if (currentInfo) {
+        result.current_chapter = {
+          day: currentInfo.day,
+          time_of_day: currentInfo.time_of_day,
+          location: currentInfo.location
+        };
+      }
+      
+      if (previousChapter !== undefined) {
+        const prevInfo = timeline.find((t: any) => t.chapter === previousChapter);
+        if (prevInfo) {
+          result.previous_chapter = {
+            day: prevInfo.day,
+            time_of_day: prevInfo.time_of_day,
+            location: prevInfo.location
+          };
+        }
+      }
+    }
+    
+    // Extract travel times from location_map
+    if (worldBible?.location_map?.travel_times) {
+      result.travel_times = worldBible.location_map.travel_times;
+    }
+    
+    return Object.keys(result).length > 0 ? result : undefined;
+  }
+
+  /**
+   * Extract character states for the current chapter from worldBible
+   * Includes location, physical state, injuries, and possessions
+   */
+  private extractCharacterStates(
+    worldBible: any,
+    chapterNumber: number
+  ): Array<{
+    character: string;
+    current_location?: string;
+    physical_state?: string;
+    active_injuries?: string[];
+    key_possessions?: string[];
+  }> | undefined {
+    const states: any[] = [];
+    
+    // Extract from character_tracking if available
+    if (worldBible?.character_tracking) {
+      for (const tracking of worldBible.character_tracking) {
+        if (!tracking.chapter_states) continue;
+        
+        // Find the most recent state before or at current chapter
+        const relevantStates = tracking.chapter_states
+          .filter((s: any) => s.chapter <= chapterNumber)
+          .sort((a: any, b: any) => b.chapter - a.chapter);
+        
+        if (relevantStates.length > 0) {
+          const latestState = relevantStates[0];
+          states.push({
+            character: tracking.character,
+            current_location: latestState.location,
+            physical_state: latestState.physical_state,
+            active_injuries: latestState.physical_state?.toLowerCase().includes('herida') || latestState.physical_state?.toLowerCase().includes('lesion')
+              ? [latestState.physical_state]
+              : undefined,
+            key_possessions: latestState.key_possessions
+          });
+        }
+      }
+    }
+    
+    // Also extract initial_state from characters if no tracking available
+    if (states.length === 0 && worldBible?.characters) {
+      for (const char of worldBible.characters) {
+        if (char.initial_state) {
+          states.push({
+            character: char.name,
+            current_location: char.initial_state.location,
+            physical_state: char.initial_state.physical_condition,
+            key_possessions: char.initial_state.resources
+          });
+        }
+      }
+    }
+    
+    return states.length > 0 ? states : undefined;
   }
 
   private async validateAndUpdateConsistency(
@@ -689,6 +899,17 @@ export class OrchestratorV2 {
 
         this.addTokenUsage(globalResult.tokenUsage);
         await this.logAiUsage(project.id, "global-architect", "deepseek-reasoner", globalResult.tokenUsage);
+        
+        // Save Global Architect's reasoning to thought logs for context sharing
+        if (globalResult.thoughtSignature) {
+          await this.saveThoughtLog(
+            project.id,
+            "Global Architect",
+            "global-architect",
+            globalResult.thoughtSignature
+          );
+        }
+        
         this.callbacks.onAgentStatus("global-architect", "completed", "Master structure complete");
 
         worldBible = globalResult.parsed.world_bible;
@@ -835,14 +1056,20 @@ export class OrchestratorV2 {
         try {
           const context = await this.getConsistencyContext(project.id);
           if (context.entities.length > 0) {
+            // Extract timeline and character state info from worldBible
+            const timelineInfo = this.extractTimelineInfo(worldBible, chapterNumber, i > 0 ? orderedOutlines[i - 1]?.chapter_num : undefined);
+            const characterStates = this.extractCharacterStates(worldBible, chapterNumber);
+            
             consistencyConstraints = universalConsistencyAgent.generateConstraints(
               project.genre,
               context.entities,
               context.rules,
               context.relationships,
-              chapterNumber
+              chapterNumber,
+              timelineInfo,
+              characterStates
             );
-            console.log(`[OrchestratorV2] Generated consistency constraints (${consistencyConstraints.length} chars) - Will inject to ChapterArchitect AND Ghostwriter`);
+            console.log(`[OrchestratorV2] Generated consistency constraints (${consistencyConstraints.length} chars) with timeline and character states`);
           }
         } catch (err) {
           console.error(`[OrchestratorV2] Failed to generate constraints:`, err);
@@ -854,12 +1081,16 @@ export class OrchestratorV2 {
         const previousSummary = i > 0 ? chapterSummaries[i - 1] : "";
         const storyState = rollingSummary;
 
+        // Get thought context from previous agents for this chapter
+        const thoughtContext = await this.getChapterDecisionContext(project.id, chapterNumber);
+        const enrichedConstraints = consistencyConstraints + thoughtContext;
+
         const chapterPlan = await this.chapterArchitect.execute({
           chapterOutline,
           worldBible,
           previousChapterSummary: previousSummary,
           storyState,
-          consistencyConstraints, // LitAgents 2.1: Inject constraints to planning phase
+          consistencyConstraints: enrichedConstraints, // LitAgents 2.1: Inject constraints + thought context
         });
 
         if (chapterPlan.error || !chapterPlan.parsed) {
@@ -868,6 +1099,17 @@ export class OrchestratorV2 {
 
         this.addTokenUsage(chapterPlan.tokenUsage);
         await this.logAiUsage(project.id, "chapter-architect", "deepseek-reasoner", chapterPlan.tokenUsage, chapterNumber);
+        
+        // Save Chapter Architect's reasoning to thought logs
+        if (chapterPlan.thoughtSignature) {
+          await this.saveThoughtLog(
+            project.id,
+            "Chapter Architect",
+            "chapter-architect",
+            `[Capítulo ${chapterNumber}] ${chapterPlan.thoughtSignature}`
+          );
+        }
+        
         this.callbacks.onAgentStatus("chapter-architect", "completed", `${chapterPlan.parsed.scenes.length} scenes planned`);
 
         const sceneBreakdown = chapterPlan.parsed;
@@ -890,7 +1132,7 @@ export class OrchestratorV2 {
             rollingSummary,
             worldBible,
             guiaEstilo,
-            consistencyConstraints,
+            consistencyConstraints: enrichedConstraints, // Include thought context
           });
 
           if (sceneResult.error) {
@@ -900,6 +1142,16 @@ export class OrchestratorV2 {
 
           this.addTokenUsage(sceneResult.tokenUsage);
           await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", sceneResult.tokenUsage, chapterNumber);
+          
+          // Save significant Ghostwriter thoughts (only for first and last scene to reduce noise)
+          if ((scene.scene_num === 1 || scene.scene_num === sceneBreakdown.scenes.length) && sceneResult.thoughtSignature) {
+            await this.saveThoughtLog(
+              project.id,
+              "Ghostwriter V2",
+              "ghostwriter-v2",
+              `[Cap ${chapterNumber}, Escena ${scene.scene_num}] ${sceneResult.thoughtSignature}`
+            );
+          }
           
           fullChapterText += "\n\n" + sceneResult.content;
           lastContext = sceneResult.content.slice(-1500); // Keep last 1500 chars for context
