@@ -4528,33 +4528,20 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           // CRITICAL: Persist reset to database to survive auto-recovery/restarts
           await storage.updateReeditProject(projectId, { consecutiveHighScores: 0 });
           
-          // Check if we should pause for user instructions
+          // UNATTENDED MODE: Log warning but continue automatically instead of pausing
           if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
-            const pauseReason = `Después de ${nonPerfectCount} evaluaciones sin alcanzar 10/10, el proceso se ha pausado. Última puntuación: ${rawScore}/10. Issues detectados: ${issuesCount}. Por favor, proporciona instrucciones para continuar.`;
+            const warningMessage = `${nonPerfectCount} evaluaciones sin alcanzar 9+/10. Última puntuación: ${rawScore}/10. Issues: ${issuesCount}. Continuando automáticamente...`;
             
-            console.log(`[ReeditOrchestrator] PAUSING after ${nonPerfectCount} non-perfect scores. Waiting for user instructions.`);
+            console.warn(`[ReeditOrchestrator] UNATTENDED: ${nonPerfectCount} non-perfect scores reached. Continuing anyway...`);
             
-            await storage.updateReeditProject(projectId, {
-              status: "awaiting_instructions",
-              pauseReason,
-              revisionCycle,
-              consecutiveHighScores,
-              nonPerfectFinalReviews: nonPerfectCount,
-              previousScores: previousScores as any,
-              finalReviewResult: finalResult,
-              bestsellerScore: Math.round(bestsellerScore),
-            });
-            
-            this.emitProgress({
+            await storage.createReeditActivityLog({
               projectId,
-              stage: "paused",
-              currentChapter: validChapters.length,
-              totalChapters: validChapters.length,
-              message: pauseReason,
+              level: "warning",
+              agentRole: "final-reviewer",
+              message: warningMessage,
             });
             
-            // Exit the loop - wait for user to resume with instructions
-            return;
+            // DON'T pause - just continue to corrections and next cycle
           }
         }
 
@@ -4932,37 +4919,19 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           diagnosticDetails += `\n   Estas categorías aparecen repetidamente, sugiriendo un problema estructural que requiere intervención manual.`;
         }
         
-        // Provide actionable suggestions
-        diagnosticDetails += `\n\n💡 OPCIONES:`;
-        diagnosticDetails += `\n  1. "Forzar completado" - Aceptar el manuscrito con puntuación ${Math.round(bestsellerScore)}/10`;
-        diagnosticDetails += `\n  2. Editar manualmente los capítulos problemáticos y reiniciar`;
-        diagnosticDetails += `\n  3. Proporcionar instrucciones específicas sobre cómo abordar los problemas listados`;
+        // UNATTENDED MODE: Complete with best score achieved instead of pausing
+        const warningMessage = `Proceso alcanzó ${revisionCycle} ciclos sin 2 puntuaciones consecutivas de 9+/10. Completando con puntuación ${Math.round(bestsellerScore)}/10.${diagnosticDetails}`;
         
-        const pauseReason = `El proceso alcanzó ${revisionCycle} ciclos sin lograr 2 puntuaciones consecutivas de 9+/10. Última puntuación: ${Math.round(bestsellerScore)}/10.${diagnosticDetails}`;
+        console.warn(`[ReeditOrchestrator] UNATTENDED: Max cycles reached without achieving consecutive 9+ scores. Completing with score: ${bestsellerScore}/10`);
         
-        console.log(`[ReeditOrchestrator] PAUSING: Did not achieve required consecutive 9+ scores. Score: ${bestsellerScore}/10`);
-        
-        await storage.updateReeditProject(projectId, {
-          status: "awaiting_instructions",
-          pauseReason,
-          revisionCycle,
-          totalReviewCycles: totalCyclesExecuted,
-          consecutiveHighScores,
-          nonPerfectFinalReviews: nonPerfectCount,
-          previousScores: previousScores as any,
-          finalReviewResult: finalResult,
-          bestsellerScore: Math.round(bestsellerScore),
-        });
-        
-        this.emitProgress({
+        await storage.createReeditActivityLog({
           projectId,
-          stage: "paused",
-          currentChapter: validChapters.length,
-          totalChapters: validChapters.length,
-          message: pauseReason,
+          level: "warning",
+          agentRole: "final-reviewer",
+          message: warningMessage,
         });
         
-        return; // Exit without marking as completed
+        // DON'T pause - fall through to completion code below
       }
 
       for (const chapter of validChapters) {
@@ -5612,36 +5581,19 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         diagnosticDetails += `\n   Estas categorías aparecen repetidamente, sugiriendo un problema estructural que requiere intervención manual.`;
       }
       
-      // Provide actionable suggestions
-      diagnosticDetails += `\n\n💡 OPCIONES:`;
-      diagnosticDetails += `\n  1. "Forzar completado" - Aceptar el manuscrito con puntuación ${Math.round(bestsellerScore)}/10`;
-      diagnosticDetails += `\n  2. Editar manualmente los capítulos problemáticos y reiniciar`;
-      diagnosticDetails += `\n  3. Proporcionar instrucciones específicas sobre cómo abordar los problemas listados`;
+      // UNATTENDED MODE (FRO): Complete with best score achieved instead of pausing
+      const warningMessage = `FRO: Proceso alcanzó ${revisionCycle} ciclos sin 2 puntuaciones consecutivas de 9+/10. Completando con puntuación ${Math.round(bestsellerScore)}/10.${diagnosticDetails}`;
       
-      const pauseReason = `El proceso alcanzó ${revisionCycle} ciclos sin lograr 2 puntuaciones consecutivas de 9+/10. Última puntuación: ${Math.round(bestsellerScore)}/10.${diagnosticDetails}`;
+      console.warn(`[ReeditOrchestrator] UNATTENDED (FRO): Max cycles reached without achieving consecutive 9+ scores. Completing with score: ${bestsellerScore}/10`);
       
-      console.log(`[ReeditOrchestrator] PAUSING (runFinalReviewOnly): Did not achieve required consecutive 9+ scores. Score: ${bestsellerScore}/10`);
-      
-      await storage.updateReeditProject(projectId, {
-        status: "awaiting_instructions",
-        pauseReason,
-        revisionCycle,
-        totalReviewCycles: totalCyclesExecuted,
-        consecutiveHighScores,
-        previousScores: previousScores as any,
-        finalReviewResult: finalResult,
-        bestsellerScore: Math.round(bestsellerScore),
-      });
-      
-      this.emitProgress({
+      await storage.createReeditActivityLog({
         projectId,
-        stage: "paused",
-        currentChapter: validChapters.length,
-        totalChapters: validChapters.length,
-        message: pauseReason,
+        level: "warning",
+        agentRole: "final-reviewer",
+        message: warningMessage,
       });
       
-      return; // Exit without marking as completed
+      // DON'T pause - fall through to completion code below
     }
 
     await storage.createReeditAuditReport({
