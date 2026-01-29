@@ -4253,11 +4253,17 @@ ${issuesDescription}`;
             this.callbacks.onChaptersBeingCorrected([], currentCycle);
           }
           
-          // CRITICAL: After successful corrections, continue to next cycle for re-review
+          // CRITICAL: After corrections, continue to next cycle for re-review
           // This ensures the iterative loop: review → fix → review → fix → until 2x consecutive 9+
-          if (correctedCount > 0 && failedCount === 0) {
-            console.log(`[OrchestratorV2] Corrections applied successfully. Continuing to next review cycle (${currentCycle}/${maxCycles})...`);
-            this.callbacks.onAgentStatus("beta-reader", "active", `Correcciones aplicadas. Iniciando nueva revisión...`);
+          if (failedCount === 0) {
+            // All corrections succeeded (or nothing to correct)
+            if (correctedCount > 0) {
+              console.log(`[OrchestratorV2] Corrections applied successfully (${correctedCount} chapters). Continuing to next review cycle (${currentCycle + 1}/${maxCycles})...`);
+              this.callbacks.onAgentStatus("beta-reader", "active", `${correctedCount} correcciones aplicadas. Iniciando ciclo ${currentCycle + 1}...`);
+            } else {
+              console.log(`[OrchestratorV2] No chapters were corrected. Continuing to next review cycle (${currentCycle + 1}/${maxCycles})...`);
+              this.callbacks.onAgentStatus("beta-reader", "active", `Sin correcciones necesarias. Iniciando ciclo ${currentCycle + 1}...`);
+            }
             continue; // Go back to start of while loop for new review
           }
           
