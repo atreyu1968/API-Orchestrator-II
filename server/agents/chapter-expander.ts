@@ -337,15 +337,20 @@ RESPONDE CON JSON:
     
     const sections: string[] = ["BIBLIA DEL MUNDO:"];
     
-    if (worldBible.characters?.length > 0) {
-      const mainChars = worldBible.characters.slice(0, 5);
+    // LitAgents 2.1: Support both LitAgents (characters) and LitEditors (personajes) formats
+    const characters = worldBible.characters || worldBible.personajes || [];
+    if (characters.length > 0) {
+      const mainChars = characters.slice(0, 5);
       sections.push("Personajes principales: " + mainChars.map((c: any) => 
         `${c.nombre || c.name} (${c.rol || c.role || 'personaje'})`
       ).join(", "));
     }
     
-    if (worldBible.locations?.length > 0) {
-      sections.push("Ubicaciones: " + worldBible.locations.slice(0, 5).map((l: any) => 
+    // LitAgents 2.1: Support locations, ubicaciones, settings, and plotOutline.settings
+    const plotOutline = worldBible.plotOutline as any;
+    const locations = worldBible.locations || worldBible.ubicaciones || worldBible.settings || plotOutline?.settings || [];
+    if (locations.length > 0) {
+      sections.push("Ubicaciones: " + locations.slice(0, 5).map((l: any) => 
         l.nombre || l.name || l
       ).join(", "));
     }
@@ -432,24 +437,31 @@ RESPONDE CON JSON:
     
     const sections: string[] = ["BIBLIA DEL MUNDO:"];
     
-    if (worldBible.characters?.length > 0) {
+    // LitAgents 2.1: Support both LitAgents (characters) and LitEditors (personajes) formats
+    const characters = worldBible.characters || worldBible.personajes || [];
+    if (characters.length > 0) {
       sections.push("PERSONAJES:");
-      worldBible.characters.slice(0, 10).forEach((c: any) => {
+      characters.slice(0, 10).forEach((c: any) => {
         sections.push(`  - ${c.nombre || c.name}: ${c.descripcion || c.description || c.rol || 'personaje'}`);
       });
     }
     
-    if (worldBible.locations?.length > 0) {
+    // LitAgents 2.1: Support locations, ubicaciones, settings, and plotOutline.settings
+    const plotOutline = worldBible.plotOutline as any;
+    const locations = worldBible.locations || worldBible.ubicaciones || worldBible.settings || plotOutline?.settings || [];
+    if (locations.length > 0) {
       sections.push("UBICACIONES:");
-      worldBible.locations.slice(0, 5).forEach((l: any) => {
-        sections.push(`  - ${l.nombre || l.name}: ${l.descripcion || l.description || ''}`);
+      locations.slice(0, 5).forEach((l: any) => {
+        sections.push(`  - ${l.nombre || l.name}: ${l.descripcion || l.description || l.atmosphere || ''}`);
       });
     }
     
-    if (worldBible.rules?.length > 0) {
+    // LitAgents 2.1: Support rules, worldRules, and reglasDelMundo
+    const rules = worldBible.rules || worldBible.worldRules || worldBible.reglasDelMundo || worldBible.reglas || [];
+    if (rules.length > 0) {
       sections.push("REGLAS DEL MUNDO:");
-      worldBible.rules.slice(0, 5).forEach((r: any) => {
-        sections.push(`  - ${r.nombre || r.name || r}: ${r.descripcion || r.description || ''}`);
+      rules.slice(0, 5).forEach((r: any) => {
+        sections.push(`  - ${r.nombre || r.name || r.rule || r}: ${r.descripcion || r.description || ''}`);
       });
     }
     

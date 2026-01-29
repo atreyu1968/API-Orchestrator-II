@@ -339,8 +339,8 @@ ${threadsText || "No hay hilos activos."}
 PERSONAJES Y MUNDO:
 ═══════════════════════════════════════════════════════════════════
 ${JSON.stringify({
-  characters: input.worldBible?.characters?.slice(0, 8) || [],
-  worldRules: input.worldBible?.worldRules || [],
+  characters: (input.worldBible?.characters || input.worldBible?.personajes || []).slice(0, 8),
+  worldRules: input.worldBible?.worldRules || input.worldBible?.rules || input.worldBible?.reglasDelMundo || [],
 }, null, 2)}
 
 ═══════════════════════════════════════════════════════════════════

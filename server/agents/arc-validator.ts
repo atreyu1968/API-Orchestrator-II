@@ -223,9 +223,10 @@ export class ArcValidatorAgent extends BaseAgent {
       ? `\nCONTEXTO DE VOLUMENES ANTERIORES:\n${input.previousVolumesContext}`
       : "";
 
+    // LitAgents 2.1: Support both LitAgents (characters) and LitEditors (personajes) formats
     const worldBiblePreview = {
-      characters: input.worldBible?.characters?.slice(0, 10) || [],
-      worldRules: input.worldBible?.worldRules || [],
+      characters: (input.worldBible?.characters || input.worldBible?.personajes || []).slice(0, 10),
+      worldRules: input.worldBible?.worldRules || input.worldBible?.rules || input.worldBible?.reglasDelMundo || [],
     };
 
     const prompt = `
