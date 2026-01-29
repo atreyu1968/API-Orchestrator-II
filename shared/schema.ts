@@ -96,6 +96,7 @@ export const projects = pgTable("projects", {
   betaReaderReport: jsonb("beta_reader_report"),
   betaReaderScore: integer("beta_reader_score"),
   commercialViability: text("commercial_viability"),
+  qaAuditReport: jsonb("qa_audit_report"), // { findings: [], corrections: [], successCount, failCount }
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 

@@ -2463,10 +2463,34 @@ ${decisions.join('\n')}
           }
           // === END BETA READER ===
           
+          // === BUILD QA AUDIT REPORT (structured for frontend) ===
+          const qaAuditData: {
+            findings: Array<{ source: string; chapter: number | null; chapters: number[] | null; severity: string; description: string; correction: string }>;
+            corrections: Array<{ chapter: number; issueCount: number; sources: string[]; success: boolean }>;
+            totalFindings: number;
+            successCount: number;
+            failCount: number;
+            auditedAt: string;
+          } = {
+            findings: qaIssues.map(issue => ({
+              source: issue.source,
+              chapter: issue.capitulo || null,
+              chapters: issue.capitulos || null,
+              severity: issue.severidad || 'mayor',
+              description: issue.descripcion || '',
+              correction: issue.correccion || '',
+            })),
+            corrections: [],
+            totalFindings: qaIssues.length,
+            successCount: 0,
+            failCount: 0,
+            auditedAt: new Date().toISOString(),
+          };
+          
           // === LOG QA AUDIT FINDINGS BEFORE CORRECTIONS ===
           if (qaIssues.length > 0) {
-            let qaAuditReport = `[INFORME AUDITORÍA QA - PRE-CORRECCIÓN]\n`;
-            qaAuditReport += `Total problemas detectados: ${qaIssues.length}\n\n`;
+            let qaAuditReportText = `[INFORME AUDITORÍA QA - PRE-CORRECCIÓN]\n`;
+            qaAuditReportText += `Total problemas detectados: ${qaIssues.length}\n\n`;
             
             // Group by source
             const issuesBySource = new Map<string, typeof qaIssues>();
@@ -2478,24 +2502,27 @@ ${decisions.join('\n')}
             }
             
             for (const [source, issues] of issuesBySource) {
-              qaAuditReport += `[${source.toUpperCase()}] - ${issues.length} problema(s):\n`;
+              qaAuditReportText += `[${source.toUpperCase()}] - ${issues.length} problema(s):\n`;
               for (const issue of issues) {
                 const chapInfo = issue.capitulo ? `Cap ${issue.capitulo}` : (issue.capitulos?.length ? `Caps ${issue.capitulos.join(',')}` : 'General');
-                qaAuditReport += `  • [${issue.severidad?.toUpperCase() || 'MAYOR'}] ${chapInfo}: ${issue.descripcion?.substring(0, 100)}...\n`;
+                qaAuditReportText += `  • [${issue.severidad?.toUpperCase() || 'MAYOR'}] ${chapInfo}: ${issue.descripcion?.substring(0, 100)}...\n`;
               }
-              qaAuditReport += '\n';
+              qaAuditReportText += '\n';
             }
             
             await storage.createActivityLog({
               projectId: project.id,
               level: "info",
               agentRole: "qa-audit",
-              message: qaAuditReport,
+              message: qaAuditReportText,
             });
             
-            console.log(`[OrchestratorV2] QA audit findings logged:\n${qaAuditReport}`);
+            console.log(`[OrchestratorV2] QA audit findings logged:\n${qaAuditReportText}`);
             this.callbacks.onAgentStatus("final-reviewer", "active", `Auditoría completa: ${qaIssues.length} problemas detectados. Corrigiendo antes de revisión...`);
           } else {
+            // Save empty audit report to show "no issues found"
+            await storage.updateProject(project.id, { qaAuditReport: qaAuditData as any });
+            
             await storage.createActivityLog({
               projectId: project.id,
               level: "success",
@@ -2651,6 +2678,14 @@ ${decisions.join('\n')}
             });
             
             console.log(`[OrchestratorV2] Pre-review report logged:\n${preReviewReport}`);
+            
+            // === SAVE STRUCTURED QA AUDIT REPORT TO DATABASE ===
+            qaAuditData.corrections = preReviewFixes;
+            qaAuditData.successCount = successfulFixes.length;
+            qaAuditData.failCount = failedFixes.length;
+            
+            await storage.updateProject(project.id, { qaAuditReport: qaAuditData as any });
+            console.log(`[OrchestratorV2] QA audit report saved to project: ${qaAuditData.totalFindings} findings, ${qaAuditData.successCount} fixed, ${qaAuditData.failCount} failed`);
             
             // Clear QA issues after correction (they've been fixed)
             qaIssues.length = 0;

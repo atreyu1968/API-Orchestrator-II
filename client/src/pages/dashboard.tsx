@@ -859,6 +859,97 @@ export default function Dashboard() {
                       </div>
                     </div>
                     
+                    {/* Show QA Audit Report if available */}
+                    {currentProject.qaAuditReport && (currentProject.qaAuditReport as any).totalFindings !== undefined && (
+                      <div className="mt-4 pt-4 border-t border-border/50">
+                        <p className="text-sm font-medium mb-2 flex items-center gap-2">
+                          <span>Informe Auditoría QA</span>
+                          {(currentProject.qaAuditReport as any).successCount > 0 && (
+                            <Badge variant="default" className="text-[10px] px-1.5 py-0 bg-green-600">
+                              {(currentProject.qaAuditReport as any).successCount} corregidos
+                            </Badge>
+                          )}
+                          {(currentProject.qaAuditReport as any).failCount > 0 && (
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                              {(currentProject.qaAuditReport as any).failCount} fallidos
+                            </Badge>
+                          )}
+                        </p>
+                        
+                        {(currentProject.qaAuditReport as any).totalFindings === 0 ? (
+                          <p className="text-xs text-green-600 dark:text-green-400">
+                            No se detectaron problemas. El manuscrito está limpio.
+                          </p>
+                        ) : (
+                          <div className="space-y-2">
+                            <p className="text-xs text-muted-foreground">
+                              {(currentProject.qaAuditReport as any).totalFindings} problema(s) detectado(s) pre-revisión
+                            </p>
+                            
+                            {/* Findings grouped by source */}
+                            {(() => {
+                              const findings = (currentProject.qaAuditReport as any).findings || [];
+                              const bySource = findings.reduce((acc: Record<string, any[]>, f: any) => {
+                                if (!acc[f.source]) acc[f.source] = [];
+                                acc[f.source].push(f);
+                                return acc;
+                              }, {} as Record<string, any[]>);
+                              
+                              return Object.entries(bySource).map(([source, issues]) => (
+                                <div key={source} className="text-xs p-2 rounded bg-background/50 border border-border/30">
+                                  <div className="font-medium text-foreground mb-1 flex items-center gap-2">
+                                    <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                      {source.replace(/_/g, ' ')}
+                                    </Badge>
+                                    <span className="text-muted-foreground">{(issues as any[]).length} problema(s)</span>
+                                  </div>
+                                  <div className="space-y-1 max-h-24 overflow-y-auto">
+                                    {(issues as any[]).slice(0, 3).map((issue: any, idx: number) => (
+                                      <div key={idx} className="flex items-start gap-2">
+                                        <Badge 
+                                          variant={issue.severity === "critica" ? "destructive" : "secondary"}
+                                          className="text-[9px] px-1 py-0 shrink-0"
+                                        >
+                                          {issue.severity}
+                                        </Badge>
+                                        <span className="text-muted-foreground">
+                                          {issue.chapter ? `Cap ${issue.chapter}: ` : ''}
+                                          {issue.description?.substring(0, 80)}...
+                                        </span>
+                                      </div>
+                                    ))}
+                                    {(issues as any[]).length > 3 && (
+                                      <p className="text-muted-foreground italic">
+                                        + {(issues as any[]).length - 3} más...
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              ));
+                            })()}
+                            
+                            {/* Corrections summary */}
+                            {(currentProject.qaAuditReport as any).corrections?.length > 0 && (
+                              <div className="mt-2 p-2 rounded bg-green-500/10 border border-green-500/30">
+                                <p className="text-xs font-medium text-green-600 dark:text-green-400 mb-1">
+                                  Correcciones Aplicadas
+                                </p>
+                                <div className="flex flex-wrap gap-1">
+                                  {((currentProject.qaAuditReport as any).corrections as any[])
+                                    .filter((c: any) => c.success)
+                                    .map((c: any, idx: number) => (
+                                      <Badge key={idx} variant="outline" className="text-[10px] px-1.5 py-0 bg-green-500/20">
+                                        Cap {c.chapter}: {c.issueCount} arreglado(s)
+                                      </Badge>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
                     {/* Show Final Review Issues if available */}
                     {currentProject.finalReviewResult && (currentProject.finalReviewResult as any).issues?.length > 0 && (
                       <div className="mt-4 pt-4 border-t border-border/50">
