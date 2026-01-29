@@ -2572,26 +2572,55 @@ ${decisions.join('\n')}
               const chapterQaIssues = qaIssuesByChapter.get(chapNum) || [];
               if (chapterQaIssues.length === 0) continue;
               
-              // Check if any critical issues
-              const hasCritical = chapterQaIssues.some(i => i.severidad === 'critica');
+              // Check severity levels
+              const hasCriticalOrMajor = chapterQaIssues.some(i => i.severidad === 'critica' || i.severidad === 'mayor');
               
-              // Build unified correction prompt
+              // Build unified correction prompt with FULL CONTEXT
               const issuesDescription = chapterQaIssues.map(i => 
                 `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.source}: ${i.descripcion}\n  Corrección: ${i.correccion || 'Corregir según descripción'}`
               ).join("\n");
               
-              console.log(`[OrchestratorV2] Pre-review fixing Chapter ${chapNum}: ${chapterQaIssues.length} issues (critical: ${hasCritical})`);
-              this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (pre-revisión, ${chapterQaIssues.length} problemas)...`);
+              // Build comprehensive context for rewrites
+              const chapterContext = {
+                projectTitle: project.title,
+                genre: project.genre,
+                chapterNumber: chapNum,
+                chapterTitle: chapter.title,
+                previousChapterSummary: completedChapters.find(c => c.chapterNumber === chapNum - 1)?.summary || '',
+                nextChapterSummary: completedChapters.find(c => c.chapterNumber === chapNum + 1)?.summary || '',
+                mainCharacters: worldBibleData.characters?.slice?.(0, 8) || [],
+                worldRules: worldBibleData.rules || [],
+                styleGuide: project.architectInstructions?.substring(0, 1000) || '',
+              };
+              
+              console.log(`[OrchestratorV2] Pre-review fixing Chapter ${chapNum}: ${chapterQaIssues.length} issues (critical/major: ${hasCriticalOrMajor})`);
+              this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (${hasCriticalOrMajor ? 'reescritura' : 'parches'}, ${chapterQaIssues.length} problemas)...`);
               
               try {
                 let correctedContent: string | null = null;
                 
-                if (hasCritical) {
-                  // Use surgicalFix for critical issues
+                if (hasCriticalOrMajor) {
+                  // DIRECT FULL REWRITE for critical/major issues - no time wasting with patches
+                  console.log(`[OrchestratorV2] FULL REWRITE for Chapter ${chapNum} (critical/major issues detected)`);
+                  
+                  const fullContextPrompt = `CONTEXTO COMPLETO PARA REESCRITURA:
+- Proyecto: "${chapterContext.projectTitle}" (${chapterContext.genre})
+- Capítulo ${chapterContext.chapterNumber}: "${chapterContext.chapterTitle}"
+${chapterContext.previousChapterSummary ? `- Capítulo anterior: ${chapterContext.previousChapterSummary}` : ''}
+${chapterContext.nextChapterSummary ? `- Capítulo siguiente: ${chapterContext.nextChapterSummary}` : ''}
+
+PERSONAJES PRINCIPALES:
+${chapterContext.mainCharacters.map((c: any) => `- ${c.name}: ${c.description || c.role || ''}`).join('\n')}
+
+${chapterContext.styleGuide ? `GUÍA DE ESTILO:\n${chapterContext.styleGuide}\n` : ''}
+
+PROBLEMAS A CORREGIR (OBLIGATORIO):
+${issuesDescription}`;
+
                   const fixResult = await this.smartEditor.surgicalFix({
                     chapterContent: chapter.content,
-                    errorDescription: issuesDescription,
-                    consistencyConstraints: JSON.stringify(worldBibleData.characters?.slice?.(0, 5) || []),
+                    errorDescription: fullContextPrompt,
+                    consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
                   });
                   
                   this.addTokenUsage(fixResult.tokenUsage);
@@ -2599,14 +2628,18 @@ ${decisions.join('\n')}
                   
                   if (fixResult.parsed?.corrected_text && fixResult.parsed.corrected_text.length > 100) {
                     correctedContent = fixResult.parsed.corrected_text;
+                    console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum}: ${correctedContent.length} chars`);
                   }
                 } else {
-                  // Use SmartEditor patches for non-critical
+                  // MINOR ISSUES ONLY: Try patches first, then fallbacks
+                  console.log(`[OrchestratorV2] Minor issues only for Chapter ${chapNum}, trying patches first`);
+                  
+                  // Attempt 1: SmartEditor patches
                   const editResult = await this.smartEditor.execute({
                     chapterContent: chapter.content,
                     sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
                     worldBible: worldBibleData,
-                    additionalContext: `PROBLEMAS DE AUDITORÍA QA/BETA READER (CORREGIR OBLIGATORIAMENTE):\n${issuesDescription}`,
+                    additionalContext: `PROBLEMAS MENORES A CORREGIR:\n${issuesDescription}`,
                   });
                   
                   this.addTokenUsage(editResult.tokenUsage);
@@ -2616,9 +2649,38 @@ ${decisions.join('\n')}
                     const patchResult = applyPatches(chapter.content, editResult.patches);
                     if (patchResult.modifiedContent && patchResult.modifiedContent.length > 100) {
                       correctedContent = patchResult.modifiedContent;
+                      console.log(`[OrchestratorV2] Patches applied successfully for Chapter ${chapNum}`);
                     }
                   } else if (editResult.fullContent && editResult.fullContent.length > 100) {
                     correctedContent = editResult.fullContent;
+                  }
+                  
+                  // Attempt 2: surgicalFix if patches failed
+                  if (!correctedContent) {
+                    console.log(`[OrchestratorV2] Patches failed, trying surgicalFix for Chapter ${chapNum}`);
+                    const fixResult = await this.smartEditor.surgicalFix({
+                      chapterContent: chapter.content,
+                      errorDescription: issuesDescription,
+                      consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
+                    });
+                    this.addTokenUsage(fixResult.tokenUsage);
+                    if (fixResult.parsed?.corrected_text && fixResult.parsed.corrected_text.length > 100) {
+                      correctedContent = fixResult.parsed.corrected_text;
+                    }
+                  }
+                  
+                  // Attempt 3: Last resort full rewrite
+                  if (!correctedContent) {
+                    console.log(`[OrchestratorV2] All methods failed, forcing full rewrite for Chapter ${chapNum}`);
+                    const fixResult = await this.smartEditor.surgicalFix({
+                      chapterContent: chapter.content,
+                      errorDescription: `REESCRITURA FORZADA - Corregir estos problemas:\n${issuesDescription}`,
+                      consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
+                    });
+                    this.addTokenUsage(fixResult.tokenUsage);
+                    if (fixResult.parsed?.corrected_text && fixResult.parsed.corrected_text.length > 100) {
+                      correctedContent = fixResult.parsed.corrected_text;
+                    }
                   }
                 }
                 
@@ -2992,25 +3054,54 @@ ${decisions.join('\n')}
             
             const chapterIssues = aggregatedData.issues;
             const hasCriticalIssue = aggregatedData.hasCritical;
+            const hasMajorIssue = chapterIssues.some(i => i.severidad === 'mayor');
+            const hasCriticalOrMajor = hasCriticalIssue || hasMajorIssue;
 
-            console.log(`[OrchestratorV2] Correcting Chapter ${chapNum}: ${chapterIssues.length} AGGREGATED issues from [${Array.from(aggregatedData.sources).join(', ')}] (critical: ${hasCriticalIssue})`);
-            this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (${chapterIssues.length} problemas)${hasCriticalIssue ? ' [CRÍTICO]' : ''}...`);
+            console.log(`[OrchestratorV2] Correcting Chapter ${chapNum}: ${chapterIssues.length} issues (critical/major: ${hasCriticalOrMajor})`);
+            this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (${hasCriticalOrMajor ? 'reescritura' : 'parches'}, ${chapterIssues.length} problemas)...`);
 
             // Build UNIFIED correction prompt from ALL aggregated issues
             const issuesDescription = chapterIssues.map(i => 
               `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.categoria}: ${i.descripcion}\n  Corrección: ${i.instruccion_correccion || i.instrucciones_correccion || 'Corregir según descripción'}`
             ).join("\n");
+            
+            // Build comprehensive context for rewrites
+            const chapterContext = {
+              projectTitle: project.title,
+              genre: project.genre,
+              chapterNumber: chapNum,
+              chapterTitle: chapter.title,
+              previousChapterSummary: currentChapters.find(c => c.chapterNumber === chapNum - 1)?.summary || '',
+              nextChapterSummary: currentChapters.find(c => c.chapterNumber === chapNum + 1)?.summary || '',
+              mainCharacters: worldBibleData.characters?.slice?.(0, 8) || [],
+              styleGuide: project.architectInstructions?.substring(0, 1000) || '',
+            };
 
             let correctedContent: string | null = null;
 
             try {
-              if (hasCriticalIssue) {
-                // Use surgicalFix for critical issues - it does a more thorough rewrite
-                console.log(`[OrchestratorV2] Using surgicalFix for critical issue in Chapter ${chapNum}`);
+              if (hasCriticalOrMajor) {
+                // DIRECT FULL REWRITE for critical/major issues
+                console.log(`[OrchestratorV2] FULL REWRITE for Chapter ${chapNum} (critical/major issues)`);
+                
+                const fullContextPrompt = `CONTEXTO COMPLETO PARA REESCRITURA:
+- Proyecto: "${chapterContext.projectTitle}" (${chapterContext.genre})
+- Capítulo ${chapterContext.chapterNumber}: "${chapterContext.chapterTitle}"
+${chapterContext.previousChapterSummary ? `- Capítulo anterior: ${chapterContext.previousChapterSummary}` : ''}
+${chapterContext.nextChapterSummary ? `- Capítulo siguiente: ${chapterContext.nextChapterSummary}` : ''}
+
+PERSONAJES PRINCIPALES:
+${chapterContext.mainCharacters.map((c: any) => `- ${c.name}: ${c.description || c.role || ''}`).join('\n')}
+
+${chapterContext.styleGuide ? `GUÍA DE ESTILO:\n${chapterContext.styleGuide}\n` : ''}
+
+PROBLEMAS A CORREGIR (OBLIGATORIO):
+${issuesDescription}`;
+
                 const fixResult = await this.smartEditor.surgicalFix({
                   chapterContent: chapter.content || "",
-                  errorDescription: issuesDescription,
-                  consistencyConstraints: JSON.stringify(worldBibleData.characters?.slice(0, 5) || []),
+                  errorDescription: fullContextPrompt,
+                  consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
                 });
 
                 this.addTokenUsage(fixResult.tokenUsage);
@@ -3018,13 +3109,11 @@ ${decisions.join('\n')}
 
                 if (fixResult.parsed?.corrected_text && fixResult.parsed.corrected_text.length > 100) {
                   correctedContent = fixResult.parsed.corrected_text;
-                  console.log(`[OrchestratorV2] surgicalFix returned ${correctedContent.length} chars for Chapter ${chapNum}`);
-                } else {
-                  console.error(`[OrchestratorV2] surgicalFix returned empty/invalid content for Chapter ${chapNum}`);
+                  console.log(`[OrchestratorV2] Full rewrite successful: ${correctedContent.length} chars`);
                 }
               } else {
-                // Use SmartEditor patches for non-critical issues
-                console.log(`[OrchestratorV2] Using SmartEditor patches for Chapter ${chapNum}`);
+                // MINOR ISSUES ONLY: Try patches first
+                console.log(`[OrchestratorV2] Minor issues only, trying patches for Chapter ${chapNum}`);
                 const editResult = await this.smartEditor.execute({
                   chapterContent: chapter.content || "",
                   sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
