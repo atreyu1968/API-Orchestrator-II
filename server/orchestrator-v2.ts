@@ -587,9 +587,14 @@ ${decisions.join('\n')}
   } | undefined {
     const result: any = {};
     
+    // LitAgents 2.1: Check both direct worldBible and plotOutline for backward compatibility
+    const plotOutline = worldBible?.plotOutline as any;
+    const timelineMaster = worldBible?.timeline_master || plotOutline?.timeline_master;
+    const locationMap = worldBible?.location_map || plotOutline?.location_map;
+    
     // Extract timeline_master if available
-    if (worldBible?.timeline_master?.chapter_timeline) {
-      const timeline = worldBible.timeline_master.chapter_timeline;
+    if (timelineMaster?.chapter_timeline) {
+      const timeline = timelineMaster.chapter_timeline;
       result.chapter_timeline = timeline;
       
       // Find current and previous chapter info
@@ -615,8 +620,8 @@ ${decisions.join('\n')}
     }
     
     // Extract travel times from location_map
-    if (worldBible?.location_map?.travel_times) {
-      result.travel_times = worldBible.location_map.travel_times;
+    if (locationMap?.travel_times) {
+      result.travel_times = locationMap.travel_times;
     }
     
     return Object.keys(result).length > 0 ? result : undefined;
@@ -638,9 +643,13 @@ ${decisions.join('\n')}
   }> | undefined {
     const states: any[] = [];
     
+    // LitAgents 2.1: Check both direct worldBible and plotOutline for backward compatibility
+    const plotOutline = worldBible?.plotOutline as any;
+    const characterTracking = worldBible?.character_tracking || plotOutline?.character_tracking;
+    
     // Extract from character_tracking if available
-    if (worldBible?.character_tracking) {
-      for (const tracking of worldBible.character_tracking) {
+    if (characterTracking && Array.isArray(characterTracking)) {
+      for (const tracking of characterTracking) {
         if (!tracking.chapter_states) continue;
         
         // Find the most recent state before or at current chapter
@@ -1058,8 +1067,9 @@ ${decisions.join('\n')}
       }
     }
     
-    // 3. Key locations with details
-    const locations = worldBible?.locations || worldBible?.ubicaciones || [];
+    // 3. Key locations with details (LitAgents 2.1: also check settings in plotOutline)
+    const plotOutlineData = worldBible?.plotOutline as any;
+    const locations = worldBible?.locations || worldBible?.ubicaciones || worldBible?.settings || plotOutlineData?.settings || [];
     if (locations.length > 0) {
       parts.push("\n\n=== UBICACIONES CLAVE ===");
       const topLocations = locations.slice(0, 6);
@@ -1929,6 +1939,10 @@ ${decisions.join('\n')}
               title: ch.title,
               summary: ch.summary,
               keyEvents: [ch.key_event],
+              emotional_arc: ch.emotional_arc,
+              temporal_notes: ch.temporal_notes,
+              location: ch.location,
+              character_states_entering: ch.character_states_entering,
             })),
             threeActStructure: globalResult.parsed.three_act_structure || null,
             plotThreads: plotThreads.map(t => ({
@@ -1936,6 +1950,12 @@ ${decisions.join('\n')}
               description: t.description,
               goal: t.goal,
             })),
+            // LitAgents 2.1: Store additional Global Architect outputs inside plotOutline for consistency
+            settings: worldBible.settings || [],
+            themes: worldBible.themes || [],
+            location_map: worldBible.location_map || null,
+            timeline_master: globalResult.parsed.timeline_master || null,
+            character_tracking: globalResult.parsed.character_tracking || [],
           } as any,
         });
 
@@ -3157,10 +3177,10 @@ ${decisions.join('\n')}
                 })),
                 // World rules and lore
                 worldRules: (worldBibleData.worldRules || worldBibleData.rules || []).slice(0, 10),
-                // Locations
-                locations: (worldBibleData.locations || []).slice(0, 8).map((l: any) => ({
+                // Locations (check settings in plotOutline for LitAgents 2.1 compatibility)
+                locations: (worldBibleData.locations || worldBibleData.settings || (worldBibleData.plotOutline as any)?.settings || []).slice(0, 8).map((l: any) => ({
                   name: l.name,
-                  description: l.description || '',
+                  description: l.description || l.atmosphere || '',
                 })),
                 // Timeline events relevant to this chapter
                 timelineEvents: ((worldBibleData.timeline || []) as any[])
@@ -3725,10 +3745,10 @@ ${issuesDescription}`;
               })),
               // World rules and lore
               worldRules: (worldBibleData.worldRules || worldBibleData.rules || []).slice(0, 10),
-              // Locations
-              locations: (worldBibleData.locations || []).slice(0, 8).map((l: any) => ({
+              // Locations (check settings in plotOutline for LitAgents 2.1 compatibility)
+              locations: (worldBibleData.locations || worldBibleData.settings || (worldBibleData.plotOutline as any)?.settings || []).slice(0, 8).map((l: any) => ({
                 name: l.name,
-                description: l.description || '',
+                description: l.description || l.atmosphere || '',
               })),
               // Timeline events relevant to this chapter
               timelineEvents: ((worldBibleData.timeline || []) as any[])
