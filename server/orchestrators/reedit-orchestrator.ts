@@ -4252,7 +4252,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         if (rawScore >= this.minAcceptableScore && !hasAnyNewIssues) {
           consecutiveHighScores++;
           nonPerfectCount = 0;
-          console.log(`[ReeditOrchestrator] Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores}`);
+          // CRITICAL: Persist to database to survive auto-recovery/restarts
+          await storage.updateReeditProject(projectId, { consecutiveHighScores });
+          console.log(`[ReeditOrchestrator] Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores} (persisted)`);
         } else if (rawScore >= this.minAcceptableScore && hasAnyNewIssues) {
           // Puntuación alta pero con issues pendientes - no aprobar, corregir primero
           console.log(`[ReeditOrchestrator] Score ${rawScore}/10 is good but ${issuesCount} issue(s) remain (${criticalIssues.length} críticos). Correcting...`);
@@ -4260,6 +4262,8 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         } else {
           consecutiveHighScores = 0;
           nonPerfectCount++;
+          // CRITICAL: Persist reset to database to survive auto-recovery/restarts
+          await storage.updateReeditProject(projectId, { consecutiveHighScores: 0 });
           
           // Check if we should pause for user instructions
           if (nonPerfectCount >= MAX_NON_PERFECT_BEFORE_PAUSE) {
@@ -4935,13 +4939,17 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
       
       if (rawScore >= this.minAcceptableScore && !hasAnyNewIssuesFRO) {
         consecutiveHighScores++;
-        console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores}`);
+        // CRITICAL: Persist to database to survive auto-recovery/restarts
+        await storage.updateReeditProject(projectId, { consecutiveHighScores });
+        console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 with NO new issues. Consecutive high scores: ${consecutiveHighScores} (persisted)`);
       } else if (rawScore >= this.minAcceptableScore && hasAnyNewIssuesFRO) {
         // Puntuación alta pero con issues pendientes - no aprobar, corregir primero
         console.log(`[ReeditOrchestrator] FRO: Score ${rawScore}/10 is good but ${issuesCount} issue(s) remain (${criticalIssuesFRO.length} críticos). Correcting...`);
         // Don't increment consecutiveHighScores - must correct issues first
       } else {
         consecutiveHighScores = 0;
+        // CRITICAL: Persist reset to database to survive auto-recovery/restarts
+        await storage.updateReeditProject(projectId, { consecutiveHighScores: 0 });
       }
 
       if (consecutiveHighScores >= this.requiredConsecutiveHighScores) {
