@@ -21,6 +21,7 @@ import {
 import { universalConsistencyAgent } from "./agents/v2/universal-consistency";
 import { FinalReviewerAgent, type FinalReviewerResult, type FinalReviewIssue } from "./agents/final-reviewer";
 import { SeriesThreadFixerAgent, type ThreadFixerResult, type ThreadFix } from "./agents/series-thread-fixer";
+import { BetaReaderAgent, type BetaReaderReport, type FlaggedChapter } from "./agents/beta-reader";
 import { applyPatches, type PatchResult } from "./utils/patcher";
 import type { TokenUsage } from "./agents/base-agent";
 import type { Project, Chapter, InsertPlotThread, WorldEntity, WorldRuleRecord, EntityRelationship } from "@shared/schema";
@@ -256,6 +257,9 @@ export class OrchestratorV2 {
   private continuitySentinel = new ContinuitySentinelAgent();
   private voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
   private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
+  
+  // Beta Reader for commercial viability analysis
+  private betaReader = new BetaReaderAgent();
   private callbacks: OrchestratorV2Callbacks;
   
   private cumulativeTokens = {
@@ -2396,10 +2400,71 @@ ${decisions.join('\n')}
           
           console.log(`[OrchestratorV2] QA audit complete: ${qaIssues.length} issues found from ${qaResults.length} audits`);
           
+          // === BETA READER EVALUATION FOR COMMERCIAL VIABILITY ===
+          this.callbacks.onAgentStatus("final-reviewer", "active", "Ejecutando análisis de viabilidad comercial (Beta Reader)...");
+          
+          try {
+            // Get chapter summaries for beta reader
+            const chapterSummaries = completedChapters.map(c => 
+              c.summary || `${c.title || `Capítulo ${c.chapterNumber}`}: ${(c.content || "").substring(0, 300)}...`
+            );
+            
+            const firstChapter = completedChapters[0]?.content || "";
+            const lastChapter = completedChapters[completedChapters.length - 1]?.content || "";
+            
+            console.log(`[OrchestratorV2] Running Beta Reader evaluation for commercial viability...`);
+            
+            const betaResult = await this.betaReader.evaluateNovel(
+              project.id,
+              project.genre || "general",
+              chapterSummaries,
+              firstChapter.substring(0, 15000), // Limit to ~15k chars
+              lastChapter.substring(0, 15000)
+            );
+            
+            this.addTokenUsage(betaResult.tokenUsage);
+            
+            const betaReport = betaResult.report;
+            console.log(`[OrchestratorV2] Beta Reader: Score ${betaReport.score}/10, Viability: ${betaReport.viability}, Flagged chapters: ${betaReport.flagged_chapters?.length || 0}`);
+            
+            // Convert flagged chapters to QA issues for correction
+            if (betaReport.flagged_chapters && betaReport.flagged_chapters.length > 0) {
+              for (const flagged of betaReport.flagged_chapters) {
+                // Only add HIGH severity issues for automatic correction
+                if (flagged.severity === 'HIGH' || flagged.severity === 'MEDIUM') {
+                  qaIssues.push({
+                    source: 'beta_reader',
+                    tipo: flagged.issue_type,
+                    severidad: flagged.severity === 'HIGH' ? 'critica' : 'mayor',
+                    capitulo: flagged.chapter_number,
+                    descripcion: `[Viabilidad Comercial] ${flagged.issue_type.replace(/_/g, ' ')}: ${flagged.specific_fix}`,
+                    correccion: flagged.specific_fix,
+                  });
+                }
+              }
+              console.log(`[OrchestratorV2] Beta Reader added ${betaReport.flagged_chapters.filter(f => f.severity === 'HIGH' || f.severity === 'MEDIUM').length} issues for correction`);
+            }
+            
+            // Store beta reader report for later reference
+            await storage.updateProject(project.id, {
+              betaReaderReport: betaReport as any,
+              betaReaderScore: betaReport.score,
+            });
+            
+            this.callbacks.onAgentStatus("final-reviewer", "active", 
+              `Beta Reader: ${betaReport.score}/10 (${betaReport.viability}). ${betaReport.flagged_chapters?.length || 0} capítulos marcados.`
+            );
+            
+          } catch (betaError) {
+            console.error(`[OrchestratorV2] Beta Reader evaluation failed:`, betaError);
+            // Continue without beta reader results
+          }
+          // === END BETA READER ===
+          
           if (qaIssues.length > 0) {
-            this.callbacks.onAgentStatus("final-reviewer", "active", `Auditoría QA: ${qaIssues.length} problemas detectados. Pasando a revisión final...`);
+            this.callbacks.onAgentStatus("final-reviewer", "active", `Auditoría completa: ${qaIssues.length} problemas detectados. Pasando a revisión final...`);
           } else {
-            this.callbacks.onAgentStatus("final-reviewer", "active", "Auditoría QA completada. Sin problemas críticos. Iniciando revisión final...");
+            this.callbacks.onAgentStatus("final-reviewer", "active", "Auditoría completa. Sin problemas críticos. Iniciando revisión final...");
           }
         }
         // === END QA AUDIT ===
