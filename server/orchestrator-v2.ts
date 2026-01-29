@@ -2371,69 +2371,121 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
           }
         }
 
-        // 2c.5: LitAgents 2.1 - Universal Consistency Validation
-        const consistencyResult = await this.validateAndUpdateConsistency(
+        // 2c.5: LitAgents 2.1 - Universal Consistency Validation with RE-VALIDATION LOOP
+        const MAX_CONSISTENCY_ATTEMPTS = 3;
+        let consistencyAttempt = 0;
+        let consistencyResult = await this.validateAndUpdateConsistency(
           project.id,
           chapterNumber,
           finalText,
           project.genre
         );
 
-        if (!consistencyResult.isValid && consistencyResult.error) {
-          console.warn(`[OrchestratorV2] CRITICAL consistency violation in Chapter ${chapterNumber}: ${consistencyResult.error}`);
-          this.callbacks.onAgentStatus("universal-consistency", "warning", "Applying surgical fix to affected scenes...");
+        while (!consistencyResult.isValid && consistencyResult.error && consistencyAttempt < MAX_CONSISTENCY_ATTEMPTS) {
+          consistencyAttempt++;
+          console.warn(`[OrchestratorV2] Consistency violation in Chapter ${chapterNumber} (attempt ${consistencyAttempt}/${MAX_CONSISTENCY_ATTEMPTS}): ${consistencyResult.error}`);
+          this.callbacks.onAgentStatus("universal-consistency", "warning", `Fixing consistency error (attempt ${consistencyAttempt})...`);
           
-          // Use SmartEditor's surgicalFix method for targeted correction
-          // This is much more token-efficient than rewriting the entire chapter
-          this.callbacks.onAgentStatus("smart-editor", "active", "Fixing continuity error surgically...");
+          // First attempt: surgical fix. Subsequent attempts: full rewrite
+          const useSurgical = consistencyAttempt === 1;
           
-          const surgicalFixResult = await this.smartEditor.surgicalFix({
-            chapterContent: finalText,
-            errorDescription: consistencyResult.error,
-            consistencyConstraints,
-          });
-          
-          this.addTokenUsage(surgicalFixResult.tokenUsage);
-          await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", surgicalFixResult.tokenUsage, chapterNumber);
-          
-          // Apply patches if available, otherwise use full content as fallback
-          if (surgicalFixResult.patches && surgicalFixResult.patches.length > 0) {
-            const patchResult: PatchResult = applyPatches(finalText, surgicalFixResult.patches);
-            if (patchResult.success && patchResult.patchedText) {
-              finalText = patchResult.patchedText;
-              console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Applied ${patchResult.appliedPatches} surgical patches to fix consistency violation`);
+          if (useSurgical) {
+            this.callbacks.onAgentStatus("smart-editor", "active", "Fixing continuity error surgically...");
+            
+            const surgicalFixResult = await this.smartEditor.surgicalFix({
+              chapterContent: finalText,
+              errorDescription: consistencyResult.error,
+              consistencyConstraints,
+            });
+            
+            this.addTokenUsage(surgicalFixResult.tokenUsage);
+            await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", surgicalFixResult.tokenUsage, chapterNumber);
+            
+            if (surgicalFixResult.patches && surgicalFixResult.patches.length > 0) {
+              const patchResult: PatchResult = applyPatches(finalText, surgicalFixResult.patches);
+              if (patchResult.success && patchResult.patchedText) {
+                finalText = patchResult.patchedText;
+                console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Applied ${patchResult.appliedPatches} surgical patches`);
+              } else if (surgicalFixResult.fullContent) {
+                finalText = surgicalFixResult.fullContent;
+              }
             } else if (surgicalFixResult.fullContent) {
               finalText = surgicalFixResult.fullContent;
-              console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Used full content from editor (patches failed)`);
             }
-          } else if (surgicalFixResult.fullContent) {
-            finalText = surgicalFixResult.fullContent;
-            console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Applied editor corrections for consistency fix`);
+          } else {
+            // Full rewrite for persistent issues
+            this.callbacks.onAgentStatus("smart-editor", "active", `Full rewrite for persistent consistency error (attempt ${consistencyAttempt})...`);
+            
+            const rewriteResult = await this.smartEditor.fullRewrite({
+              chapterContent: finalText,
+              errorDescription: `CORRECCIÓN OBLIGATORIA - VIOLACIÓN DE CONTINUIDAD:\n${consistencyResult.error}\n\nEste error ha persistido después de correcciones quirúrgicas. Debes reescribir las secciones afectadas para eliminar COMPLETAMENTE esta contradicción.`,
+              consistencyConstraints,
+            });
+            
+            this.addTokenUsage(rewriteResult.tokenUsage);
+            await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", rewriteResult.tokenUsage, chapterNumber);
+            
+            if (rewriteResult.rewrittenContent) {
+              finalText = rewriteResult.rewrittenContent;
+              console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Full rewrite applied for consistency fix`);
+            }
           }
           
-          // Mark ALL violations for this chapter as auto-fixed
-          const violations = await db.select().from(consistencyViolations)
-            .where(and(
-              eq(consistencyViolations.projectId, project.id),
-              eq(consistencyViolations.chapterNumber, chapterNumber),
-              eq(consistencyViolations.status, "pending")
-            ));
+          // RE-VALIDATE after correction to confirm the fix worked
+          this.callbacks.onAgentStatus("universal-consistency", "active", "Re-validating after correction...");
+          consistencyResult = await this.validateAndUpdateConsistency(
+            project.id,
+            chapterNumber,
+            finalText,
+            project.genre
+          );
           
-          if (violations.length > 0) {
-            for (const violation of violations) {
-              await db.update(consistencyViolations)
-                .set({ 
-                  wasAutoFixed: true, 
-                  status: "resolved",
-                  resolvedAt: new Date(),
-                  fixDescription: "Corrección quirúrgica aplicada para resolver violación de continuidad" 
-                })
-                .where(eq(consistencyViolations.id, violation.id));
-            }
-            console.log(`[OrchestratorV2] Marked ${violations.length} consistency violation(s) as RESOLVED for Chapter ${chapterNumber}`);
+          if (consistencyResult.isValid) {
+            console.log(`[OrchestratorV2] Chapter ${chapterNumber}: Consistency VERIFIED after attempt ${consistencyAttempt}`);
+            this.callbacks.onAgentStatus("universal-consistency", "completed", `Consistency verified (attempt ${consistencyAttempt})`);
+          } else {
+            console.warn(`[OrchestratorV2] Chapter ${chapterNumber}: Consistency still invalid after attempt ${consistencyAttempt}`);
           }
+        }
+        
+        // Mark violations as resolved only if truly fixed, or as attempted if max attempts reached
+        const violations = await db.select().from(consistencyViolations)
+          .where(and(
+            eq(consistencyViolations.projectId, project.id),
+            eq(consistencyViolations.chapterNumber, chapterNumber),
+            eq(consistencyViolations.status, "pending")
+          ));
+        
+        if (violations.length > 0) {
+          const wasFixed = consistencyResult.isValid;
+          for (const violation of violations) {
+            await db.update(consistencyViolations)
+              .set({ 
+                wasAutoFixed: wasFixed, 
+                status: wasFixed ? "resolved" : "attempted",
+                resolvedAt: wasFixed ? new Date() : null,
+                fixDescription: wasFixed 
+                  ? `Corregido después de ${consistencyAttempt} intento(s)` 
+                  : `No resuelto después de ${MAX_CONSISTENCY_ATTEMPTS} intentos - requiere revisión manual`
+              })
+              .where(eq(consistencyViolations.id, violation.id));
+          }
+          console.log(`[OrchestratorV2] Marked ${violations.length} violation(s) as ${wasFixed ? 'RESOLVED' : 'ATTEMPTED'} for Chapter ${chapterNumber}`);
+        }
+        
+        if (consistencyAttempt > 0) {
+          this.callbacks.onAgentStatus("smart-editor", "completed", 
+            consistencyResult.isValid ? "Continuity error fixed" : `Continuity issues persist after ${consistencyAttempt} attempts`);
           
-          this.callbacks.onAgentStatus("smart-editor", "completed", "Continuity error fixed surgically");
+          // Log persistent violations for user visibility
+          if (!consistencyResult.isValid) {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              agentRole: "universal-consistency",
+              message: `Capítulo ${chapterNumber}: Violación de consistencia NO RESUELTA después de ${MAX_CONSISTENCY_ATTEMPTS} intentos. Error: ${consistencyResult.error?.substring(0, 200)}...`,
+            });
+          }
         }
 
         // 2d: Summarizer - Compress for memory
