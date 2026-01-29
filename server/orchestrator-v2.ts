@@ -3601,6 +3601,10 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
               try {
                 let correctedContent: string | null = null;
                 
+                // DEBUG: Log start of correction attempt
+                await this.logThought(project.id, "info", "smart-editor", 
+                  `Iniciando corrección del Capítulo ${chapNum} (intento ${currentCorrectionCount + 1}, escalada: ${useEscalatedStrategy}, crítico: ${hasCriticalOrMajor})`);
+                
                 if (useEscalatedStrategy) {
                   // ESCALATED STRATEGY: Complete reconstruction with full narrative context
                   console.log(`[OrchestratorV2] ESCALATED STRATEGY for Chapter ${chapNum} (attempt ${currentCorrectionCount + 1}): using extended context and alternative approach`);
@@ -3654,6 +3658,10 @@ NOTA: Si el problema parece irresoluble con la narrativa actual, puedes:
                   this.addTokenUsage(fixResult.tokenUsage);
                   await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
                   
+                  // DEBUG: Log fullRewrite result
+                  await this.logThought(project.id, "info", "smart-editor", 
+                    `fullRewrite escalado Cap ${chapNum}: error=${fixResult.error || 'none'}, rewrittenContent=${fixResult.rewrittenContent?.length || 0}, content=${fixResult.content?.length || 0}`);
+                  
                   if (fixResult.rewrittenContent && fixResult.rewrittenContent.length > 100) {
                     correctedContent = fixResult.rewrittenContent;
                     console.log(`[OrchestratorV2] Escalated strategy successful for Chapter ${chapNum}: ${correctedContent.length} chars`);
@@ -3662,6 +3670,8 @@ NOTA: Si el problema parece irresoluble con la narrativa actual, puedes:
                     console.log(`[OrchestratorV2] Escalated strategy fallback for Chapter ${chapNum}: ${correctedContent.length} chars`);
                   } else {
                     console.warn(`[OrchestratorV2] Escalated strategy FAILED for Chapter ${chapNum}`);
+                    await this.logThought(project.id, "warn", "smart-editor", 
+                      `FALLO escalado Cap ${chapNum}: sin contenido válido`);
                   }
                 } else if (hasCriticalOrMajor) {
                   // DIRECT FULL REWRITE for critical/major issues - no time wasting with patches
@@ -3739,6 +3749,10 @@ ${issuesDescription}`;
                   // fullRewrite returns rewrittenContent, not parsed.corrected_text
                   console.log(`[OrchestratorV2] fullRewrite result for Chapter ${chapNum}: error=${fixResult.error || 'none'}, rewrittenContent=${fixResult.rewrittenContent?.length || 0} chars, content=${fixResult.content?.length || 0} chars`);
                   
+                  // DEBUG: Log fullRewrite result
+                  await this.logThought(project.id, "info", "smart-editor", 
+                    `fullRewrite crítico Cap ${chapNum}: error=${fixResult.error || 'none'}, rewrittenContent=${fixResult.rewrittenContent?.length || 0}, content=${fixResult.content?.length || 0}`);
+                  
                   if (fixResult.rewrittenContent && fixResult.rewrittenContent.length > 100) {
                     correctedContent = fixResult.rewrittenContent;
                     console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum}: ${correctedContent.length} chars`);
@@ -3748,6 +3762,8 @@ ${issuesDescription}`;
                     console.log(`[OrchestratorV2] Full rewrite fallback for Chapter ${chapNum}: ${correctedContent.length} chars`);
                   } else {
                     console.warn(`[OrchestratorV2] Full rewrite FAILED for Chapter ${chapNum} - no valid content returned`);
+                    await this.logThought(project.id, "warn", "smart-editor", 
+                      `FALLO crítico Cap ${chapNum}: sin contenido válido`);
                   }
                 } else {
                   // MINOR ISSUES: Use fullRewrite for reliability (patches were failing too often)
@@ -3764,6 +3780,10 @@ ${issuesDescription}`;
                   
                   console.log(`[OrchestratorV2] fullRewrite result for minor issues Chapter ${chapNum}: error=${fixResult.error || 'none'}, rewrittenContent=${fixResult.rewrittenContent?.length || 0} chars, content=${fixResult.content?.length || 0} chars`);
                   
+                  // DEBUG: Log fullRewrite result
+                  await this.logThought(project.id, "info", "smart-editor", 
+                    `fullRewrite menor Cap ${chapNum}: error=${fixResult.error || 'none'}, rewrittenContent=${fixResult.rewrittenContent?.length || 0}, content=${fixResult.content?.length || 0}`);
+                  
                   if (fixResult.rewrittenContent && fixResult.rewrittenContent.length > 100) {
                     correctedContent = fixResult.rewrittenContent;
                     console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum}: ${correctedContent.length} chars`);
@@ -3772,6 +3792,8 @@ ${issuesDescription}`;
                     console.log(`[OrchestratorV2] Full rewrite fallback for Chapter ${chapNum}: ${correctedContent.length} chars`);
                   } else {
                     console.warn(`[OrchestratorV2] Full rewrite FAILED for minor issues Chapter ${chapNum} - no valid content returned`);
+                    await this.logThought(project.id, "warn", "smart-editor", 
+                      `FALLO menor Cap ${chapNum}: sin contenido válido`);
                   }
                 }
                 
@@ -3800,6 +3822,9 @@ ${issuesDescription}`;
                 const chapterSources = Array.from(new Set(chapterQaIssues.map(i => i.source)));
                 preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: false });
                 console.error(`[OrchestratorV2] Pre-review fix failed for Chapter ${chapNum}:`, fixError);
+                // DEBUG: Log exception
+                await this.logThought(project.id, "error", "smart-editor", 
+                  `EXCEPCIÓN Cap ${chapNum}: ${fixError instanceof Error ? fixError.message : String(fixError)}`);
               }
             }
             
