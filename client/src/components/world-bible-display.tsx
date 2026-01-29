@@ -75,9 +75,12 @@ interface PersistentInjury {
   tipo_lesion: string;
   capitulo_ocurre: number;
   efecto_esperado: string;
-  capitulos_verificados: number[];
-  consistencia: "mantenida" | "ignorada";
+  capitulos_verificados?: number[];
+  consistencia?: "mantenida" | "ignorada";
   problema?: string;
+  parte_afectada?: string;
+  severidad?: "leve" | "moderada" | "grave" | "critica";
+  estado_actual?: "activa" | "resuelta";
 }
 
 interface WorldBibleDisplayProps {
@@ -364,27 +367,56 @@ function PersistentInjuriesTab({ injuries }: { injuries: PersistentInjury[] }) {
                   <Skull className="h-4 w-4" />
                   {injury.personaje}
                 </CardTitle>
-                <Badge 
-                  variant={injury.consistencia === "mantenida" ? "secondary" : "destructive"}
-                  className="text-xs"
-                >
-                  {injury.consistencia === "mantenida" ? "Mantenida" : "Ignorada"}
-                </Badge>
+                <div className="flex gap-1">
+                  {injury.severidad && (
+                    <Badge 
+                      variant={injury.severidad === "critica" || injury.severidad === "grave" ? "destructive" : "secondary"}
+                      className="text-xs"
+                    >
+                      {injury.severidad}
+                    </Badge>
+                  )}
+                  {injury.consistencia && (
+                    <Badge 
+                      variant={injury.consistencia === "mantenida" ? "secondary" : "destructive"}
+                      className="text-xs"
+                    >
+                      {injury.consistencia === "mantenida" ? "Mantenida" : "Ignorada"}
+                    </Badge>
+                  )}
+                  {injury.estado_actual && (
+                    <Badge 
+                      variant={injury.estado_actual === "activa" ? "default" : "secondary"}
+                      className="text-xs"
+                    >
+                      {injury.estado_actual === "activa" ? "Activa" : "Resuelta"}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-2">
               <p className="text-sm">{injury.tipo_lesion}</p>
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className="text-xs">
-                  Ocurre: Cap. {injury.capitulo_ocurre}
+                  Ocurre: Cap. {injury.capitulo_ocurre ?? "?"}
                 </Badge>
+                {injury.parte_afectada && (
+                  <Badge variant="outline" className="text-xs">
+                    Parte: {injury.parte_afectada}
+                  </Badge>
+                )}
               </div>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Efecto esperado:</span> {injury.efecto_esperado}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                <span className="font-medium">Verificado en:</span> {injury.capitulos_verificados.map(c => `Cap. ${c}`).join(", ")}
-              </p>
+              {injury.efecto_esperado && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Efecto esperado:</span> {injury.efecto_esperado}
+                </p>
+              )}
+              {injury.capitulos_verificados && injury.capitulos_verificados.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Verificado en:</span> {injury.capitulos_verificados.map(c => `Cap. ${c}`).join(", ")}
+                </p>
+              )}
               {injury.problema && (
                 <p className="text-xs text-destructive mt-2">{injury.problema}</p>
               )}

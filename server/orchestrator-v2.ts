@@ -816,6 +816,97 @@ ${decisions.join('\n')}
   }
 
   /**
+   * Extract injuries from chapter content using AI
+   * LitAgents 2.1: Automatic injury detection to prevent continuity issues
+   */
+  private async extractInjuriesFromChapter(
+    projectId: number,
+    chapterNumber: number,
+    chapterContent: string,
+    characters: any[]
+  ): Promise<void> {
+    if (!chapterContent || chapterContent.length < 500) return;
+    
+    const characterNames = characters
+      .filter(c => c.nombre || c.name)
+      .map(c => c.nombre || c.name)
+      .slice(0, 20);
+    
+    if (characterNames.length === 0) return;
+    
+    const prompt = `Analiza este capítulo y extrae SOLO las lesiones, heridas o condiciones físicas SIGNIFICATIVAS que sufren los personajes.
+
+PERSONAJES CONOCIDOS: ${characterNames.join(', ')}
+
+CAPÍTULO ${chapterNumber}:
+${chapterContent.substring(0, 8000)}
+
+INSTRUCCIONES:
+- Solo reporta lesiones SIGNIFICATIVAS que afectarían acciones futuras
+- Ignora moretones menores, cansancio normal, etc.
+- Incluye: disparos, cortes profundos, huesos rotos, quemaduras, envenenamientos, cirugías, amputaciones
+
+Responde en JSON:
+{
+  "injuries": [
+    {
+      "personaje": "Nombre del personaje",
+      "tipo_lesion": "Descripción breve de la lesión",
+      "parte_afectada": "brazo/pierna/torso/cabeza/etc",
+      "severidad": "leve|moderada|grave|critica",
+      "efecto_esperado": "Qué limitaciones debería tener en capítulos siguientes",
+      "es_temporal": false
+    }
+  ]
+}
+
+Si NO hay lesiones significativas, responde: {"injuries": []}`;
+
+    try {
+      const response = await this.callAI(prompt, "deepseek-chat", 0.3, 1500);
+      this.addTokenUsage(response.tokenUsage);
+      
+      const jsonMatch = response.content.match(/\{[\s\S]*"injuries"[\s\S]*\}/);
+      if (!jsonMatch) return;
+      
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (!parsed.injuries || parsed.injuries.length === 0) return;
+      
+      // Get existing world bible
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      if (!worldBible) return;
+      
+      const existingInjuries = Array.isArray(worldBible.persistentInjuries) ? worldBible.persistentInjuries : [];
+      
+      // Prepare new injuries with proper format
+      const newInjuries = parsed.injuries.map((injury: any) => ({
+        personaje: injury.personaje,
+        tipo_lesion: injury.tipo_lesion,
+        parte_afectada: injury.parte_afectada || "no especificada",
+        capitulo_ocurre: chapterNumber,
+        severidad: injury.severidad || "moderada",
+        efecto_esperado: injury.efecto_esperado || "Movimiento limitado",
+        estado_actual: "activa",
+        es_temporal: injury.es_temporal || false,
+        fecha_registro: new Date().toISOString(),
+      }));
+      
+      // Merge avoiding duplicates
+      const mergedInjuries = this.mergeInjuries(existingInjuries as any[], newInjuries);
+      
+      await storage.updateWorldBible(worldBible.id, {
+        persistentInjuries: mergedInjuries,
+      });
+      
+      console.log(`[OrchestratorV2] Extracted ${newInjuries.length} injuries from Chapter ${chapterNumber}:`, 
+        newInjuries.map((i: any) => `${i.personaje}: ${i.tipo_lesion}`).join(', '));
+      
+    } catch (error) {
+      console.error(`[OrchestratorV2] Error extracting injuries from Chapter ${chapterNumber}:`, error);
+    }
+  }
+
+  /**
    * Format plot decisions and injuries as constraints for agents
    */
   private formatDecisionsAndInjuriesAsConstraints(
@@ -2354,6 +2445,15 @@ ${decisions.join('\n')}
         await storage.updateProject(project.id, { currentChapter: chapterNumber });
         this.callbacks.onChapterComplete(chapterNumber, wordCount, chapterOutline.title);
 
+        // LitAgents 2.1: Extract injuries from chapter content and save to World Bible
+        try {
+          const worldBibleData = await storage.getWorldBibleByProject(project.id);
+          const characters = (worldBibleData?.characters || worldBibleData?.personajes || []) as any[];
+          await this.extractInjuriesFromChapter(project.id, chapterNumber, finalText, characters);
+        } catch (injuryError) {
+          console.error(`[OrchestratorV2] Error extracting injuries from Chapter ${chapterNumber}:`, injuryError);
+        }
+
         // 2e: Narrative Director - Check every 5 chapters, before epilogue, AND always with epilogue (998)
         const isMultipleOfFive = chapterNumber > 0 && chapterNumber < 998 && chapterNumber % 5 === 0;
         const currentIdx = outline.findIndex((ch: any) => ch.chapter_num === chapterNumber);
@@ -3224,12 +3324,19 @@ ${decisions.join('\n')}
                   
                   let injuriesSection = '';
                   if (chapterContext.persistentInjuries.length > 0) {
-                    injuriesSection = '\nLESIONES/CONDICIONES PERSISTENTES:\n' + chapterContext.persistentInjuries.map((i: any) => `- ${i.character || i.personaje}: ${i.injury || i.lesion || i.description}`).join('\n');
+                    injuriesSection = '\n⚠️ LESIONES PERSISTENTES ACTIVAS (OBLIGATORIO RESPETAR):\n' + chapterContext.persistentInjuries.map((i: any) => {
+                      const personaje = i.character || i.personaje;
+                      const lesion = i.tipo_lesion || i.injury || i.lesion || i.description;
+                      const parte = i.parte_afectada ? ` (${i.parte_afectada})` : '';
+                      const efecto = i.efecto_esperado ? ` → ${i.efecto_esperado}` : '';
+                      const capOcurre = i.capitulo_ocurre ? ` [desde Cap ${i.capitulo_ocurre}]` : '';
+                      return `- ${personaje}: ${lesion}${parte}${capOcurre}${efecto}`;
+                    }).join('\n');
                   }
                   
                   let decisionsSection = '';
                   if (chapterContext.plotDecisions.length > 0) {
-                    decisionsSection = '\nDECISIONES DE TRAMA ANTERIORES:\n' + chapterContext.plotDecisions.map((d: any) => `- Cap ${d.chapter || d.capitulo}: ${d.decision || d.descripcion}`).join('\n');
+                    decisionsSection = '\nDECISIONES DE TRAMA ANTERIORES:\n' + chapterContext.plotDecisions.map((d: any) => `- Cap ${d.chapter || d.capitulo_establecido || d.capitulo}: ${d.decision || d.descripcion}`).join('\n');
                   }
                   
                   let timelineSection = '';
@@ -3809,12 +3916,19 @@ ${issuesDescription}`;
                 
                 let injuriesSection = '';
                 if (chapterContext.persistentInjuries.length > 0) {
-                  injuriesSection = '\nLESIONES/CONDICIONES PERSISTENTES:\n' + chapterContext.persistentInjuries.map((i: any) => `- ${i.character || i.personaje}: ${i.injury || i.lesion || i.description}`).join('\n');
+                  injuriesSection = '\n⚠️ LESIONES PERSISTENTES ACTIVAS (OBLIGATORIO RESPETAR):\n' + chapterContext.persistentInjuries.map((i: any) => {
+                    const personaje = i.character || i.personaje;
+                    const lesion = i.tipo_lesion || i.injury || i.lesion || i.description;
+                    const parte = i.parte_afectada ? ` (${i.parte_afectada})` : '';
+                    const efecto = i.efecto_esperado ? ` → ${i.efecto_esperado}` : '';
+                    const capOcurre = i.capitulo_ocurre ? ` [desde Cap ${i.capitulo_ocurre}]` : '';
+                    return `- ${personaje}: ${lesion}${parte}${capOcurre}${efecto}`;
+                  }).join('\n');
                 }
                 
                 let decisionsSection = '';
                 if (chapterContext.plotDecisions.length > 0) {
-                  decisionsSection = '\nDECISIONES DE TRAMA ANTERIORES:\n' + chapterContext.plotDecisions.map((d: any) => `- Cap ${d.chapter || d.capitulo}: ${d.decision || d.descripcion}`).join('\n');
+                  decisionsSection = '\nDECISIONES DE TRAMA ANTERIORES:\n' + chapterContext.plotDecisions.map((d: any) => `- Cap ${d.chapter || d.capitulo_establecido || d.capitulo}: ${d.decision || d.descripcion}`).join('\n');
                 }
                 
                 let timelineSection = '';
