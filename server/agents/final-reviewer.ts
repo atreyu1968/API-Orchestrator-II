@@ -809,26 +809,48 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
     `;
 
     console.log(`[FinalReviewer] Tramo ${trancheNum}/${totalTranches}: ${trancheChapters.length} capítulos, ${chaptersText.length} chars`);
+    console.log(`[FinalReviewer] Iniciando revisión tramo ${trancheNum}/${totalTranches} - usando R1 (puede tardar hasta 15 min)...`);
     
-    const response = await this.generateContent(prompt);
+    // Add periodic heartbeat logging to show progress during long R1 calls
+    const startTime = Date.now();
+    let heartbeatInterval: NodeJS.Timeout | null = setInterval(() => {
+      const elapsedMin = Math.round((Date.now() - startTime) / 60000);
+      console.log(`[FinalReviewer] Tramo ${trancheNum}/${totalTranches}: esperando respuesta R1... (${elapsedMin} min transcurridos)`);
+    }, 60000); // Log every 60 seconds
     
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const result = JSON.parse(jsonMatch[0]) as FinalReviewerResult;
-        console.log(`[FinalReviewer] Tramo ${trancheNum}: score ${result.puntuacion_global}/10, issues: ${result.issues?.length || 0}`);
-        return result;
+      const response = await this.generateContent(prompt);
+      
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
       }
-    } catch (e) {
-      console.error(`[FinalReviewer] Tramo ${trancheNum}: Failed to parse JSON:`, e);
-    }
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+      console.log(`[FinalReviewer] Tramo ${trancheNum}/${totalTranches}: respuesta recibida en ${elapsedSec}s`);
     
-    // Return empty partial result on parse failure
-    return {
-      puntuacion_global: 8,
-      issues: [],
-      capitulos_para_reescribir: [],
-    };
+      try {
+        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const result = JSON.parse(jsonMatch[0]) as FinalReviewerResult;
+          console.log(`[FinalReviewer] Tramo ${trancheNum}: score ${result.puntuacion_global}/10, issues: ${result.issues?.length || 0}`);
+          return result;
+        }
+      } catch (e) {
+        console.error(`[FinalReviewer] Tramo ${trancheNum}: Failed to parse JSON:`, e);
+      }
+    
+      // Return empty partial result on parse failure
+      return {
+        puntuacion_global: 8,
+        issues: [],
+        capitulos_para_reescribir: [],
+      };
+    } finally {
+      // Ensure heartbeat is always cleared
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+      }
+    }
   }
 
   async execute(input: FinalReviewerInput): Promise<AgentResponse & { result?: FinalReviewerResult }> {

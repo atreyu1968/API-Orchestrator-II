@@ -3062,6 +3062,8 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
       let correctedIssuesSummaries: string[] = [];
       // Track previous cycle score for consistency enforcement
       let previousCycleScore: number | undefined = undefined;
+      // CRITICAL: Track issues from previous FinalReviewer cycle to use for pre-corrections in next cycle
+      let previousCycleIssues: FinalReviewIssue[] = [];
       
       // ITERATIVE REVIEW CYCLE: Track consecutive high scores (≥9) for approval
       const REQUIRED_CONSECUTIVE_HIGH_SCORES = 2;
@@ -3319,13 +3321,33 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
             this.callbacks.onAgentStatus("beta-reader", "active", "Auditoría completa. Sin problemas críticos. Iniciando revisión final...");
           }
           
-          // === PRE-REVIEW CORRECTION: Fix QA/BetaReader issues BEFORE FinalReviewer ===
-          if (qaIssues.length > 0) {
-            console.log(`[OrchestratorV2] PRE-REVIEW CORRECTION: Fixing ${qaIssues.length} QA/BetaReader issues before FinalReviewer`);
+          // === PRE-REVIEW CORRECTION: Fix QA + previous FinalReviewer issues BEFORE new FinalReviewer ===
+          // Combine QA issues with issues from previous FinalReviewer cycle
+          const combinedPreReviewIssues: QAIssue[] = [...qaIssues];
+          
+          // Convert previous FinalReviewer issues to QAIssue format and add them
+          if (previousCycleIssues.length > 0) {
+            console.log(`[OrchestratorV2] Adding ${previousCycleIssues.length} issues from previous FinalReviewer cycle to pre-review corrections`);
+            for (const issue of previousCycleIssues) {
+              for (const chapNum of (issue.capitulos_afectados || [])) {
+                combinedPreReviewIssues.push({
+                  source: 'final-reviewer',
+                  capitulo: chapNum,
+                  severidad: issue.severidad || 'mayor',
+                  descripcion: issue.descripcion || '',
+                  instrucciones: issue.instrucciones_correccion || issue.instruccion_correccion || '',
+                  categoria: issue.categoria || 'general',
+                });
+              }
+            }
+          }
+          
+          if (combinedPreReviewIssues.length > 0) {
+            console.log(`[OrchestratorV2] PRE-REVIEW CORRECTION: Fixing ${combinedPreReviewIssues.length} combined issues (${qaIssues.length} QA + ${previousCycleIssues.length} FinalReviewer) before new review`);
             
-            // Aggregate QA issues by chapter
-            const qaIssuesByChapter = new Map<number, typeof qaIssues>();
-            for (const issue of qaIssues) {
+            // Aggregate combined issues by chapter
+            const qaIssuesByChapter = new Map<number, typeof combinedPreReviewIssues>();
+            for (const issue of combinedPreReviewIssues) {
               const chapNum = issue.capitulo || (issue.capitulos ? issue.capitulos[0] : null);
               if (chapNum) {
                 if (!qaIssuesByChapter.has(chapNum)) {
@@ -3359,8 +3381,12 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
               const chapterQaIssues = qaIssuesByChapter.get(chapNum) || [];
               if (chapterQaIssues.length === 0) continue;
               
-              // Check severity levels
-              const hasCriticalOrMajor = chapterQaIssues.some(i => i.severidad === 'critica' || i.severidad === 'mayor');
+              // Check severity levels (case-insensitive)
+              const hasCriticalOrMajor = chapterQaIssues.some(i => {
+                const sev = (i.severidad || '').toLowerCase();
+                return sev === 'critica' || sev === 'crítica' || sev === 'mayor' || sev === 'critical' || sev === 'major';
+              });
+              console.log(`[OrchestratorV2] Pre-review Chapter ${chapNum}: ${chapterQaIssues.length} issues, hasCriticalOrMajor=${hasCriticalOrMajor}, severities=[${chapterQaIssues.map(i => i.severidad).join(', ')}]`);
               
               // Build unified correction prompt with FULL CONTEXT
               const issuesDescription = chapterQaIssues.map(i => 
@@ -3402,7 +3428,7 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
               };
               
               console.log(`[OrchestratorV2] Pre-review fixing Chapter ${chapNum}: ${chapterQaIssues.length} issues (critical/major: ${hasCriticalOrMajor})`);
-              this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (${hasCriticalOrMajor ? 'reescritura' : 'parches'}, ${chapterQaIssues.length} problemas)...`);
+              this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (reescritura, ${chapterQaIssues.length} problemas)...`);
               
               try {
                 let correctedContent: string | null = null;
@@ -3481,6 +3507,8 @@ ${issuesDescription}`;
                   await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
                   
                   // fullRewrite returns rewrittenContent, not parsed.corrected_text
+                  console.log(`[OrchestratorV2] fullRewrite result for Chapter ${chapNum}: error=${fixResult.error || 'none'}, rewrittenContent=${fixResult.rewrittenContent?.length || 0} chars, content=${fixResult.content?.length || 0} chars`);
+                  
                   if (fixResult.rewrittenContent && fixResult.rewrittenContent.length > 100) {
                     correctedContent = fixResult.rewrittenContent;
                     console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum}: ${correctedContent.length} chars`);
@@ -3488,72 +3516,32 @@ ${issuesDescription}`;
                     // Fallback to raw content if rewrittenContent not parsed
                     correctedContent = fixResult.content;
                     console.log(`[OrchestratorV2] Full rewrite fallback for Chapter ${chapNum}: ${correctedContent.length} chars`);
+                  } else {
+                    console.warn(`[OrchestratorV2] Full rewrite FAILED for Chapter ${chapNum} - no valid content returned`);
                   }
                 } else {
-                  // MINOR ISSUES ONLY: Try patches first, then fallbacks
-                  console.log(`[OrchestratorV2] Minor issues only for Chapter ${chapNum}, trying patches first`);
+                  // MINOR ISSUES: Use fullRewrite for reliability (patches were failing too often)
+                  console.log(`[OrchestratorV2] Minor issues for Chapter ${chapNum}, using fullRewrite for reliability`);
                   
-                  // Attempt 1: SmartEditor patches
-                  const editResult = await this.smartEditor.execute({
+                  const fixResult = await this.smartEditor.fullRewrite({
                     chapterContent: chapter.content,
-                    sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
-                    worldBible: worldBibleData,
-                    additionalContext: `PROBLEMAS MENORES A CORREGIR:\n${issuesDescription}`,
+                    errorDescription: `PROBLEMAS A CORREGIR:\n${issuesDescription}`,
+                    consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
                   });
                   
-                  this.addTokenUsage(editResult.tokenUsage);
-                  await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapNum);
+                  this.addTokenUsage(fixResult.tokenUsage);
+                  await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
                   
-                  if (editResult.patches && editResult.patches.length > 0) {
-                    const patchResult = applyPatches(chapter.content, editResult.patches);
-                    if (patchResult.modifiedContent && patchResult.modifiedContent.length > 100) {
-                      correctedContent = patchResult.modifiedContent;
-                      console.log(`[OrchestratorV2] Patches applied successfully for Chapter ${chapNum}`);
-                    }
-                  } else if (editResult.fullContent && editResult.fullContent.length > 100) {
-                    correctedContent = editResult.fullContent;
-                  }
+                  console.log(`[OrchestratorV2] fullRewrite result for minor issues Chapter ${chapNum}: error=${fixResult.error || 'none'}, rewrittenContent=${fixResult.rewrittenContent?.length || 0} chars, content=${fixResult.content?.length || 0} chars`);
                   
-                  // Attempt 2: surgicalFix if patches failed - apply returned patches
-                  if (!correctedContent) {
-                    console.log(`[OrchestratorV2] Patches failed, trying surgicalFix for Chapter ${chapNum}`);
-                    const fixResult = await this.smartEditor.surgicalFix({
-                      chapterContent: chapter.content,
-                      errorDescription: issuesDescription,
-                      consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
-                    });
-                    this.addTokenUsage(fixResult.tokenUsage);
-                    
-                    // LitAgents 2.1: surgicalFix returns patches array, apply them
-                    if (fixResult.patches && fixResult.patches.length > 0) {
-                      const patchResult = applyPatches(chapter.content, fixResult.patches);
-                      if (patchResult.modifiedContent && patchResult.modifiedContent.length > 100) {
-                        correctedContent = patchResult.modifiedContent;
-                        console.log(`[OrchestratorV2] Surgical patches applied for Chapter ${chapNum}`);
-                      }
-                    } else if (fixResult.fullContent && fixResult.fullContent.length > 100) {
-                      correctedContent = fixResult.fullContent;
-                    }
-                  }
-                  
-                  // Attempt 3: Last resort full rewrite using fullRewrite method
-                  if (!correctedContent) {
-                    console.log(`[OrchestratorV2] All methods failed, forcing full rewrite for Chapter ${chapNum}`);
-                    const fixResult = await this.smartEditor.fullRewrite({
-                      chapterContent: chapter.content,
-                      errorDescription: `REESCRITURA FORZADA - Corregir estos problemas:\n${issuesDescription}`,
-                      consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
-                    });
-                    this.addTokenUsage(fixResult.tokenUsage);
-                    
-                    // fullRewrite returns rewrittenContent
-                    if (fixResult.rewrittenContent && fixResult.rewrittenContent.length > 100) {
-                      correctedContent = fixResult.rewrittenContent;
-                      console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum}`);
-                    } else if (fixResult.content && fixResult.content.length > 100) {
-                      correctedContent = fixResult.content;
-                      console.log(`[OrchestratorV2] Full rewrite fallback for Chapter ${chapNum}`);
-                    }
+                  if (fixResult.rewrittenContent && fixResult.rewrittenContent.length > 100) {
+                    correctedContent = fixResult.rewrittenContent;
+                    console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum}: ${correctedContent.length} chars`);
+                  } else if (fixResult.content && fixResult.content.length > 100) {
+                    correctedContent = fixResult.content;
+                    console.log(`[OrchestratorV2] Full rewrite fallback for Chapter ${chapNum}: ${correctedContent.length} chars`);
+                  } else {
+                    console.warn(`[OrchestratorV2] Full rewrite FAILED for minor issues Chapter ${chapNum} - no valid content returned`);
                   }
                 }
                 
@@ -3587,6 +3575,30 @@ ${issuesDescription}`;
             
             console.log(`[OrchestratorV2] PRE-REVIEW CORRECTION complete: ${preReviewCorrected}/${chaptersToFix.length} chapters corrected`);
             this.callbacks.onAgentStatus("beta-reader", "active", `Pre-corrección: ${preReviewCorrected} capítulos arreglados. Iniciando revisión final...`);
+            
+            // CRITICAL: Remove successfully corrected chapters from previousCycleIssues to avoid re-attempting
+            // For multi-chapter issues, only remove the fixed chapters from capitulos_afectados
+            const successfullyFixedChapters = preReviewFixes.filter(f => f.success).map(f => f.chapter);
+            if (successfullyFixedChapters.length > 0) {
+              const originalCount = previousCycleIssues.length;
+              previousCycleIssues = previousCycleIssues
+                .map(issue => {
+                  // Remove fixed chapters from the issue's affected chapters list
+                  const affectedChapters = issue.capitulos_afectados || [];
+                  const remainingChapters = affectedChapters.filter(ch => !successfullyFixedChapters.includes(ch));
+                  return { ...issue, capitulos_afectados: remainingChapters };
+                })
+                .filter(issue => (issue.capitulos_afectados || []).length > 0); // Remove issues with no remaining chapters
+              console.log(`[OrchestratorV2] Cleaned previousCycleIssues: ${originalCount} -> ${previousCycleIssues.length} issues (removed fixed chapters from multi-chapter issues)`);
+              
+              // Also remove fixed chapters from qaIssues to avoid re-attempting
+              const originalQaCount = qaIssues.length;
+              qaIssues = qaIssues.filter(issue => {
+                const chapNum = issue.capitulo || (issue.capitulos ? issue.capitulos[0] : null);
+                return chapNum ? !successfullyFixedChapters.includes(chapNum) : true;
+              });
+              console.log(`[OrchestratorV2] Removed ${originalQaCount - qaIssues.length} fixed issues from qaIssues (${qaIssues.length} remaining)`);
+            }
             
             // === LOG PRE-REVIEW FIXES REPORT ===
             const successfulFixes = preReviewFixes.filter(f => f.success);
@@ -3724,6 +3736,10 @@ ${issuesDescription}`;
 
         finalResult = reviewResult.result;
         let { veredicto, puntuacion_global, issues, capitulos_para_reescribir } = finalResult;
+
+        // CRITICAL: Save issues from this cycle to use for pre-corrections in next cycle
+        previousCycleIssues = issues || [];
+        console.log(`[OrchestratorV2] Saved ${previousCycleIssues.length} issues from cycle ${currentCycle} for next pre-review corrections`);
 
         console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}, issues: ${issues?.length || 0}`);
         
