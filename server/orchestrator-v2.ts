@@ -2462,10 +2462,125 @@ ${decisions.join('\n')}
           // === END BETA READER ===
           
           if (qaIssues.length > 0) {
-            this.callbacks.onAgentStatus("final-reviewer", "active", `Auditoría completa: ${qaIssues.length} problemas detectados. Pasando a revisión final...`);
+            this.callbacks.onAgentStatus("final-reviewer", "active", `Auditoría completa: ${qaIssues.length} problemas detectados. Corrigiendo antes de revisión...`);
           } else {
             this.callbacks.onAgentStatus("final-reviewer", "active", "Auditoría completa. Sin problemas críticos. Iniciando revisión final...");
           }
+          
+          // === PRE-REVIEW CORRECTION: Fix QA/BetaReader issues BEFORE FinalReviewer ===
+          if (qaIssues.length > 0) {
+            console.log(`[OrchestratorV2] PRE-REVIEW CORRECTION: Fixing ${qaIssues.length} QA/BetaReader issues before FinalReviewer`);
+            
+            // Aggregate QA issues by chapter
+            const qaIssuesByChapter = new Map<number, typeof qaIssues>();
+            for (const issue of qaIssues) {
+              const chapNum = issue.capitulo || (issue.capitulos ? issue.capitulos[0] : null);
+              if (chapNum) {
+                if (!qaIssuesByChapter.has(chapNum)) {
+                  qaIssuesByChapter.set(chapNum, []);
+                }
+                qaIssuesByChapter.get(chapNum)!.push(issue);
+              }
+            }
+            
+            const chaptersToFix = Array.from(qaIssuesByChapter.keys()).sort((a, b) => a - b);
+            console.log(`[OrchestratorV2] Pre-review: ${chaptersToFix.length} chapters to correct: ${chaptersToFix.join(', ')}`);
+            
+            // Notify frontend about chapters being corrected
+            if (this.callbacks.onChaptersBeingCorrected) {
+              this.callbacks.onChaptersBeingCorrected(chaptersToFix, 0); // 0 = pre-review phase
+            }
+            
+            let preReviewCorrected = 0;
+            for (const chapNum of chaptersToFix) {
+              if (await isProjectCancelledFromDb(project.id)) {
+                await this.updateProjectTokens(project.id);
+                await storage.updateProject(project.id, { status: "paused" });
+                return;
+              }
+              
+              const chapter = completedChapters.find(c => c.chapterNumber === chapNum);
+              if (!chapter || !chapter.content) continue;
+              
+              const chapterQaIssues = qaIssuesByChapter.get(chapNum) || [];
+              if (chapterQaIssues.length === 0) continue;
+              
+              // Check if any critical issues
+              const hasCritical = chapterQaIssues.some(i => i.severidad === 'critica');
+              
+              // Build unified correction prompt
+              const issuesDescription = chapterQaIssues.map(i => 
+                `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.source}: ${i.descripcion}\n  Corrección: ${i.correccion || 'Corregir según descripción'}`
+              ).join("\n");
+              
+              console.log(`[OrchestratorV2] Pre-review fixing Chapter ${chapNum}: ${chapterQaIssues.length} issues (critical: ${hasCritical})`);
+              this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (pre-revisión, ${chapterQaIssues.length} problemas)...`);
+              
+              try {
+                let correctedContent: string | null = null;
+                
+                if (hasCritical) {
+                  // Use surgicalFix for critical issues
+                  const fixResult = await this.smartEditor.surgicalFix({
+                    chapterContent: chapter.content,
+                    errorDescription: issuesDescription,
+                    consistencyConstraints: JSON.stringify(worldBibleData.characters?.slice?.(0, 5) || []),
+                  });
+                  
+                  this.addTokenUsage(fixResult.tokenUsage);
+                  await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
+                  
+                  if (fixResult.parsed?.corrected_text && fixResult.parsed.corrected_text.length > 100) {
+                    correctedContent = fixResult.parsed.corrected_text;
+                  }
+                } else {
+                  // Use SmartEditor patches for non-critical
+                  const editResult = await this.smartEditor.execute({
+                    chapterContent: chapter.content,
+                    sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
+                    worldBible: worldBibleData,
+                    additionalContext: `PROBLEMAS DE AUDITORÍA QA/BETA READER (CORREGIR OBLIGATORIAMENTE):\n${issuesDescription}`,
+                  });
+                  
+                  this.addTokenUsage(editResult.tokenUsage);
+                  await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapNum);
+                  
+                  if (editResult.patches && editResult.patches.length > 0) {
+                    const patchResult = applyPatches(chapter.content, editResult.patches);
+                    if (patchResult.modifiedContent && patchResult.modifiedContent.length > 100) {
+                      correctedContent = patchResult.modifiedContent;
+                    }
+                  } else if (editResult.fullContent && editResult.fullContent.length > 100) {
+                    correctedContent = editResult.fullContent;
+                  }
+                }
+                
+                if (correctedContent) {
+                  await storage.updateChapter(chapter.id, {
+                    content: correctedContent,
+                    status: "completed",
+                  });
+                  preReviewCorrected++;
+                  console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} corrected successfully`);
+                }
+              } catch (fixError) {
+                console.error(`[OrchestratorV2] Pre-review fix failed for Chapter ${chapNum}:`, fixError);
+              }
+            }
+            
+            console.log(`[OrchestratorV2] PRE-REVIEW CORRECTION complete: ${preReviewCorrected}/${chaptersToFix.length} chapters corrected`);
+            this.callbacks.onAgentStatus("final-reviewer", "active", `Pre-corrección: ${preReviewCorrected} capítulos arreglados. Iniciando revisión final...`);
+            
+            // Clear QA issues after correction (they've been fixed)
+            qaIssues.length = 0;
+            
+            // Refresh chapters from storage after corrections
+            const refreshedChapters = await storage.getChaptersByProject(project.id);
+            completedChapters = refreshedChapters
+              .filter(c => c.status === "completed" || c.status === "approved")
+              .sort((a, b) => a.chapterNumber - b.chapterNumber);
+          }
+          // === END PRE-REVIEW CORRECTION ===
         }
         // === END QA AUDIT ===
         currentCycle++;
