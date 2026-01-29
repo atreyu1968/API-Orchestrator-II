@@ -97,6 +97,7 @@ export const projects = pgTable("projects", {
   betaReaderScore: integer("beta_reader_score"),
   commercialViability: text("commercial_viability"),
   qaAuditReport: jsonb("qa_audit_report"), // { findings: [], corrections: [], successCount, failCount }
+  generationToken: text("generation_token"), // Unique token per generation session to prevent parallel executions
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
@@ -768,6 +769,7 @@ export const reeditProjects = pgTable("reedit_projects", {
   // Per-chapter change history for intelligent resolution detection
   // Format: { "chapterNum": [{ issue: "desc", fix: "what changed", timestamp: "date" }] }
   chapterChangeHistory: jsonb("chapter_change_history").default({}),
+  generationToken: text("generation_token"), // Unique token per generation session to prevent parallel executions
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
 
