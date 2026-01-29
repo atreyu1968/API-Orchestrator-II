@@ -2662,6 +2662,30 @@ ${decisions.join('\n')}
         
         // Save current score for next cycle
         previousCycleScore = puntuacion_global;
+        
+        // === PERSIST REVIEW RESULT AFTER EACH CYCLE (like reeditor) ===
+        // Add cycle number to the result for tracking
+        const reviewResultWithCycle = {
+          ...finalResult,
+          revisionCycle: currentCycle,
+          evaluatedAt: new Date().toISOString(),
+        };
+        
+        await storage.updateProject(project.id, {
+          finalReviewResult: reviewResultWithCycle as any,
+          finalScore: puntuacion_global,
+          revisionCycle: currentCycle,
+        });
+        
+        // Log the report to activity logs for export
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: puntuacion_global >= MIN_ACCEPTABLE_SCORE ? "success" : "info",
+          agentRole: "final-reviewer",
+          message: `[Ciclo ${currentCycle}] Puntuación: ${puntuacion_global}/10 | Veredicto: ${veredicto} | Issues: ${issues?.length || 0} | Capítulos a corregir: ${capitulos_para_reescribir?.length || 0}`,
+        });
+        
+        console.log(`[OrchestratorV2] Cycle ${currentCycle} report persisted: ${puntuacion_global}/10, ${issues?.length || 0} issues`);
 
         // ORCHESTRATOR SAFETY NET: If capitulos_para_reescribir is empty but there are ANY issues,
         // extract chapters from ALL issues to trigger auto-correction (not just critical/major)
