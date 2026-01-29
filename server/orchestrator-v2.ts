@@ -4329,33 +4329,26 @@ ${issuesDescription}`;
             continue; // Go back to start of while loop for new review
           }
           
-          // If any chapters failed to correct, pause for user intervention with detailed info
+          // If any chapters failed to correct, LOG the issue but CONTINUE to next cycle (unattended mode)
           if (failedCount > 0) {
-            console.error(`[OrchestratorV2] ${failedCount} chapters could not be corrected after multiple retries`);
+            console.warn(`[OrchestratorV2] ${failedCount} chapters could not be corrected. Continuing to next cycle anyway (unattended mode)...`);
             
-            // Build detailed error message with chapter list
+            // Build log message with chapter list
             const failedChaptersList = failedChaptersDetails.map(f => 
-              `  • Cap ${f.chapterNumber} (${f.title}): ${f.error}`
-            ).join('\n');
+              `Cap ${f.chapterNumber}: ${f.error.substring(0, 100)}`
+            ).join('; ');
             
-            const detailedPauseReason = `CORRECCIÓN INCOMPLETA: ${failedCount} de ${capitulos_para_reescribir.length} capítulos no pudieron corregirse automáticamente.
-
-CAPÍTULOS FALLIDOS:
-${failedChaptersList}
-
-OPCIONES:
-1. REINTENTAR: Vuelve a ejecutar el proceso (puede funcionar con diferente contexto)
-2. SALTAR: Marca estos capítulos como aceptables y continúa con la revisión final
-3. EDITAR MANUAL: Corrige los capítulos manualmente y luego reanuda
-
-Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el panel de control.`;
-
-            // Store failed chapters info in finalReviewResult for UI access
-            // Use "paused" status so UI shows resume button
+            // Log warning to activity console
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              agentRole: "smart-editor",
+              message: `${failedCount} capítulo(s) no pudieron corregirse automáticamente: ${failedChaptersList.substring(0, 500)}. Continuando al siguiente ciclo...`,
+            });
+            
+            // Store failed chapters info for reference but DON'T pause
             const existingResult = project.finalReviewResult as any || {};
             await storage.updateProject(project.id, { 
-              status: "paused",
-              pauseReason: detailedPauseReason,
               finalReviewResult: {
                 ...existingResult,
                 failedChapters: failedChaptersDetails,
@@ -4363,8 +4356,9 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
               }
             });
             
-            this.callbacks.onError(`${failedCount} capítulo(s) no pudieron corregirse. Proceso pausado.\n\nCapítulos fallidos: ${failedChaptersDetails.map(f => f.chapterNumber).join(', ')}`);
-            return;
+            this.callbacks.onAgentStatus("smart-editor", "completed", `${correctedCount} corregidos, ${failedCount} fallidos. Continuando...`);
+            // Continue to next cycle instead of pausing
+            continue;
           }
         }
       }
