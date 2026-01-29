@@ -2325,7 +2325,13 @@ export class ReeditOrchestrator {
     const project = await storage.getReeditProject(projectId);
     if (!project) return true;
     
-    // Check if our token has been invalidated (another process started)
+    // If WE don't have a token but the DB has one, a newer process took over
+    if (!this.generationToken && project.generationToken) {
+      console.log(`[ReeditOrchestrator] Legacy process (no token) superseded by new process with token ${project.generationToken} for project ${projectId}. Stopping.`);
+      return true;
+    }
+    
+    // If we have a token, check it matches the DB
     if (this.generationToken && project.generationToken && project.generationToken !== this.generationToken) {
       console.log(`[ReeditOrchestrator] Stopping: token mismatch for project ${projectId} (ours=${this.generationToken}, DB=${project.generationToken})`);
       // Don't update status - the new process owns this project now

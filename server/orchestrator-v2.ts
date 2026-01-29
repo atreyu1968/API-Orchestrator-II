@@ -287,16 +287,18 @@ export class OrchestratorV2 {
   
   // Check if this orchestrator instance is still valid (not superseded by a new generation)
   private async isTokenStillValid(projectId: number): Promise<boolean> {
-    if (!this.generationToken) {
-      return true; // No token = legacy mode, continue
-    }
-    
     try {
       const project = await storage.getProject(projectId);
       if (!project) return false;
       
-      // If the token in DB doesn't match our token, a new generation started
-      if (project.generationToken && project.generationToken !== this.generationToken) {
+      // If WE don't have a token but the DB has one, a newer process took over
+      if (!this.generationToken && project.generationToken) {
+        console.log(`[OrchestratorV2] Legacy process (no token) superseded by new process with token ${project.generationToken} for project ${projectId}. Stopping.`);
+        return false;
+      }
+      
+      // If we have a token, check it matches the DB
+      if (this.generationToken && project.generationToken && project.generationToken !== this.generationToken) {
         console.log(`[OrchestratorV2] Token mismatch for project ${projectId}: ours=${this.generationToken}, DB=${project.generationToken}. Stopping obsolete process.`);
         return false;
       }
