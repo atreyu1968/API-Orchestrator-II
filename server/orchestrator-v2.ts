@@ -2498,6 +2498,14 @@ ${decisions.join('\n')}
           console.log(`[OrchestratorV2] Auto-correction complete: ${correctedCount} corrected, ${failedCount} failed of ${totalAttempted} total`);
           this.callbacks.onAgentStatus("smart-editor", "completed", summaryMessage);
           
+          // CRITICAL: After successful corrections, continue to next cycle for re-review
+          // This ensures the iterative loop: review → fix → review → fix → until 2x consecutive 9+
+          if (correctedCount > 0 && failedCount === 0) {
+            console.log(`[OrchestratorV2] Corrections applied successfully. Continuing to next review cycle (${currentCycle}/${maxCycles})...`);
+            this.callbacks.onAgentStatus("final-reviewer", "active", `Correcciones aplicadas. Iniciando nueva revisión...`);
+            continue; // Go back to start of while loop for new review
+          }
+          
           // If any chapters failed to correct, pause for user intervention with detailed info
           if (failedCount > 0) {
             console.error(`[OrchestratorV2] ${failedCount} chapters could not be corrected after multiple retries`);
