@@ -2172,6 +2172,13 @@ export class ReeditOrchestrator {
     parts.push("• NO cambiar nombres o características de personajes");
     parts.push("• NO alterar cronología sin justificación");
 
+    // 6. Style guide from World Bible (if available)
+    const styleGuide = worldBible?.styleGuide || worldBible?.guiaEstilo;
+    if (styleGuide && typeof styleGuide === 'string' && styleGuide.length > 50) {
+      parts.push("\n\n=== GUÍA DE ESTILO ===");
+      parts.push(styleGuide.substring(0, 2000));
+    }
+
     return parts.length > 0 ? parts.join("\n") : "";
   }
 

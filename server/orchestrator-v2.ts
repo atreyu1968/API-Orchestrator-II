@@ -943,7 +943,7 @@ ${decisions.join('\n')}
     // 6. Writing anti-patterns specific to genre
     const genre = worldBible?.genre || "";
     if (genre) {
-      parts.push("\n\n=== ANTIPATRONES A EVITAR (${genre.toUpperCase()}) ===");
+      parts.push(`\n\n=== ANTIPATRONES A EVITAR (${genre.toUpperCase()}) ===`);
       parts.push("• NO usar deus ex machina o coincidencias forzadas");
       parts.push("• NO contradecir información establecida en capítulos anteriores");
       parts.push("• NO ignorar lesiones, heridas o condiciones físicas de personajes");
@@ -952,7 +952,139 @@ ${decisions.join('\n')}
       parts.push("• NO introducir personajes sin presentación adecuada");
     }
     
+    // 7. Style guide from World Bible (if analyzed and saved)
+    const styleGuide = (worldBible as any)?.styleGuide;
+    if (styleGuide && styleGuide.length > 50) {
+      parts.push("\n\n=== GUÍA DE ESTILO (OBLIGATORIO SEGUIR) ===");
+      parts.push(styleGuide);
+    }
+    
     return parts.length > 0 ? parts.join("\n") : "";
+  }
+
+  /**
+   * Analyze and summarize a style guide, extracting key writing instructions.
+   * Saves the condensed style guide to the World Bible for consistent use.
+   */
+  private async analyzeAndSaveStyleGuide(
+    projectId: number,
+    styleGuideContent: string
+  ): Promise<string> {
+    if (!styleGuideContent || styleGuideContent.length < 50) {
+      return "";
+    }
+
+    // Extract key style elements using pattern matching
+    const styleElements: string[] = [];
+    const lines = styleGuideContent.split(/\n+/).filter(l => l.trim().length > 10);
+
+    // Categories to extract
+    const categories = {
+      voz: [] as string[],         // Narrative voice
+      dialogos: [] as string[],    // Dialogue style
+      vocabulario: [] as string[], // Vocabulary rules
+      prohibido: [] as string[],   // Forbidden words/phrases
+      tono: [] as string[],        // Tone
+      estructura: [] as string[],  // Sentence structure
+      puntuacion: [] as string[],  // Punctuation rules
+      otros: [] as string[],       // Other rules
+    };
+
+    // Keywords for classification
+    const voiceKeywords = ['narrador', 'voz', 'perspectiva', 'punto de vista', 'primera persona', 'tercera persona', 'omnisciente'];
+    const dialogueKeywords = ['diálogo', 'dialogo', 'hablar', 'conversar', 'guion', 'comillas', 'dijo', 'respondió'];
+    const vocabKeywords = ['vocabulario', 'palabras', 'usar', 'preferir', 'términos', 'lenguaje'];
+    const forbiddenKeywords = ['evitar', 'no usar', 'prohibido', 'nunca', 'jamás', 'no escribir', 'eliminar'];
+    const toneKeywords = ['tono', 'atmósfera', 'ambiente', 'sensación', 'emoción', 'sentimiento'];
+    const structureKeywords = ['oraciones', 'párrafos', 'longitud', 'estructura', 'ritmo', 'cadencia'];
+    const punctKeywords = ['puntuación', 'comas', 'puntos', 'signos', 'mayúsculas', 'minúsculas'];
+
+    for (const line of lines) {
+      const lowerLine = line.toLowerCase();
+      
+      // Classify the line
+      if (voiceKeywords.some(k => lowerLine.includes(k))) {
+        categories.voz.push(line.trim());
+      } else if (dialogueKeywords.some(k => lowerLine.includes(k))) {
+        categories.dialogos.push(line.trim());
+      } else if (forbiddenKeywords.some(k => lowerLine.includes(k))) {
+        categories.prohibido.push(line.trim());
+      } else if (vocabKeywords.some(k => lowerLine.includes(k))) {
+        categories.vocabulario.push(line.trim());
+      } else if (toneKeywords.some(k => lowerLine.includes(k))) {
+        categories.tono.push(line.trim());
+      } else if (structureKeywords.some(k => lowerLine.includes(k))) {
+        categories.estructura.push(line.trim());
+      } else if (punctKeywords.some(k => lowerLine.includes(k))) {
+        categories.puntuacion.push(line.trim());
+      } else if (line.trim().length > 20 && line.trim().length < 300) {
+        // Keep short, meaningful lines as other rules
+        categories.otros.push(line.trim());
+      }
+    }
+
+    // Build condensed style guide
+    const parts: string[] = [];
+
+    if (categories.voz.length > 0) {
+      parts.push("VOZ NARRATIVA:");
+      parts.push(...categories.voz.slice(0, 5).map(v => `  • ${v.substring(0, 200)}`));
+    }
+
+    if (categories.dialogos.length > 0) {
+      parts.push("\nDIÁLOGOS:");
+      parts.push(...categories.dialogos.slice(0, 5).map(d => `  • ${d.substring(0, 200)}`));
+    }
+
+    if (categories.tono.length > 0) {
+      parts.push("\nTONO:");
+      parts.push(...categories.tono.slice(0, 3).map(t => `  • ${t.substring(0, 200)}`));
+    }
+
+    if (categories.prohibido.length > 0) {
+      parts.push("\n⚠️ EVITAR:");
+      parts.push(...categories.prohibido.slice(0, 8).map(p => `  • ${p.substring(0, 200)}`));
+    }
+
+    if (categories.vocabulario.length > 0) {
+      parts.push("\nVOCABULARIO:");
+      parts.push(...categories.vocabulario.slice(0, 5).map(v => `  • ${v.substring(0, 200)}`));
+    }
+
+    if (categories.estructura.length > 0) {
+      parts.push("\nESTRUCTURA:");
+      parts.push(...categories.estructura.slice(0, 3).map(e => `  • ${e.substring(0, 200)}`));
+    }
+
+    if (categories.puntuacion.length > 0) {
+      parts.push("\nPUNTUACIÓN:");
+      parts.push(...categories.puntuacion.slice(0, 3).map(p => `  • ${p.substring(0, 200)}`));
+    }
+
+    // Add some "other" rules if we have space
+    if (categories.otros.length > 0 && parts.length < 30) {
+      parts.push("\nOTRAS REGLAS:");
+      parts.push(...categories.otros.slice(0, 5).map(o => `  • ${o.substring(0, 200)}`));
+    }
+
+    const condensedGuide = parts.join("\n");
+
+    // Save to World Bible
+    if (condensedGuide.length > 50) {
+      try {
+        const worldBible = await storage.getWorldBibleByProject(projectId);
+        if (worldBible) {
+          await storage.updateWorldBible(worldBible.id, {
+            styleGuide: condensedGuide,
+          } as any);
+          console.log(`[OrchestratorV2] Saved condensed style guide to World Bible (${condensedGuide.length} chars from ${styleGuideContent.length} original)`);
+        }
+      } catch (err) {
+        console.error(`[OrchestratorV2] Failed to save style guide to World Bible:`, err);
+      }
+    }
+
+    return condensedGuide;
   }
 
   /**
@@ -1650,12 +1782,20 @@ ${decisions.join('\n')}
         await this.initializeConsistencyDatabase(project.id, worldBible, project.genre);
       }
 
-      // Get style guide
+      // Get style guide and analyze it for key writing instructions
       let guiaEstilo = "";
       if (project.styleGuideId) {
         const styleGuide = await storage.getStyleGuide(project.styleGuideId);
-        if (styleGuide) {
-          guiaEstilo = styleGuide.content;
+        if (styleGuide && styleGuide.content) {
+          // Analyze and save condensed style guide to World Bible
+          guiaEstilo = await this.analyzeAndSaveStyleGuide(project.id, styleGuide.content);
+          
+          // If analysis produced insufficient content, use original (truncated for safety)
+          if (guiaEstilo.length < 100 && styleGuide.content.length > 100) {
+            guiaEstilo = styleGuide.content.substring(0, 3000); // Increase from 1000 to 3000
+          }
+          
+          console.log(`[OrchestratorV2] Style guide loaded: ${guiaEstilo.length} chars (analyzed from ${styleGuide.content.length} original)`);
         }
       }
 
@@ -2495,10 +2635,17 @@ ${decisions.join('\n')}
         return;
       }
 
+      // Get style guide - use condensed version from World Bible if available
       let guiaEstilo = "";
-      if (project.styleGuideId) {
+      if ((worldBible as any).styleGuide) {
+        guiaEstilo = (worldBible as any).styleGuide;
+        console.log(`[OrchestratorV2] Using condensed style guide from World Bible (${guiaEstilo.length} chars)`);
+      } else if (project.styleGuideId) {
         const styleGuide = await storage.getStyleGuide(project.styleGuideId);
-        if (styleGuide) guiaEstilo = styleGuide.content;
+        if (styleGuide && styleGuide.content) {
+          guiaEstilo = await this.analyzeAndSaveStyleGuide(project.id, styleGuide.content);
+          if (guiaEstilo.length < 100) guiaEstilo = styleGuide.content.substring(0, 3000);
+        }
       }
 
       const worldBibleData = {
