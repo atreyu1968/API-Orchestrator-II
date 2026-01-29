@@ -3055,7 +3055,8 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
         rules: worldBible.worldRules || [],
       };
 
-      let currentCycle = 0;
+      // CRITICAL: Restore cycle state from database to survive restarts
+      let currentCycle = project.revisionCycle || 0;
       let finalResult: FinalReviewerResult | null = null;
       // Track corrected issues between cycles to inform FinalReviewer
       let correctedIssuesSummaries: string[] = [];
@@ -3067,12 +3068,16 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
       const MIN_ACCEPTABLE_SCORE = 9;
       // CRITICAL: Restore consecutiveHighScores from database to survive auto-recovery/restarts
       let consecutiveHighScores = project.consecutiveHighScores || 0;
-      console.log(`[OrchestratorV2] Starting final review with ${consecutiveHighScores} consecutive high score(s) from previous session`);
+      console.log(`[OrchestratorV2] Starting final review at cycle ${currentCycle} with ${consecutiveHighScores} consecutive high score(s) from previous session`);
       const previousScores: number[] = [];
       
-      // QA Issues collected from QA agents (run once before final review cycles)
+      // QA Issues collected from QA agents (run once before first review cycle)
       let qaIssues: QAIssue[] = [];
-      let qaAuditCompleted = false;
+      // CRITICAL: Restore qaAuditCompleted from database to skip QA audit on restart
+      let qaAuditCompleted = project.qaAuditCompleted || false;
+      if (qaAuditCompleted) {
+        console.log(`[OrchestratorV2] QA audit already completed in previous session, skipping...`);
+      }
 
       while (currentCycle < maxCycles) {
         // === RUN QA AUDIT ONCE BEFORE FIRST REVIEW CYCLE ===
@@ -3638,7 +3643,12 @@ ${issuesDescription}`;
         }
         // === END QA AUDIT ===
         currentCycle++;
-        console.log(`[OrchestratorV2] Final review cycle ${currentCycle}/${maxCycles}`);
+        // PERSIST cycle state to database for restart recovery
+        await storage.updateProject(project.id, { 
+          revisionCycle: currentCycle,
+          qaAuditCompleted: true 
+        });
+        console.log(`[OrchestratorV2] Final review cycle ${currentCycle}/${maxCycles} (persisted to DB)`);
         if (correctedIssuesSummaries.length > 0) {
           console.log(`[OrchestratorV2] Passing ${correctedIssuesSummaries.length} previously corrected issues to FinalReviewer`);
         }

@@ -97,6 +97,7 @@ export const projects = pgTable("projects", {
   betaReaderScore: integer("beta_reader_score"),
   commercialViability: text("commercial_viability"),
   qaAuditReport: jsonb("qa_audit_report"), // { findings: [], corrections: [], successCount, failCount }
+  qaAuditCompleted: boolean("qa_audit_completed").default(false), // Persists QA audit state across restarts
   generationToken: text("generation_token"), // Unique token per generation session to prevent parallel executions
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
