@@ -3168,6 +3168,9 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
       if (qaAuditCompleted) {
         console.log(`[OrchestratorV2] QA audit already completed in previous session, skipping...`);
       }
+      
+      // Track filtered FinalReviewer issues at wider scope for use in post-correction
+      let previousCycleIssuesFiltered: FinalReviewIssue[] = [];
 
       while (currentCycle < maxCycles) {
         // === RUN QA AUDIT ONCE BEFORE FIRST REVIEW CYCLE ===
@@ -3420,7 +3423,9 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
           // Get previous FinalReviewer issues from database and filter with resolved hashes
           const previousFinalResult = refreshedProject?.finalReviewResult as FinalReviewerResult | null;
           const rawPreviousIssues: FinalReviewIssue[] = previousFinalResult?.issues || [];
-          const { newIssues: previousCycleIssuesFiltered, filteredCount: prevFilteredCount } = this.filterNewIssues(rawPreviousIssues, localResolvedHashes);
+          const filteredResult = this.filterNewIssues(rawPreviousIssues, localResolvedHashes);
+          previousCycleIssuesFiltered = filteredResult.newIssues; // Update wider-scope variable
+          const prevFilteredCount = filteredResult.filteredCount;
           
           if (prevFilteredCount > 0) {
             console.log(`[OrchestratorV2] Filtered ${prevFilteredCount} already-resolved issues from previous cycle`);
@@ -3464,7 +3469,20 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
               }
             }
             
-            const chaptersToFix = Array.from(qaIssuesByChapter.keys()).sort((a, b) => a - b);
+            // Filter out chapters that have exceeded correction limit (applies to ALL issues including QA)
+            const allChaptersWithIssues = Array.from(qaIssuesByChapter.keys()).sort((a, b) => a - b);
+            const chaptersToFix = allChaptersWithIssues.filter(chapNum => {
+              const correctionCount = chapterCorrectionCounts.get(chapNum) || 0;
+              if (correctionCount >= MAX_CORRECTIONS_PER_CHAPTER) {
+                console.log(`[OrchestratorV2] Skipping chapter ${chapNum} in pre-review: already corrected ${correctionCount} times (max: ${MAX_CORRECTIONS_PER_CHAPTER})`);
+                return false;
+              }
+              return true;
+            });
+            
+            if (chaptersToFix.length < allChaptersWithIssues.length) {
+              console.log(`[OrchestratorV2] ${allChaptersWithIssues.length - chaptersToFix.length} chapters skipped due to correction limits`);
+            }
             console.log(`[OrchestratorV2] Pre-review: ${chaptersToFix.length} chapters to correct: ${chaptersToFix.join(', ')}`);
             
             // Notify frontend about chapters being corrected
