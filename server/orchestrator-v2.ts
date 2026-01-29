@@ -2066,6 +2066,12 @@ ${decisions.join('\n')}
       let correctedIssuesSummaries: string[] = [];
       // Track previous cycle score for consistency enforcement
       let previousCycleScore: number | undefined = undefined;
+      
+      // ITERATIVE REVIEW CYCLE: Track consecutive high scores (≥9) for approval
+      const REQUIRED_CONSECUTIVE_HIGH_SCORES = 2;
+      const MIN_ACCEPTABLE_SCORE = 9;
+      let consecutiveHighScores = 0;
+      const previousScores: number[] = [];
 
       while (currentCycle < maxCycles) {
         currentCycle++;
@@ -2175,13 +2181,35 @@ ${decisions.join('\n')}
           }
         }
 
-        // STRICT QUALITY GATE: Only consider done if score >= 9
-        const meetsQualityThreshold = puntuacion_global >= 9;
+        // Track score history for consecutive check
+        previousScores.push(puntuacion_global);
         
-        // If score >= 9, we're done regardless of veredicto
-        if (meetsQualityThreshold) {
-          console.log(`[OrchestratorV2] Score ${puntuacion_global} >= 9. Quality threshold met.`);
-          break;
+        // Check for issues that need correction
+        const hasAnyNewIssues = (issues?.length || 0) > 0 || (capitulos_para_reescribir?.length || 0) > 0;
+        
+        // ITERATIVE QUALITY GATE: Require 2 consecutive scores ≥9 with NO pending issues
+        if (puntuacion_global >= MIN_ACCEPTABLE_SCORE && !hasAnyNewIssues) {
+          consecutiveHighScores++;
+          console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 with NO issues. Consecutive high scores: ${consecutiveHighScores}/${REQUIRED_CONSECUTIVE_HIGH_SCORES}`);
+          
+          if (consecutiveHighScores >= REQUIRED_CONSECUTIVE_HIGH_SCORES) {
+            const recentScores = previousScores.slice(-REQUIRED_CONSECUTIVE_HIGH_SCORES).join(", ");
+            console.log(`[OrchestratorV2] APPROVED: ${REQUIRED_CONSECUTIVE_HIGH_SCORES} consecutive scores ≥${MIN_ACCEPTABLE_SCORE}: [${recentScores}]`);
+            this.callbacks.onAgentStatus("final-reviewer", "completed", `Manuscrito APROBADO. Puntuaciones consecutivas: ${recentScores}/10.`);
+            break;
+          }
+          
+          // Not enough consecutive high scores yet - continue to next cycle without corrections
+          this.callbacks.onAgentStatus("final-reviewer", "active", `Puntuación ${puntuacion_global}/10. Necesita ${REQUIRED_CONSECUTIVE_HIGH_SCORES - consecutiveHighScores} evaluación(es) más para confirmar.`);
+          continue;
+        } else if (puntuacion_global >= MIN_ACCEPTABLE_SCORE && hasAnyNewIssues) {
+          // Good score but issues remain - must correct before counting as high score
+          console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 is good but ${issues?.length || 0} issue(s) remain. Correcting before counting...`);
+          // Don't increment consecutiveHighScores - we need to fix issues first
+        } else {
+          // Score below threshold - reset consecutive counter
+          consecutiveHighScores = 0;
+          console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 < ${MIN_ACCEPTABLE_SCORE}. Consecutive high scores reset to 0.`);
         }
         
         // Score < 9: If we STILL have no chapters to fix despite having issues, 
