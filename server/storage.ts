@@ -117,6 +117,7 @@ export interface IStorage {
 
   createActivityLog(data: InsertActivityLog): Promise<ActivityLog>;
   getActivityLogsByProject(projectId: number | null, limit?: number): Promise<ActivityLog[]>;
+  getActivityLogsByReeditProject(reeditProjectId: number, limit?: number): Promise<ActivityLog[]>;
   getLastActivityLogTime(projectId: number): Promise<Date | null>;
   cleanupOldActivityLogs(projectId: number | null, keepCount: number): Promise<void>;
 
@@ -586,6 +587,13 @@ export class DatabaseStorage implements IStorage {
     }
     return db.select().from(activityLogs)
       .where(or(eq(activityLogs.projectId, projectId), isNull(activityLogs.projectId)))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(limit);
+  }
+
+  async getActivityLogsByReeditProject(reeditProjectId: number, limit: number = 5000): Promise<ActivityLog[]> {
+    return db.select().from(activityLogs)
+      .where(eq(activityLogs.reeditProjectId, reeditProjectId))
       .orderBy(desc(activityLogs.createdAt))
       .limit(limit);
   }

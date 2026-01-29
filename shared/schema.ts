@@ -434,6 +434,7 @@ export type ContinuityState = z.infer<typeof continuityStateSchema>;
 export const activityLogs = pgTable("activity_logs", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  reeditProjectId: integer("reedit_project_id").references(() => reeditProjects.id, { onDelete: "cascade" }),
   level: text("level").notNull().default("info"),
   agentRole: text("agent_role"),
   message: text("message").notNull(),

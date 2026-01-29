@@ -2903,6 +2903,31 @@ export class ReeditOrchestrator {
     }
     storage.updateReeditProject(progress.projectId, updateData)
       .catch(err => console.error("[ReeditOrchestrator] Failed to update currentActivity:", err));
+    
+    // Also create an activity log entry for export
+    const agentRole = this.getAgentRoleFromStage(progress.stage);
+    storage.createActivityLog({
+      reeditProjectId: progress.projectId,
+      level: "info",
+      agentRole,
+      message: progress.message,
+    }).catch(err => console.error("[ReeditOrchestrator] Failed to create activity log:", err));
+  }
+  
+  private getAgentRoleFromStage(stage: string): string {
+    const stageToAgent: Record<string, string> = {
+      "forensic_audit": "forensic-auditor",
+      "beta_reader": "beta-reader",
+      "rewriting": "narrative-rewriter",
+      "correcting": "smart-editor",
+      "reviewing": "final-reviewer",
+      "extracting": "orchestrator",
+      "analyzing": "orchestrator",
+      "starting": "system",
+      "completed": "system",
+      "error": "system",
+    };
+    return stageToAgent[stage] || "orchestrator";
   }
 
   async analyzeStructure(chapters: ReeditChapter[]): Promise<StructureAnalysis> {

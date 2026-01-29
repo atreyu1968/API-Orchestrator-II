@@ -2516,6 +2516,16 @@ export default function ReeditPage() {
                               <Download className="h-4 w-4 mr-2" />
                               Exportar Markdown (.md)
                             </Button>
+                            <Button 
+                              variant="outline" 
+                              data-testid="button-download-reedit-logs"
+                              onClick={() => {
+                                window.open(`/api/reedit-projects/${selectedProjectData.id}/export-logs-pdf`, '_blank');
+                              }}
+                            >
+                              <FileText className="h-4 w-4 mr-2" />
+                              Descargar Logs (.pdf)
+                            </Button>
                           </div>
                         </CardContent>
                       </Card>
