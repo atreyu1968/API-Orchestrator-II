@@ -4248,38 +4248,61 @@ ${issuesDescription}`;
                 }
               }
               
-              // LAST RESORT: Full chapter rewrite if surgical patches failed
+              // LAST RESORT: Full chapter rewrite with simplified instructions
               if (!retrySuccess) {
                 console.log(`[OrchestratorV2] Attempting FULL REWRITE as last resort for Chapter ${chapNum}...`);
                 this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum}: reescritura completa (último recurso)...`);
                 
+                // Simplify the issues to just the essential corrections needed
+                const simplifiedIssues = chapterIssues.slice(0, 3).map((issue, idx) => 
+                  `${idx + 1}. [${issue.severidad?.toUpperCase() || 'MAYOR'}] ${issue.descripcion?.substring(0, 200) || issue.problema?.substring(0, 200) || 'Error de continuidad'}`
+                ).join('\n');
+                
+                const directInstructions = `REESCRITURA OBLIGATORIA - INSTRUCCIONES DIRECTAS:
+
+${simplifiedIssues}
+
+REGLAS:
+- Reescribe el capítulo completo corrigiendo SOLO los problemas indicados
+- Mantén exactamente el mismo tono, estilo y longitud
+- NO añadas contenido nuevo ni escenas nuevas
+- El resultado DEBE ser diferente al original`;
+
                 try {
                   const fullRewriteResult = await this.smartEditor.fullRewrite({
                     chapterContent: chapter.content || "",
-                    errorDescription: issuesDescription,
+                    errorDescription: directInstructions,
                   });
                   this.addTokenUsage(fullRewriteResult.tokenUsage);
                   
-                  if (fullRewriteResult.rewrittenContent && 
-                      fullRewriteResult.rewrittenContent.length > 100 &&
-                      fullRewriteResult.rewrittenContent !== chapter.content) {
-                    const wordCount = fullRewriteResult.rewrittenContent.split(/\s+/).length;
-                    await storage.updateChapter(chapter.id, {
-                      content: fullRewriteResult.rewrittenContent,
-                      wordCount,
-                      qualityScore: 8,
-                    });
-                    console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum} (${wordCount} words)`);
-                    this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum} reescrito completamente (${wordCount} palabras)`);
-                    correctedCount++;
-                    retrySuccess = true;
+                  // Accept result if it has content and is different (even if slightly)
+                  const resultContent = fullRewriteResult.rewrittenContent || fullRewriteResult.content;
+                  if (resultContent && resultContent.length > 100) {
+                    // Check if there's any meaningful difference
+                    const originalNormalized = (chapter.content || "").replace(/\s+/g, ' ').trim();
+                    const resultNormalized = resultContent.replace(/\s+/g, ' ').trim();
                     
-                    // Track corrected issues for next cycle
-                    for (const issue of chapterIssues) {
-                      correctedIssuesSummaries.push(`Cap ${chapNum}: ${issue.categoria} - ${issue.descripcion.substring(0, 100)}`);
+                    if (resultNormalized !== originalNormalized) {
+                      const wordCount = resultContent.split(/\s+/).length;
+                      await storage.updateChapter(chapter.id, {
+                        content: resultContent,
+                        wordCount,
+                        qualityScore: 8,
+                      });
+                      console.log(`[OrchestratorV2] Full rewrite successful for Chapter ${chapNum} (${wordCount} words)`);
+                      this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum} reescrito completamente (${wordCount} palabras)`);
+                      correctedCount++;
+                      retrySuccess = true;
+                      
+                      // Track corrected issues for next cycle
+                      for (const issue of chapterIssues) {
+                        correctedIssuesSummaries.push(`Cap ${chapNum}: ${issue.categoria} - ${issue.descripcion?.substring(0, 100) || 'corregido'}`);
+                      }
+                    } else {
+                      console.warn(`[OrchestratorV2] Full rewrite produced identical content for Chapter ${chapNum}`);
                     }
                   } else {
-                    console.error(`[OrchestratorV2] Full rewrite produced invalid result for Chapter ${chapNum}`);
+                    console.error(`[OrchestratorV2] Full rewrite produced no content for Chapter ${chapNum}`);
                   }
                 } catch (rewriteError) {
                   console.error(`[OrchestratorV2] Full rewrite failed for Chapter ${chapNum}:`, rewriteError);
