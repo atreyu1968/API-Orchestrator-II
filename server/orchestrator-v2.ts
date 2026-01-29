@@ -2283,7 +2283,9 @@ ${decisions.join('\n')}
       // ITERATIVE REVIEW CYCLE: Track consecutive high scores (≥9) for approval
       const REQUIRED_CONSECUTIVE_HIGH_SCORES = 2;
       const MIN_ACCEPTABLE_SCORE = 9;
-      let consecutiveHighScores = 0;
+      // CRITICAL: Restore consecutiveHighScores from database to survive auto-recovery/restarts
+      let consecutiveHighScores = project.consecutiveHighScores || 0;
+      console.log(`[OrchestratorV2] Starting final review with ${consecutiveHighScores} consecutive high score(s) from previous session`);
       const previousScores: number[] = [];
       
       // QA Issues collected from QA agents (run once before final review cycles)
@@ -2736,7 +2738,9 @@ ${decisions.join('\n')}
         // ITERATIVE QUALITY GATE: Require 2 consecutive scores ≥9 with NO pending issues
         if (puntuacion_global >= MIN_ACCEPTABLE_SCORE && !hasAnyNewIssues) {
           consecutiveHighScores++;
-          console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 with NO issues. Consecutive high scores: ${consecutiveHighScores}/${REQUIRED_CONSECUTIVE_HIGH_SCORES}`);
+          // CRITICAL: Persist to database to survive auto-recovery/restarts
+          await storage.updateProject(project.id, { consecutiveHighScores });
+          console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 with NO issues. Consecutive high scores: ${consecutiveHighScores}/${REQUIRED_CONSECUTIVE_HIGH_SCORES} (persisted)`);
           
           if (consecutiveHighScores >= REQUIRED_CONSECUTIVE_HIGH_SCORES) {
             const recentScores = previousScores.slice(-REQUIRED_CONSECUTIVE_HIGH_SCORES).join(", ");
@@ -2755,7 +2759,9 @@ ${decisions.join('\n')}
         } else {
           // Score below threshold - reset consecutive counter
           consecutiveHighScores = 0;
-          console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 < ${MIN_ACCEPTABLE_SCORE}. Consecutive high scores reset to 0.`);
+          // CRITICAL: Persist reset to database to survive auto-recovery/restarts
+          await storage.updateProject(project.id, { consecutiveHighScores: 0 });
+          console.log(`[OrchestratorV2] Score ${puntuacion_global}/10 < ${MIN_ACCEPTABLE_SCORE}. Consecutive high scores reset to 0 (persisted).`);
         }
         
         // Score < 9: If we STILL have no chapters to fix despite having issues, 
