@@ -2281,8 +2281,128 @@ ${decisions.join('\n')}
       const MIN_ACCEPTABLE_SCORE = 9;
       let consecutiveHighScores = 0;
       const previousScores: number[] = [];
+      
+      // QA Issues collected from QA agents (run once before final review cycles)
+      let qaIssues: QAIssue[] = [];
+      let qaAuditCompleted = false;
 
       while (currentCycle < maxCycles) {
+        // === RUN QA AUDIT ONCE BEFORE FIRST REVIEW CYCLE ===
+        if (!qaAuditCompleted) {
+          qaAuditCompleted = true;
+          this.callbacks.onAgentStatus("final-reviewer", "active", "Ejecutando auditoría QA del manuscrito...");
+          
+          console.log(`[OrchestratorV2] Running QA audit before final review...`);
+          
+          // Get chapters for QA
+          const chaptersForQA = completedChapters.map(c => c.content || "");
+          const chapterSummaries = completedChapters.map((c, i) => 
+            `Capítulo ${c.chapterNumber}: ${c.title || "Sin título"} - ${(c.content || "").substring(0, 500)}...`
+          );
+          
+          // Run QA Agents in parallel batches (every 5 chapters for continuity, every 10 for voice)
+          const qaPromises: Promise<any>[] = [];
+          
+          // Continuity Sentinel - analyze in blocks of 5 chapters
+          for (let i = 0; i < chaptersForQA.length; i += 5) {
+            const block = chaptersForQA.slice(i, i + 5);
+            const startChapter = completedChapters[i]?.chapterNumber || i + 1;
+            const endChapter = completedChapters[Math.min(i + 4, completedChapters.length - 1)]?.chapterNumber || i + 5;
+            qaPromises.push(
+              this.continuitySentinel.auditContinuity(block, startChapter, endChapter)
+                .then(result => ({ type: 'continuity', result, startChapter, endChapter }))
+                .catch(e => ({ type: 'continuity', error: e.message }))
+            );
+          }
+          
+          // Voice Rhythm Auditor - analyze in blocks of 10 chapters
+          for (let i = 0; i < chaptersForQA.length; i += 10) {
+            const block = chaptersForQA.slice(i, i + 10);
+            const startChapter = completedChapters[i]?.chapterNumber || i + 1;
+            const endChapter = completedChapters[Math.min(i + 9, completedChapters.length - 1)]?.chapterNumber || i + 10;
+            qaPromises.push(
+              this.voiceRhythmAuditor.auditVoiceRhythm(block, startChapter, endChapter)
+                .then(result => ({ type: 'voice', result, startChapter, endChapter }))
+                .catch(e => ({ type: 'voice', error: e.message }))
+            );
+          }
+          
+          // Semantic Repetition Detector - analyze full manuscript summaries
+          qaPromises.push(
+            this.semanticRepetitionDetector.detectRepetitions(chapterSummaries, completedChapters.length)
+              .then(result => ({ type: 'semantic', result }))
+              .catch(e => ({ type: 'semantic', error: e.message }))
+          );
+          
+          this.callbacks.onAgentStatus("final-reviewer", "active", `Ejecutando ${qaPromises.length} auditorías QA en paralelo...`);
+          
+          const qaResults = await Promise.all(qaPromises);
+          
+          // Process QA results and convert to unified issue format
+          for (const qaResult of qaResults) {
+            if (qaResult.error) {
+              console.error(`[OrchestratorV2] QA ${qaResult.type} failed:`, qaResult.error);
+              continue;
+            }
+            
+            if (qaResult.type === 'continuity' && qaResult.result?.erroresContinuidad) {
+              for (const error of qaResult.result.erroresContinuidad) {
+                if (error.severidad === 'critica' || error.severidad === 'mayor') {
+                  qaIssues.push({
+                    source: 'continuity_sentinel',
+                    tipo: error.tipo,
+                    severidad: error.severidad,
+                    capitulo: error.capitulo,
+                    descripcion: error.descripcion,
+                    correccion: error.correccion,
+                  });
+                }
+              }
+              if (qaResult.result.tokenUsage) this.addTokenUsage(qaResult.result.tokenUsage);
+            }
+            
+            if (qaResult.type === 'voice' && qaResult.result?.problemasTono) {
+              for (const problema of qaResult.result.problemasTono) {
+                if (problema.severidad === 'mayor') {
+                  qaIssues.push({
+                    source: 'voice_rhythm_auditor',
+                    tipo: problema.tipo,
+                    severidad: problema.severidad,
+                    capitulos: problema.capitulos,
+                    descripcion: problema.descripcion,
+                    correccion: problema.correccion,
+                  });
+                }
+              }
+              if (qaResult.result.tokenUsage) this.addTokenUsage(qaResult.result.tokenUsage);
+            }
+            
+            if (qaResult.type === 'semantic' && qaResult.result?.repeticionesSemanticas) {
+              for (const rep of qaResult.result.repeticionesSemanticas) {
+                if (rep.severidad === 'mayor') {
+                  qaIssues.push({
+                    source: 'semantic_repetition_detector',
+                    tipo: rep.tipo,
+                    severidad: rep.severidad,
+                    capitulos: rep.ocurrencias,
+                    descripcion: rep.descripcion,
+                    correccion: rep.accion,
+                  });
+                }
+              }
+              if (qaResult.result.tokenUsage) this.addTokenUsage(qaResult.result.tokenUsage);
+            }
+          }
+          
+          console.log(`[OrchestratorV2] QA audit complete: ${qaIssues.length} issues found from ${qaResults.length} audits`);
+          
+          if (qaIssues.length > 0) {
+            this.callbacks.onAgentStatus("final-reviewer", "active", `Auditoría QA: ${qaIssues.length} problemas detectados. Pasando a revisión final...`);
+          } else {
+            this.callbacks.onAgentStatus("final-reviewer", "active", "Auditoría QA completada. Sin problemas críticos. Iniciando revisión final...");
+          }
+        }
+        // === END QA AUDIT ===
         currentCycle++;
         console.log(`[OrchestratorV2] Final review cycle ${currentCycle}/${maxCycles}`);
         if (correctedIssuesSummaries.length > 0) {
@@ -2392,6 +2512,39 @@ ${decisions.join('\n')}
 
         // Track score history for consecutive check
         previousScores.push(puntuacion_global);
+        
+        // === CONSOLIDATE QA ISSUES WITH FINALREVIEWER ISSUES ===
+        // On first cycle, merge QA issues into the issues list and capitulos_para_reescribir
+        if (currentCycle === 1 && qaIssues.length > 0) {
+          console.log(`[OrchestratorV2] Consolidating ${qaIssues.length} QA issues with FinalReviewer results`);
+          
+          // Convert QA issues to FinalReviewIssue format and add to issues array
+          for (const qaIssue of qaIssues) {
+            const targetChapters = qaIssue.capitulo ? [qaIssue.capitulo] : (qaIssue.capitulos || []);
+            if (targetChapters.length > 0) {
+              // Add to capitulos_para_reescribir if not already there
+              for (const chap of targetChapters) {
+                if (!capitulos_para_reescribir.includes(chap)) {
+                  capitulos_para_reescribir.push(chap);
+                }
+              }
+              
+              // Add as issue for correction instructions
+              issues.push({
+                categoria: `QA:${qaIssue.source}`,
+                severidad: qaIssue.severidad === 'critica' ? 'critica' : 'mayor',
+                descripcion: qaIssue.descripcion,
+                capitulos_afectados: targetChapters,
+                instruccion_correccion: qaIssue.correccion || `Corregir: ${qaIssue.descripcion}`,
+              } as FinalReviewIssue);
+            }
+          }
+          
+          console.log(`[OrchestratorV2] After QA merge: ${issues.length} total issues, ${capitulos_para_reescribir.length} chapters to rewrite`);
+          
+          // Clear QA issues after merging (they've been incorporated)
+          qaIssues = [];
+        }
         
         // Check for issues that need correction
         const hasAnyNewIssues = (issues?.length || 0) > 0 || (capitulos_para_reescribir?.length || 0) > 0;
