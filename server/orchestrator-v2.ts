@@ -2600,6 +2600,43 @@ ${decisions.join('\n')}
           console.log(`[OrchestratorV2] Starting auto-correction for ${capitulos_para_reescribir.length} chapters`);
           this.callbacks.onAgentStatus("smart-editor", "active", `Auto-corrigiendo ${capitulos_para_reescribir.length} capítulo(s)...`);
           
+          // === PROBLEM AGGREGATOR: Consolidate ALL issues per chapter BEFORE rewriting ===
+          // This ensures each chapter is rewritten ONCE with ALL its issues, not problem-by-problem
+          const aggregatedIssuesByChapter = new Map<number, {
+            issues: FinalReviewIssue[];
+            hasCritical: boolean;
+            totalCount: number;
+            sources: Set<string>;
+          }>();
+          
+          // Ensure issues array is initialized
+          const allIssues = issues ?? [];
+          
+          // Aggregate all issues by chapter
+          for (const issue of allIssues) {
+            const affectedChapters = issue.capitulos_afectados || [];
+            for (const chapNum of affectedChapters) {
+              if (!aggregatedIssuesByChapter.has(chapNum)) {
+                aggregatedIssuesByChapter.set(chapNum, {
+                  issues: [],
+                  hasCritical: false,
+                  totalCount: 0,
+                  sources: new Set(),
+                });
+              }
+              const chapterData = aggregatedIssuesByChapter.get(chapNum)!;
+              chapterData.issues.push(issue);
+              chapterData.totalCount++;
+              if (issue.severidad === "critica") chapterData.hasCritical = true;
+              chapterData.sources.add(issue.categoria?.split(':')[0] || 'general');
+            }
+          }
+          
+          console.log(`[OrchestratorV2] PROBLEM AGGREGATOR: ${aggregatedIssuesByChapter.size} chapters with issues, ${allIssues.length} total issues`);
+          for (const [chapNum, data] of aggregatedIssuesByChapter) {
+            console.log(`  - Cap ${chapNum}: ${data.totalCount} issues from [${Array.from(data.sources).join(', ')}]${data.hasCritical ? ' (CRITICAL)' : ''}`);
+          }
+          
           // Notify frontend about chapters being corrected (like reedit-orchestrator does)
           if (this.callbacks.onChaptersBeingCorrected) {
             this.callbacks.onChaptersBeingCorrected(capitulos_para_reescribir, currentCycle);
@@ -2622,22 +2659,22 @@ ${decisions.join('\n')}
               continue;
             }
 
-            // Get issues for this chapter
-            const chapterIssues = issues.filter(i => i.capitulos_afectados?.includes(chapNum));
-            if (chapterIssues.length === 0) {
-              console.log(`[OrchestratorV2] No issues found for Chapter ${chapNum}, skipping`);
+            // Get ALL aggregated issues for this chapter (already consolidated)
+            const aggregatedData = aggregatedIssuesByChapter.get(chapNum);
+            if (!aggregatedData || aggregatedData.issues.length === 0) {
+              console.log(`[OrchestratorV2] No aggregated issues found for Chapter ${chapNum}, skipping`);
               continue;
             }
+            
+            const chapterIssues = aggregatedData.issues;
+            const hasCriticalIssue = aggregatedData.hasCritical;
 
-            // Check if any issue is critical - if so, use surgicalFix instead
-            const hasCriticalIssue = chapterIssues.some(i => i.severidad === "critica");
+            console.log(`[OrchestratorV2] Correcting Chapter ${chapNum}: ${chapterIssues.length} AGGREGATED issues from [${Array.from(aggregatedData.sources).join(', ')}] (critical: ${hasCriticalIssue})`);
+            this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum} (${chapterIssues.length} problemas)${hasCriticalIssue ? ' [CRÍTICO]' : ''}...`);
 
-            console.log(`[OrchestratorV2] Correcting Chapter ${chapNum}: ${chapterIssues.length} issues (critical: ${hasCriticalIssue})`);
-            this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo capítulo ${chapNum}${hasCriticalIssue ? ' (crítico)' : ''}...`);
-
-            // Build correction prompt from issues
+            // Build UNIFIED correction prompt from ALL aggregated issues
             const issuesDescription = chapterIssues.map(i => 
-              `- [${i.severidad.toUpperCase()}] ${i.categoria}: ${i.descripcion}\n  Corrección: ${i.instrucciones_correccion}`
+              `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.categoria}: ${i.descripcion}\n  Corrección: ${i.instruccion_correccion || i.instrucciones_correccion || 'Corregir según descripción'}`
             ).join("\n");
 
             let correctedContent: string | null = null;
