@@ -2025,6 +2025,156 @@ export class ReeditOrchestrator {
     console.log(`[ReeditOrchestrator] Token usage saved: ${this.totalInputTokens} input, ${this.totalOutputTokens} output, ${this.totalThinkingTokens} thinking`);
   }
 
+  /**
+   * Update World Bible after a chapter is rewritten in reedit.
+   * Extracts plot decisions, character changes, and injuries from corrected issues.
+   */
+  private async updateWorldBibleFromReeditChapter(
+    projectId: number,
+    chapterNumber: number,
+    newContent: string,
+    correctedIssues: Array<{ tipo?: string; descripcion?: string; correccion?: string; category?: string }>
+  ): Promise<void> {
+    try {
+      const worldBible = await storage.getReeditWorldBibleByProject(projectId);
+      if (!worldBible) return;
+
+      const updates: any = {};
+      let hasUpdates = false;
+
+      // Extract timeline events from corrections
+      const existingTimeline = (worldBible.timeline as any[]) || [];
+      const newTimelineEvents: any[] = [];
+
+      for (const issue of correctedIssues) {
+        // Track continuity corrections as timeline events
+        if (issue.tipo?.includes('continuidad') || issue.category?.includes('continuity')) {
+          newTimelineEvents.push({
+            chapter: chapterNumber,
+            event: `Corrección: ${issue.descripcion?.substring(0, 100) || 'problema de continuidad'}`,
+            tipo: 'correccion',
+            timestamp: new Date().toISOString(),
+          });
+        }
+      }
+
+      if (newTimelineEvents.length > 0) {
+        updates.timeline = [...existingTimeline, ...newTimelineEvents];
+        hasUpdates = true;
+      }
+
+      // Update character states if injuries/conditions were corrected
+      const personajes = (worldBible.personajes as any[]) || [];
+      for (const issue of correctedIssues) {
+        if (issue.descripcion?.toLowerCase().includes('lesion') ||
+            issue.descripcion?.toLowerCase().includes('herida') ||
+            issue.descripcion?.toLowerCase().includes('condicion')) {
+          // Mark that character states were updated
+          const updatedPersonajes = personajes.map((p: any) => ({
+            ...p,
+            lastUpdatedChapter: chapterNumber,
+          }));
+          updates.personajes = updatedPersonajes;
+          hasUpdates = true;
+          break;
+        }
+      }
+
+      // Add chapter summary for future reference
+      if (newContent.length > 500) {
+        const summary = newContent.substring(0, 300).replace(/\n/g, ' ').trim() + '...';
+        const existingSummaries = (worldBible.chapterSummaries as any) || {};
+        updates.chapterSummaries = {
+          ...existingSummaries,
+          [chapterNumber]: {
+            summary,
+            correctionCount: correctedIssues.length,
+            lastUpdated: new Date().toISOString(),
+          }
+        };
+        hasUpdates = true;
+      }
+
+      if (hasUpdates) {
+        await storage.updateReeditWorldBible(worldBible.id, updates);
+        console.log(`[ReeditOrchestrator] World Bible updated after Chapter ${chapterNumber} rewrite`);
+      }
+    } catch (err) {
+      console.error(`[ReeditOrchestrator] Failed to update World Bible after Chapter ${chapterNumber}:`, err);
+    }
+  }
+
+  /**
+   * Build enriched context for reedit rewrites to prevent errors.
+   */
+  private async buildEnrichedReeditContext(
+    projectId: number,
+    chapterNumber: number,
+    worldBible: any
+  ): Promise<string> {
+    const parts: string[] = [];
+
+    // 1. Character profiles with details
+    const personajes = worldBible?.personajes || [];
+    if (personajes.length > 0) {
+      parts.push("\n=== PERSONAJES (MANTENER CONSISTENCIA) ===");
+      for (const char of personajes.slice(0, 10)) {
+        const name = char.nombre || char.name;
+        const role = char.rol || char.role || '';
+        const traits = char.rasgos || char.traits || '';
+        parts.push(`• ${name}${role ? ` (${role})` : ''}${traits ? `: ${traits}` : ''}`);
+      }
+    }
+
+    // 2. Key locations
+    const ubicaciones = worldBible?.ubicaciones || [];
+    if (ubicaciones.length > 0) {
+      parts.push("\n\n=== UBICACIONES ===");
+      for (const loc of ubicaciones.slice(0, 8)) {
+        const name = loc.nombre || loc.name || loc;
+        parts.push(`• ${typeof name === 'string' ? name : JSON.stringify(name)}`);
+      }
+    }
+
+    // 3. World rules
+    const reglas = worldBible?.reglasDelMundo || worldBible?.reglas || [];
+    if (reglas.length > 0) {
+      parts.push("\n\n=== REGLAS DEL MUNDO ===");
+      for (const rule of reglas.slice(0, 6)) {
+        if (typeof rule === 'string') {
+          parts.push(`• ${rule}`);
+        } else if (rule.regla || rule.rule) {
+          parts.push(`• ${rule.regla || rule.rule}`);
+        }
+      }
+    }
+
+    // 4. Timeline events for context
+    const timeline = worldBible?.timeline || [];
+    if (timeline.length > 0 && chapterNumber > 1) {
+      parts.push("\n\n=== EVENTOS PREVIOS ===");
+      const priorEvents = timeline
+        .filter((e: any) => (e.chapter || e.capitulo || 0) < chapterNumber)
+        .slice(-5);
+      for (const event of priorEvents) {
+        const chapter = event.chapter || event.capitulo || '?';
+        const desc = event.event || event.evento || event.descripcion || '';
+        if (desc) {
+          parts.push(`• [Cap ${chapter}] ${desc.substring(0, 100)}`);
+        }
+      }
+    }
+
+    // 5. Anti-patterns to avoid
+    parts.push("\n\n=== ERRORES A EVITAR ===");
+    parts.push("• NO contradecir información de capítulos anteriores");
+    parts.push("• NO ignorar lesiones o condiciones físicas de personajes");
+    parts.push("• NO cambiar nombres o características de personajes");
+    parts.push("• NO alterar cronología sin justificación");
+
+    return parts.length > 0 ? parts.join("\n") : "";
+  }
+
   private async updateHeartbeat(projectId: number, lastCompletedChapter?: number) {
     const updates: any = { 
       heartbeatAt: new Date(),
@@ -3852,6 +4002,14 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                 chapterChangeHistory: Object.fromEntries(chapterChangeHistoryNR) as any,
               });
               
+              // Update World Bible after successful rewrite
+              await this.updateWorldBibleFromReeditChapter(
+                projectId,
+                chapNum,
+                correctionResult.content,
+                chapterProblems
+              );
+              
               console.log(`[ReeditOrchestrator] Chapter ${chapNum} corrected (${correctionResult.method}): ${formattedProblems.length} problems fixed`);
             } else {
               console.log(`[ReeditOrchestrator] Chapter ${chapNum}: No effective changes from consolidated correction`);
@@ -4582,6 +4740,14 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                   chapterChangeHistory: historyToSaveNonFRO as any,
                 });
                 
+                // Update World Bible after successful rewrite
+                await this.updateWorldBibleFromReeditChapter(
+                  projectId,
+                  chapter.chapterNumber,
+                  correctionResult.content,
+                  chapterIssues
+                );
+                
                 // Track corrected issues so FinalReviewer doesn't report them again
                 for (const issue of chapterIssues) {
                   correctedIssueDescriptions.push(issue.descripcion);
@@ -5235,6 +5401,14 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                 chapterChangeHistory: historyToSave as any,
               });
               
+              // Update World Bible after successful rewrite
+              await this.updateWorldBibleFromReeditChapter(
+                projectId,
+                chapter.chapterNumber,
+                correctionResult.content,
+                chapterIssuesFRO
+              );
+              
               // Mark these issues as resolved with hash tracking
               await this.markIssuesResolved(projectId, chapterIssuesFRO);
               
@@ -5609,6 +5783,14 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
               });
               appliedFixes += chapterFixes.length;
               console.log(`[ReeditOrchestrator] NarrativeRewriter integrated ${chapterFixes.length} fixes in Chapter ${chapter.chapterNumber}`);
+              
+              // Update World Bible after successful rewrite
+              await this.updateWorldBibleFromReeditChapter(
+                projectId,
+                chapter.chapterNumber,
+                newContent,
+                chapterFixes.map(f => ({ tipo: 'series_thread', descripcion: f.description || f.fix || '' }))
+              );
             }
           } catch (fixError) {
             console.error(`[ReeditOrchestrator] Error integrating fixes in Chapter ${chapter.chapterNumber}:`, fixError);
