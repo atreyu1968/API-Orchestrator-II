@@ -3371,7 +3371,7 @@ IMPORTANTE:
       }
       
       const chapters = await storage.getChaptersByProject(projectId);
-      const results: { chapterId: number; chapterNumber: number; oldTitle: string; newTitle: string; headerFixed: boolean }[] = [];
+      const results: { chapterId: number; chapterNumber: number; oldTitle: string; newTitle: string; headerFixed: boolean; generated?: boolean }[] = [];
       
       // Helper function to normalize title case (first letter uppercase, rest lowercase for each word)
       const toTitleCase = (str: string): string => {
@@ -3385,12 +3385,37 @@ IMPORTANTE:
         let normalized = content.trim();
         let headerFixed = false;
         
+        // Determine the correct header based on chapter number and title from DB
+        let expectedHeader = '';
+        if (chapterNumber === 0) {
+          expectedHeader = title && title !== 'Prólogo' ? `# Prólogo: ${title}` : '# Prólogo';
+        } else if (chapterNumber === -1) {
+          expectedHeader = title && title !== 'Epílogo' ? `# Epílogo: ${title}` : '# Epílogo';
+        } else if (chapterNumber === -2) {
+          expectedHeader = title && title !== 'Nota del Autor' ? `# Nota del Autor: ${title}` : '# Nota del Autor';
+        } else {
+          // Regular chapter - use title from database
+          const cleanTitle = title ? toTitleCase(title.replace(/^Capítulo\s*\d+\s*:?\s*/i, '').trim()) : '';
+          if (cleanTitle && cleanTitle.toLowerCase() !== `capítulo ${chapterNumber}`.toLowerCase()) {
+            expectedHeader = `# Capítulo ${chapterNumber}: ${cleanTitle}`;
+          } else {
+            expectedHeader = `# Capítulo ${chapterNumber}`;
+          }
+        }
+        
+        // Check if content already starts with the correct header
+        const firstLine = normalized.split('\n')[0].trim();
+        if (firstLine === expectedHeader) {
+          // Header is already correct, no changes needed
+          return { normalized, headerFixed: false };
+        }
+        
         // Pattern to match chapter/section headers (supports multiple languages and formats)
         const headerPatterns = [
           /^#+ *(CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter|PRÓLOGO|Prólogo|PROLOGUE|Prologue|EPÍLOGO|Epílogo|EPILOGUE|Epilogue|NOTA DEL AUTOR|Nota del Autor|AUTHOR'?S?\s*NOTE|Author'?s?\s*Note)[^\n]*\n+/gi,
         ];
         
-        // Remove ALL duplicate headers at the start (loop until no more found)
+        // Remove ALL existing headers at the start (loop until no more found)
         let prevLength = 0;
         while (normalized.length !== prevLength) {
           prevLength = normalized.length;
@@ -3405,26 +3430,9 @@ IMPORTANTE:
           normalized = normalized.trim();
         }
         
-        // Determine the correct header based on chapter number
-        let header = '';
-        if (chapterNumber === 0) {
-          header = title && title !== 'Prólogo' ? `# Prólogo: ${title}` : '# Prólogo';
-        } else if (chapterNumber === -1) {
-          header = title && title !== 'Epílogo' ? `# Epílogo: ${title}` : '# Epílogo';
-        } else if (chapterNumber === -2) {
-          header = title && title !== 'Nota del Autor' ? `# Nota del Autor: ${title}` : '# Nota del Autor';
-        } else {
-          // Regular chapter - use title from database, ensure title case
-          const normalizedTitle = title ? toTitleCase(title.replace(/^Capítulo\s*\d+\s*:?\s*/i, '').trim()) : '';
-          if (normalizedTitle && normalizedTitle.toLowerCase() !== `capítulo ${chapterNumber}`.toLowerCase()) {
-            header = `# Capítulo ${chapterNumber}: ${normalizedTitle}`;
-          } else {
-            header = `# Capítulo ${chapterNumber}`;
-          }
-        }
-        
-        // Add the normalized header
-        normalized = `${header}\n\n${normalized}`;
+        // Add the correct header (this counts as a fix if we're adding/replacing it)
+        normalized = `${expectedHeader}\n\n${normalized}`;
+        headerFixed = true; // We're normalizing the header
         
         return { normalized, headerFixed };
       };
@@ -3433,21 +3441,95 @@ IMPORTANTE:
       const extractTitleFromContent = (content: string, chapterNumber: number): string | null => {
         if (!content) return null;
         
-        // Look for a header pattern in the content
-        const match = content.match(/^#+ *(?:CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter)\s*\d+\s*[:–—-]\s*([^\n]+)/mi);
-        if (match && match[1]) {
-          const extracted = match[1].trim();
-          // Make sure it's not just "Capítulo X" repeated
-          if (!extracted.match(/^Capítulo\s*\d+$/i) && extracted.length > 0) {
-            return extracted;
+        // Multiple patterns to match various header formats
+        const patterns = [
+          // Standard format: # Capítulo X: Título
+          /^#+ *(?:CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter)\s*\d+\s*[:–—-]\s*([^\n]+)/mi,
+          // Format with just title after chapter number
+          /^#+ *(?:CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter)\s*\d+[^\n]*?\n+#*\s*([^\n]+)/mi,
+          // Bold title on its own line: **Título**
+          /^#+ *(?:CHAPTER|CAPÍTULO|CAP\.?|Capítulo|Chapter)[^\n]*\n+\*\*([^*\n]+)\*\*/mi,
+          // Title without chapter prefix on first line (after removing header)
+          /^([A-ZÁÉÍÓÚÑ][^\n]{3,50})\n/m,
+        ];
+        
+        for (const pattern of patterns) {
+          const match = content.match(pattern);
+          if (match && match[1]) {
+            const extracted = match[1].trim()
+              .replace(/^#+\s*/, '')  // Remove leading markdown headers
+              .replace(/\*\*/g, '')    // Remove bold markers
+              .trim();
+            // Make sure it's not just "Capítulo X" repeated
+            if (!extracted.match(/^Capítulo\s*\d+$/i) && 
+                !extracted.match(/^Cap\s*\d+$/i) && 
+                !extracted.match(/^Chapter\s*\d+$/i) && 
+                extracted.length > 2 && 
+                extracted.length < 100) {
+              return extracted;
+            }
           }
         }
         return null;
       };
       
+      // Helper to generate a title from content using AI (for chapters without titles)
+      const generateTitleFromContent = async (content: string, chapterNumber: number): Promise<string | null> => {
+        if (!content || content.length < 200) return null;
+        
+        try {
+          // Use a simple prompt to generate a title from the first part of the content
+          const excerpt = content.substring(0, 2000);
+          
+          const response = await fetch("https://api.deepseek.com/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+            },
+            body: JSON.stringify({
+              model: "deepseek-chat",
+              messages: [
+                {
+                  role: "system",
+                  content: "Eres un experto en títulos de capítulos de novelas. Tu tarea es generar un título corto, evocador y atractivo (máximo 5 palabras) basándote en el contenido del capítulo. Responde SOLO con el título, sin explicaciones ni formato."
+                },
+                {
+                  role: "user", 
+                  content: `Genera un título para este capítulo:\n\n${excerpt}`
+                }
+              ],
+              temperature: 0.7,
+              max_tokens: 50,
+            }),
+          });
+          
+          if (!response.ok) {
+            console.error(`[NormalizeTitles] API error: ${response.status}`);
+            return null;
+          }
+          
+          const data = await response.json();
+          const generatedTitle = data.choices?.[0]?.message?.content?.trim();
+          
+          if (generatedTitle && generatedTitle.length > 2 && generatedTitle.length < 100) {
+            return toTitleCase(generatedTitle.replace(/["']/g, '').trim());
+          }
+        } catch (error) {
+          console.error(`[NormalizeTitles] Error generating title:`, error);
+        }
+        return null;
+      };
+      
+      // Get generateTitles option from request body
+      const { generateMissing = false } = req.body || {};
+      
+      let generatedCount = 0;
+      
       for (const chapter of chapters) {
         const oldTitle = chapter.title || '';
         let newTitle = oldTitle;
+        let titleGenerated = false;
         
         // Check if title is generic (just "Capítulo X" or empty)
         const isGenericTitle = !oldTitle || 
@@ -3461,6 +3543,16 @@ IMPORTANTE:
           const extractedTitle = extractTitleFromContent(chapter.content, chapter.chapterNumber);
           if (extractedTitle) {
             newTitle = extractedTitle;
+            console.log(`[NormalizeTitles] Cap ${chapter.chapterNumber}: Extracted title "${extractedTitle}"`);
+          } else if (generateMissing && chapter.chapterNumber > 0) {
+            // Generate title using AI if extraction failed and generateMissing is enabled
+            const generatedTitle = await generateTitleFromContent(chapter.content, chapter.chapterNumber);
+            if (generatedTitle) {
+              newTitle = generatedTitle;
+              titleGenerated = true;
+              generatedCount++;
+              console.log(`[NormalizeTitles] Cap ${chapter.chapterNumber}: Generated title "${generatedTitle}"`);
+            }
           }
         }
         
@@ -3487,6 +3579,7 @@ IMPORTANTE:
             chapterId: chapter.id,
             chapterNumber: chapter.chapterNumber,
             oldTitle,
+            generated: titleGenerated,
             newTitle,
             headerFixed,
           });
@@ -3498,6 +3591,7 @@ IMPORTANTE:
         projectId,
         projectTitle: project.title,
         chaptersUpdated: results.length,
+        titlesGenerated: generatedCount,
         totalChapters: chapters.length,
         updates: results,
       });
