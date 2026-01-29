@@ -29,6 +29,209 @@ import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 import { isProjectCancelledFromDb, generateGenerationToken, isGenerationTokenValid } from "./agents";
 import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
+import { BaseAgent } from "./agents/base-agent";
+
+// ==================== QA AGENTS FOR LITAGENTS ====================
+
+// QA Agent 1: Continuity Sentinel - detects continuity errors
+class ContinuitySentinelAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Continuity Sentinel",
+      role: "qa_continuity",
+      systemPrompt: `Eres un experto en continuidad narrativa. Tu trabajo es detectar errores de continuidad en bloques de capítulos.
+
+TIPOS DE ERRORES A DETECTAR:
+1. TEMPORALES: Inconsistencias en el paso del tiempo (ej: "amaneció" pero luego "la luna brillaba")
+2. ESPACIALES: Personajes que aparecen en lugares imposibles sin transición
+3. DE ESTADO: Objetos/personajes que cambian estado sin explicación (heridas que desaparecen, ropa que cambia)
+4. DE CONOCIMIENTO: Personajes que saben cosas que no deberían saber aún
+
+RESPONDE SOLO EN JSON:
+{
+  "erroresContinuidad": [
+    {
+      "tipo": "temporal|espacial|estado|conocimiento",
+      "severidad": "critica|mayor|menor",
+      "capitulo": 5,
+      "descripcion": "Descripción del error",
+      "contexto": "Fragmento relevante del texto",
+      "correccion": "Sugerencia de corrección"
+    }
+  ],
+  "resumen": "Resumen general de la continuidad",
+  "puntuacion": 8
+}`,
+      model: "deepseek-reasoner",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.auditContinuity(input.chapters, input.startChapter, input.endChapter);
+  }
+
+  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
+    const combinedContent = chapterContents.map((c, i) => 
+      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 8000)}`
+    ).join("\n\n");
+
+    const prompt = `Analiza la continuidad narrativa de los capítulos ${startChapter} a ${endChapter}:
+
+${combinedContent}
+
+Detecta errores de continuidad temporal, espacial, de estado y de conocimiento. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    let result: any = { erroresContinuidad: [], resumen: "Sin problemas detectados", puntuacion: 9 };
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[ContinuitySentinel] Failed to parse:", e);
+    }
+    result.tokenUsage = response.tokenUsage;
+    return result;
+  }
+}
+
+// QA Agent 2: Voice & Rhythm Auditor - analyzes voice consistency and pacing
+class VoiceRhythmAuditorAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Voice Rhythm Auditor",
+      role: "qa_voice",
+      systemPrompt: `Eres un experto en voz narrativa y ritmo literario. Analizas consistencia tonal y ritmo.
+
+ASPECTOS A EVALUAR:
+1. CONSISTENCIA DE VOZ: ¿El narrador mantiene su tono? ¿Los personajes hablan de forma consistente?
+2. RITMO NARRATIVO: ¿Hay secciones demasiado lentas o apresuradas?
+3. CADENCIA: ¿La longitud de oraciones varía apropiadamente?
+4. TENSIÓN: ¿La tensión narrativa escala correctamente?
+
+RESPONDE SOLO EN JSON:
+{
+  "problemasTono": [
+    {
+      "tipo": "voz_inconsistente|ritmo_lento|ritmo_apresurado|cadencia_monotona|tension_plana",
+      "severidad": "mayor|menor",
+      "capitulos": [5, 6],
+      "descripcion": "Descripción del problema",
+      "ejemplo": "Fragmento de ejemplo",
+      "correccion": "Sugerencia"
+    }
+  ],
+  "analisisRitmo": {
+    "capitulosLentos": [],
+    "capitulosApresurados": [],
+    "climaxBienMedidos": true
+  },
+  "puntuacion": 8
+}`,
+      model: "deepseek-reasoner",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.auditVoiceRhythm(input.chapters, input.startChapter, input.endChapter);
+  }
+
+  async auditVoiceRhythm(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
+    const combinedContent = chapterContents.map((c, i) => 
+      `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 6000)}`
+    ).join("\n\n");
+
+    const prompt = `Analiza la voz narrativa y el ritmo de los capítulos ${startChapter} a ${endChapter}:
+
+${combinedContent}
+
+Evalúa consistencia de voz, ritmo y tensión narrativa. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    let result: any = { problemasTono: [], analisisRitmo: {}, puntuacion: 9 };
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[VoiceRhythmAuditor] Failed to parse:", e);
+    }
+    result.tokenUsage = response.tokenUsage;
+    return result;
+  }
+}
+
+// QA Agent 3: Semantic Repetition Detector - detects repeated ideas and unresolved foreshadowing
+class SemanticRepetitionDetectorAgent extends BaseAgent {
+  constructor() {
+    super({
+      name: "Semantic Repetition Detector",
+      role: "qa_semantic",
+      systemPrompt: `Eres un experto en análisis semántico literario. Detectas repeticiones de ideas y verificas foreshadowing.
+
+ASPECTOS A DETECTAR:
+1. REPETICIÓN DE IDEAS: Conceptos, metáforas o descripciones que se repiten demasiado
+2. FRASES REPETIDAS: Muletillas del autor, descripciones idénticas
+3. FORESHADOWING SIN RESOLVER: Anticipaciones que nunca se cumplen
+4. CHEKOV'S GUN: Elementos introducidos que nunca se usan
+
+RESPONDE SOLO EN JSON:
+{
+  "repeticionesSemanticas": [
+    {
+      "tipo": "idea_repetida|frase_repetida|foreshadowing_sin_resolver|elemento_sin_usar",
+      "severidad": "mayor|menor",
+      "ocurrencias": [1, 5, 12],
+      "descripcion": "Qué se repite",
+      "ejemplo": "Fragmento de ejemplo",
+      "accion": "eliminar|variar|resolver"
+    }
+  ],
+  "foreshadowingTracking": [
+    {"plantado": 3, "resuelto": 25, "elemento": "La carta misteriosa"}
+  ],
+  "puntuacion": 8
+}`,
+      model: "deepseek-reasoner",
+      useThinking: false,
+    });
+  }
+
+  async execute(input: any): Promise<any> {
+    return this.detectRepetitions(input.summaries, input.totalChapters);
+  }
+
+  async detectRepetitions(chapterSummaries: string[], totalChapters: number): Promise<any> {
+    const prompt = `Analiza el manuscrito completo (${totalChapters} capítulos) buscando repeticiones semánticas:
+
+RESÚMENES DE CAPÍTULOS:
+${chapterSummaries.join("\n\n")}
+
+Detecta ideas repetidas, frases recurrentes, foreshadowing sin resolver y elementos sin usar. RESPONDE EN JSON.`;
+
+    const response = await this.generateContent(prompt);
+    let result: any = { repeticionesSemanticas: [], foreshadowingTracking: [], puntuacion: 9 };
+    try {
+      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
+    } catch (e) {
+      console.error("[SemanticRepetitionDetector] Failed to parse:", e);
+    }
+    result.tokenUsage = response.tokenUsage;
+    return result;
+  }
+}
+
+// Interface for QA issues (unified format)
+interface QAIssue {
+  source: string;
+  tipo: string;
+  severidad: string;
+  capitulo?: number;
+  capitulos?: number[];
+  descripcion: string;
+  correccion?: string;
+}
 
 interface OrchestratorV2Callbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
@@ -48,6 +251,11 @@ export class OrchestratorV2 {
   private narrativeDirector = new NarrativeDirectorAgent();
   private finalReviewer = new FinalReviewerAgent();
   private seriesThreadFixer = new SeriesThreadFixerAgent();
+  
+  // QA Agents
+  private continuitySentinel = new ContinuitySentinelAgent();
+  private voiceRhythmAuditor = new VoiceRhythmAuditorAgent();
+  private semanticRepetitionDetector = new SemanticRepetitionDetectorAgent();
   private callbacks: OrchestratorV2Callbacks;
   
   private cumulativeTokens = {
