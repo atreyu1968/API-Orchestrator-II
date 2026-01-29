@@ -661,6 +661,96 @@ ${decisions.join('\n')}
     
     return merged;
   }
+  
+  /**
+   * Update World Bible after a chapter is rewritten
+   * Extracts plot decisions, injuries, and character changes from the corrected issues
+   */
+  private async updateWorldBibleFromChapter(
+    projectId: number, 
+    chapterNumber: number, 
+    newContent: string,
+    correctedIssues: Array<{ source?: string; descripcion?: string; correccion?: string; tipo?: string; capitulo?: number }>
+  ): Promise<void> {
+    const worldBible = await storage.getWorldBibleByProject(projectId);
+    if (!worldBible) return;
+    
+    const updates: any = {};
+    let hasUpdates = false;
+    
+    // Extract new plot decisions from corrections (continuity fixes often establish new canon)
+    const newDecisions: any[] = [];
+    const newInjuries: any[] = [];
+    
+    for (const issue of correctedIssues) {
+      // If correction was about continuity, create a plot decision to track it
+      if (issue.source === 'continuity_sentinel' || issue.tipo?.includes('continuidad')) {
+        if (issue.correccion || issue.descripcion) {
+          newDecisions.push({
+            decision: issue.correccion || `Corregido: ${issue.descripcion}`,
+            capitulo_establecido: chapterNumber,
+            categoria: 'correccion_continuidad',
+            consistencia_actual: 'consistente',
+            fecha_registro: new Date().toISOString(),
+          });
+        }
+      }
+      
+      // If correction mentions injuries/conditions, track them
+      if (issue.descripcion?.toLowerCase().includes('lesion') || 
+          issue.descripcion?.toLowerCase().includes('herida') ||
+          issue.descripcion?.toLowerCase().includes('injury')) {
+        // Try to extract character name from description
+        const charMatch = issue.descripcion.match(/(?:personaje|character|protagonist[a]?)\s+(\w+)/i);
+        if (charMatch) {
+          newInjuries.push({
+            personaje: charMatch[1],
+            tipo_lesion: 'corregida',
+            descripcion: issue.correccion || issue.descripcion,
+            capitulo_ocurre: chapterNumber,
+            estado_actual: 'activa',
+          });
+        }
+      }
+    }
+    
+    // Merge new decisions
+    if (newDecisions.length > 0) {
+      const existingDecisions = Array.isArray(worldBible.plotDecisions) ? worldBible.plotDecisions : [];
+      updates.plotDecisions = this.mergeDecisions(existingDecisions as any[], newDecisions);
+      hasUpdates = true;
+    }
+    
+    // Merge new injuries
+    if (newInjuries.length > 0) {
+      const existingInjuries = Array.isArray(worldBible.persistentInjuries) ? worldBible.persistentInjuries : [];
+      updates.persistentInjuries = this.mergeInjuries(existingInjuries as any[], newInjuries);
+      hasUpdates = true;
+    }
+    
+    // Update chapter summary in timeline if available
+    const existingTimeline = (worldBible.timeline || []) as any[];
+    const chapterEvent = existingTimeline.find((e: any) => e.chapter === chapterNumber);
+    if (!chapterEvent && newContent.length > 500) {
+      // Add a new timeline event for this chapter with summary from first 200 chars
+      const summary = newContent.substring(0, 200).replace(/\n/g, ' ').trim() + '...';
+      updates.timeline = [
+        ...existingTimeline,
+        {
+          chapter: chapterNumber,
+          event: `Capítulo ${chapterNumber} reescrito`,
+          summary: summary,
+          timestamp: new Date().toISOString(),
+        }
+      ];
+      hasUpdates = true;
+    }
+    
+    if (hasUpdates) {
+      await storage.updateWorldBible(worldBible.id, updates);
+      console.log(`[OrchestratorV2] World Bible updated after Chapter ${chapterNumber} rewrite: ${newDecisions.length} decisions, ${newInjuries.length} injuries`);
+    }
+  }
 
   /**
    * Format plot decisions and injuries as constraints for agents
@@ -2753,6 +2843,14 @@ ${issuesDescription}`;
                   preReviewCorrected++;
                   preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: true });
                   console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} corrected successfully`);
+                  
+                  // === UPDATE WORLD BIBLE AFTER REWRITE ===
+                  // Extract any new plot decisions or character changes from rewritten chapter
+                  try {
+                    await this.updateWorldBibleFromChapter(project.id, chapNum, correctedContent, chapterQaIssues);
+                  } catch (wbError) {
+                    console.error(`[OrchestratorV2] Failed to update World Bible after Chapter ${chapNum} rewrite:`, wbError);
+                  }
                 } else {
                   preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: false });
                 }
@@ -3315,6 +3413,13 @@ ${issuesDescription}`;
                 chapter.title || `Capítulo ${chapter.chapterNumber}`
               );
               correctedCount++;
+              
+              // === UPDATE WORLD BIBLE AFTER REWRITE ===
+              try {
+                await this.updateWorldBibleFromChapter(project.id, chapNum, correctedContent, chapterIssues as any);
+              } catch (wbError) {
+                console.error(`[OrchestratorV2] Failed to update World Bible after Chapter ${chapNum} rewrite:`, wbError);
+              }
               
               // Track corrected issues for next cycle
               for (const issue of chapterIssues) {
