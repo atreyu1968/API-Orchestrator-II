@@ -2463,9 +2463,45 @@ ${decisions.join('\n')}
           }
           // === END BETA READER ===
           
+          // === LOG QA AUDIT FINDINGS BEFORE CORRECTIONS ===
           if (qaIssues.length > 0) {
+            let qaAuditReport = `[INFORME AUDITORÍA QA - PRE-CORRECCIÓN]\n`;
+            qaAuditReport += `Total problemas detectados: ${qaIssues.length}\n\n`;
+            
+            // Group by source
+            const issuesBySource = new Map<string, typeof qaIssues>();
+            for (const issue of qaIssues) {
+              if (!issuesBySource.has(issue.source)) {
+                issuesBySource.set(issue.source, []);
+              }
+              issuesBySource.get(issue.source)!.push(issue);
+            }
+            
+            for (const [source, issues] of issuesBySource) {
+              qaAuditReport += `[${source.toUpperCase()}] - ${issues.length} problema(s):\n`;
+              for (const issue of issues) {
+                const chapInfo = issue.capitulo ? `Cap ${issue.capitulo}` : (issue.capitulos?.length ? `Caps ${issue.capitulos.join(',')}` : 'General');
+                qaAuditReport += `  • [${issue.severidad?.toUpperCase() || 'MAYOR'}] ${chapInfo}: ${issue.descripcion?.substring(0, 100)}...\n`;
+              }
+              qaAuditReport += '\n';
+            }
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "qa-audit",
+              message: qaAuditReport,
+            });
+            
+            console.log(`[OrchestratorV2] QA audit findings logged:\n${qaAuditReport}`);
             this.callbacks.onAgentStatus("final-reviewer", "active", `Auditoría completa: ${qaIssues.length} problemas detectados. Corrigiendo antes de revisión...`);
           } else {
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "success",
+              agentRole: "qa-audit",
+              message: `[INFORME AUDITORÍA QA]\nNo se detectaron problemas críticos ni mayores. El manuscrito está listo para revisión final.`,
+            });
             this.callbacks.onAgentStatus("final-reviewer", "active", "Auditoría completa. Sin problemas críticos. Iniciando revisión final...");
           }
           
@@ -2494,6 +2530,8 @@ ${decisions.join('\n')}
             }
             
             let preReviewCorrected = 0;
+            const preReviewFixes: Array<{ chapter: number; issueCount: number; sources: string[]; success: boolean }> = [];
+            
             for (const chapNum of chaptersToFix) {
               if (await isProjectCancelledFromDb(project.id)) {
                 await this.updateProjectTokens(project.id);
@@ -2557,21 +2595,62 @@ ${decisions.join('\n')}
                   }
                 }
                 
+                const chapterSources = Array.from(new Set(chapterQaIssues.map(i => i.source)));
+                
                 if (correctedContent) {
                   await storage.updateChapter(chapter.id, {
                     content: correctedContent,
                     status: "completed",
                   });
                   preReviewCorrected++;
+                  preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: true });
                   console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} corrected successfully`);
+                } else {
+                  preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: false });
                 }
               } catch (fixError) {
+                const chapterSources = Array.from(new Set(chapterQaIssues.map(i => i.source)));
+                preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: false });
                 console.error(`[OrchestratorV2] Pre-review fix failed for Chapter ${chapNum}:`, fixError);
               }
             }
             
             console.log(`[OrchestratorV2] PRE-REVIEW CORRECTION complete: ${preReviewCorrected}/${chaptersToFix.length} chapters corrected`);
             this.callbacks.onAgentStatus("final-reviewer", "active", `Pre-corrección: ${preReviewCorrected} capítulos arreglados. Iniciando revisión final...`);
+            
+            // === LOG PRE-REVIEW FIXES REPORT ===
+            const successfulFixes = preReviewFixes.filter(f => f.success);
+            const failedFixes = preReviewFixes.filter(f => !f.success);
+            
+            let preReviewReport = `[INFORME PRE-CORRECCIÓN QA]\n`;
+            preReviewReport += `Total issues detectados: ${qaIssues.length + preReviewFixes.reduce((sum, f) => sum + f.issueCount, 0)}\n`;
+            preReviewReport += `Capítulos procesados: ${chaptersToFix.length}\n`;
+            preReviewReport += `Correcciones exitosas: ${successfulFixes.length}\n`;
+            preReviewReport += `Correcciones fallidas: ${failedFixes.length}\n\n`;
+            
+            if (successfulFixes.length > 0) {
+              preReviewReport += `ARREGLOS REALIZADOS:\n`;
+              for (const fix of successfulFixes) {
+                preReviewReport += `  ✓ Capítulo ${fix.chapter}: ${fix.issueCount} problema(s) corregido(s) [${fix.sources.join(', ')}]\n`;
+              }
+            }
+            
+            if (failedFixes.length > 0) {
+              preReviewReport += `\nARREGLOS FALLIDOS:\n`;
+              for (const fix of failedFixes) {
+                preReviewReport += `  ✗ Capítulo ${fix.chapter}: ${fix.issueCount} problema(s) NO corregido(s) [${fix.sources.join(', ')}]\n`;
+              }
+            }
+            
+            // Save to activity logs
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: failedFixes.length > 0 ? "warn" : "success",
+              agentRole: "qa-audit",
+              message: preReviewReport,
+            });
+            
+            console.log(`[OrchestratorV2] Pre-review report logged:\n${preReviewReport}`);
             
             // Clear QA issues after correction (they've been fixed)
             qaIssues.length = 0;
