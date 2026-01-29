@@ -317,11 +317,13 @@ function PlotDecisionsTab({ decisions }: { decisions: PlotDecision[] }) {
             <CardContent className="space-y-2">
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className="text-xs">
-                  Establecido: Cap. {decision.capitulo_establecido}
+                  Establecido: Cap. {decision.capitulo_establecido ?? "?"}
                 </Badge>
-                <span className="text-xs text-muted-foreground">
-                  Afecta: {decision.capitulos_afectados.map(c => `Cap. ${c}`).join(", ")}
-                </span>
+                {decision.capitulos_afectados && decision.capitulos_afectados.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    Afecta: {decision.capitulos_afectados.map(c => `Cap. ${c}`).join(", ")}
+                  </span>
+                )}
               </div>
               {decision.problema && (
                 <p className="text-xs text-destructive mt-2">{decision.problema}</p>
