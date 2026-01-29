@@ -820,15 +820,135 @@ ${decisions.join('\n')}
   }
 
   /**
+   * Build options for enriched writing context including KU optimization and series info.
+   * Centralized helper to ensure consistent handling across all writing flows.
+   */
+  private async buildEnrichedContextOptions(project: Project): Promise<{
+    kindleUnlimitedOptimized?: boolean;
+    seriesInfo?: {
+      seriesTitle: string;
+      bookNumber: number;
+      totalBooks?: number;
+      previousBooksSummary?: string;
+    };
+  }> {
+    const options: {
+      kindleUnlimitedOptimized?: boolean;
+      seriesInfo?: {
+        seriesTitle: string;
+        bookNumber: number;
+        totalBooks?: number;
+        previousBooksSummary?: string;
+      };
+    } = {};
+    
+    // Add KU optimization if enabled
+    if (project.kindleUnlimitedOptimized) {
+      options.kindleUnlimitedOptimized = true;
+    }
+    
+    // Add series context if part of a series
+    if (project.seriesId && project.seriesOrder) {
+      try {
+        const series = await storage.getSeries(project.seriesId);
+        if (series) {
+          options.seriesInfo = {
+            seriesTitle: series.title,
+            bookNumber: project.seriesOrder,
+            totalBooks: series.totalPlannedBooks || undefined,
+          };
+          
+          // For books >1, fetch context from previous books
+          if (project.seriesOrder > 1) {
+            const seriesProjects = await storage.getProjectsBySeries(project.seriesId);
+            const previousBooks = seriesProjects
+              .filter(p => p.seriesOrder && p.seriesOrder < project.seriesOrder! && p.status === 'completed')
+              .sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0));
+            
+            if (previousBooks.length > 0) {
+              const contexts: string[] = [];
+              for (const prevBook of previousBooks) {
+                const prevWorldBible = await storage.getWorldBibleByProject(prevBook.id);
+                if (prevWorldBible) {
+                  const chars = Array.isArray(prevWorldBible.characters) ? prevWorldBible.characters : [];
+                  const mainChars = chars.slice(0, 3).map((c: any) => c.name || c.nombre).join(", ");
+                  contexts.push(`Libro ${prevBook.seriesOrder}: "${prevBook.title}" - Personajes: ${mainChars}`);
+                }
+              }
+              if (contexts.length > 0) {
+                options.seriesInfo.previousBooksSummary = contexts.join('\n');
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`[OrchestratorV2] Failed to get series context:`, err);
+      }
+    }
+    
+    return options;
+  }
+
+  /**
    * Build enriched writing context with detailed character info, world rules, and error patterns to avoid.
    * This helps prevent consistency errors from the initial writing stage.
    */
   private async buildEnrichedWritingContext(
     projectId: number,
     chapterNumber: number,
-    worldBible: any
+    worldBible: any,
+    options?: {
+      kindleUnlimitedOptimized?: boolean;
+      seriesInfo?: {
+        seriesTitle: string;
+        bookNumber: number;
+        totalBooks?: number;
+        previousBooksSummary?: string;
+      };
+    }
   ): Promise<string> {
     const parts: string[] = [];
+    
+    // 0. Kindle Unlimited optimization guidelines (if enabled)
+    if (options?.kindleUnlimitedOptimized) {
+      parts.push("=== ⚡ OPTIMIZACIÓN KINDLE UNLIMITED (KU) ===");
+      parts.push("Este libro está optimizado para KU. REQUISITOS OBLIGATORIOS:");
+      parts.push("• Ganchos fuertes al inicio de cada capítulo para retener lectores");
+      parts.push("• Cliffhangers al final de cada capítulo para incentivar lectura continua");
+      parts.push("• Ritmo ágil: evitar descripciones excesivas o párrafos muy largos");
+      parts.push("• Diálogos dinámicos y frecuentes para aumentar velocidad de lectura");
+      parts.push("• Capítulos de longitud consistente (2000-3500 palabras ideal)");
+      parts.push("• Tensión constante: cada escena debe avanzar la trama");
+      parts.push("• Evitar flashbacks extensos que interrumpan el momentum");
+      parts.push("");
+    }
+    
+    // 0.1. Series context (if part of a series)
+    if (options?.seriesInfo) {
+      const { seriesTitle, bookNumber, totalBooks, previousBooksSummary } = options.seriesInfo;
+      parts.push(`=== 📚 CONTEXTO DE SERIE: "${seriesTitle}" ===`);
+      parts.push(`Este es el LIBRO ${bookNumber}${totalBooks ? ` de ${totalBooks}` : ""} de la serie.`);
+      
+      if (bookNumber > 1) {
+        parts.push("\nCONSIDERACIONES PARA LIBROS POSTERIORES:");
+        parts.push("• Los personajes recurrentes deben mantener consistencia con libros anteriores");
+        parts.push("• Proporcionar contexto sutil para nuevos lectores sin aburrir a fans");
+        parts.push("• Respetar eventos y decisiones de libros anteriores");
+        parts.push("• Mantener el tono y estilo establecido en la serie");
+        
+        if (previousBooksSummary) {
+          parts.push("\nRESUMEN DE LIBROS ANTERIORES:");
+          parts.push(previousBooksSummary.substring(0, 1000));
+        }
+      } else {
+        parts.push("\nCONSIDERACIONES PARA PRIMER LIBRO DE SERIE:");
+        parts.push("• Establecer claramente el mundo y los personajes principales");
+        parts.push("• Plantar semillas para arcos futuros sin resolver todo");
+        parts.push("• Crear ganchos que inviten a continuar la serie");
+        parts.push("• Dejar hilos argumentales abiertos de forma intencional");
+      }
+      parts.push("");
+    }
     
     // 1. Detailed character profiles with relationships and arcs
     const characters = worldBible?.characters || [];
@@ -1889,7 +2009,9 @@ ${decisions.join('\n')}
           }
           
           // Add enriched writing context (characters, rules, locations, error patterns)
-          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapterNumber, worldBible);
+          // Use centralized helper for KU and series context
+          const enrichedOptions = await this.buildEnrichedContextOptions(project);
+          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapterNumber, worldBible, enrichedOptions);
           if (enrichedContext) {
             consistencyConstraints += enrichedContext;
             console.log(`[OrchestratorV2] Added enriched writing context (${enrichedContext.length} chars)`);
@@ -4029,8 +4151,9 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
             );
           }
           
-          // Add enriched writing context for extend
-          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapterNum, worldBibleData);
+          // Add enriched writing context for extend with KU and series info
+          const enrichedOptions = await this.buildEnrichedContextOptions(project);
+          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapterNum, worldBibleData, enrichedOptions);
           if (enrichedContext) {
             consistencyConstraints += enrichedContext;
             console.log(`[OrchestratorV2] Added enriched writing context for extend (${enrichedContext.length} chars)`);
@@ -4268,8 +4391,9 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
             );
           }
           
-          // Add enriched writing context for truncated regen
-          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapter.chapterNumber, worldBibleData);
+          // Add enriched writing context for truncated regen with KU and series info
+          const enrichedOptions = await this.buildEnrichedContextOptions(project);
+          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapter.chapterNumber, worldBibleData, enrichedOptions);
           if (enrichedContext) {
             consistencyConstraints += enrichedContext;
             console.log(`[OrchestratorV2] Added enriched writing context for truncated regen (${enrichedContext.length} chars)`);
@@ -4648,8 +4772,9 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
             );
           }
           
-          // Add enriched writing context for fill missing
-          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapterNumber, worldBible);
+          // Add enriched writing context for fill missing with KU and series info
+          const enrichedOptions = await this.buildEnrichedContextOptions(project);
+          const enrichedContext = await this.buildEnrichedWritingContext(project.id, chapterNumber, worldBible, enrichedOptions);
           if (enrichedContext) {
             consistencyConstraints += enrichedContext;
             console.log(`[OrchestratorV2] Added enriched writing context for fill missing (${enrichedContext.length} chars)`);
