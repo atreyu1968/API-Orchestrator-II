@@ -1555,7 +1555,7 @@ export class ReeditOrchestrator {
   private totalOutputTokens: number = 0;
   private totalThinkingTokens: number = 0;
   
-  private maxFinalReviewCycles = 10;
+  private maxFinalReviewCycles = 15;
   private minAcceptableScore = 9; // Acepta 9+ como suficiente
   private requiredConsecutiveHighScores = 2; // Necesita 2 puntuaciones 9+ consecutivas para confirmar aprobación
 

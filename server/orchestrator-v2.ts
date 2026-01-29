@@ -2028,7 +2028,7 @@ ${decisions.join('\n')}
    * Run final review only - V2 version with auto-correction
    * Uses FinalReviewer for comprehensive analysis and auto-corrects problematic chapters
    */
-  async runFinalReviewOnly(project: Project, maxCycles: number = 5): Promise<void> {
+  async runFinalReviewOnly(project: Project, maxCycles: number = 15): Promise<void> {
     console.log(`[OrchestratorV2] Running final review for project ${project.id}`);
     
     try {
