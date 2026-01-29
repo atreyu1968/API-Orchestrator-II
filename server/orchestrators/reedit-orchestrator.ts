@@ -4588,6 +4588,20 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           }
         }
 
+        // CRITICAL: After corrections, continue to next cycle for re-review
+        // This ensures the iterative loop: review → fix → review → fix → until 2x consecutive 9+
+        console.log(`[ReeditOrchestrator] Corrections complete. Continuing to next review cycle (${revisionCycle + 1}/${this.maxFinalReviewCycles})...`);
+        
+        this.emitProgress({
+          projectId,
+          stage: "reviewing",
+          currentChapter: validChapters.length,
+          totalChapters: validChapters.length,
+          message: `Correcciones aplicadas. Iniciando nueva revisión (ciclo ${revisionCycle + 1})...`,
+          chaptersBeingRewritten: [],
+          revisionCycle: revisionCycle,
+        });
+
         revisionCycle++;
         
         // Save review cycle state for resume support and clear chaptersBeingRewritten
@@ -4600,6 +4614,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           finalReviewResult: finalResult,
           chaptersBeingRewritten: [],
         });
+        
+        // Continue to next iteration of while loop for re-review
+        continue;
       }
 
       // CRITICAL: If we exited the loop without achieving 2x consecutive 10/10, pause for instructions
@@ -5224,6 +5241,20 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         validChapters = refreshedChapters.filter(ch => ch.editedContent).sort((a, b) => getChapterSortOrder(a.chapterNumber) - getChapterSortOrder(b.chapterNumber));
       }
 
+      // CRITICAL: After corrections, continue to next cycle for re-review
+      // This ensures the iterative loop: review → fix → review → fix → until 2x consecutive 9+
+      console.log(`[ReeditOrchestrator] FRO: Corrections complete. Continuing to next review cycle (${revisionCycle + 1}/${this.maxFinalReviewCycles})...`);
+      
+      this.emitProgress({
+        projectId,
+        stage: "reviewing",
+        currentChapter: validChapters.length,
+        totalChapters: validChapters.length,
+        message: `Correcciones aplicadas. Iniciando nueva revisión (ciclo ${revisionCycle + 1})...`,
+        chaptersBeingRewritten: [],
+        revisionCycle: revisionCycle,
+      });
+
       revisionCycle++;
       
       // Save review cycle state for resume support and clear chaptersBeingRewritten after each cycle
@@ -5234,6 +5265,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         finalReviewResult: finalResult,
         chaptersBeingRewritten: [],
       });
+      
+      // Continue to next iteration of while loop for re-review
+      continue;
     }
 
     // CRITICAL: If we exited the loop without achieving 2x consecutive 10/10, pause for instructions
