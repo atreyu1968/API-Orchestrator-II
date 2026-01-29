@@ -252,11 +252,12 @@ export default function Dashboard() {
   }, [currentProject?.id]);
 
   useEffect(() => {
-    if (currentProject?.status === "generating") {
+    if (currentProject?.id) {
+      // Always auto-refresh logs every 3 seconds when a project is selected
       const interval = setInterval(fetchLogs, 3000);
       return () => clearInterval(interval);
     }
-  }, [currentProject?.id, currentProject?.status]);
+  }, [currentProject?.id]);
 
   const saveArchitectInstructionsMutation = useMutation({
     mutationFn: async (params: { projectId: number; instructions: string }) => {
