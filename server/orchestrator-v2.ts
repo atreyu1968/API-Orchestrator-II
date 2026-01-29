@@ -866,11 +866,57 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
       const response = await this.callAI(prompt, "deepseek-chat", 0.3, 1500);
       this.addTokenUsage(response.tokenUsage);
       
-      const jsonMatch = response.content.match(/\{[\s\S]*"injuries"[\s\S]*\}/);
-      if (!jsonMatch) return;
+      // Robust JSON parsing with multiple recovery strategies
+      let parsed: { injuries: any[] } | null = null;
+      const content = response.content;
       
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (!parsed.injuries || parsed.injuries.length === 0) return;
+      // Strategy 1: Match JSON object containing "injuries"
+      const jsonMatch = content.match(/\{[\s\S]*"injuries"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch (e) {
+          // Strategy 2: Find first { and last } for malformed JSON
+          const firstBrace = content.indexOf('{');
+          const lastBrace = content.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            try {
+              parsed = JSON.parse(content.substring(firstBrace, lastBrace + 1));
+            } catch (e2) {
+              // Strategy 3: Try to extract just the injuries array
+              const arrayMatch = content.match(/\[[\s\S]*?\]/);
+              if (arrayMatch) {
+                try {
+                  const injuries = JSON.parse(arrayMatch[0]);
+                  if (Array.isArray(injuries)) {
+                    parsed = { injuries };
+                  }
+                } catch (e3) {
+                  console.warn(`[OrchestratorV2] All JSON parsing strategies failed for Chapter ${chapterNumber}`);
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      if (!parsed || !Array.isArray(parsed.injuries) || parsed.injuries.length === 0) {
+        return;
+      }
+      
+      // Validate required fields and filter invalid entries
+      const validInjuries = parsed.injuries.filter((injury: any) => {
+        if (!injury || typeof injury !== 'object') return false;
+        if (!injury.personaje || typeof injury.personaje !== 'string') return false;
+        if (!injury.tipo_lesion || typeof injury.tipo_lesion !== 'string') return false;
+        // Check personaje is in known characters (case-insensitive)
+        const normalizedName = injury.personaje.toLowerCase().trim();
+        return characterNames.some(name => name.toLowerCase().trim() === normalizedName || 
+          name.toLowerCase().includes(normalizedName) || 
+          normalizedName.includes(name.toLowerCase()));
+      });
+      
+      if (validInjuries.length === 0) return;
       
       // Get existing world bible
       const worldBible = await storage.getWorldBibleByProject(projectId);
@@ -878,16 +924,21 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
       
       const existingInjuries = Array.isArray(worldBible.persistentInjuries) ? worldBible.persistentInjuries : [];
       
+      // Validate and normalize severidad
+      const validSeveridades = ["leve", "moderada", "grave", "critica"];
+      
       // Prepare new injuries with proper format
-      const newInjuries = parsed.injuries.map((injury: any) => ({
-        personaje: injury.personaje,
-        tipo_lesion: injury.tipo_lesion,
-        parte_afectada: injury.parte_afectada || "no especificada",
+      const newInjuries = validInjuries.map((injury: any) => ({
+        personaje: injury.personaje.trim(),
+        tipo_lesion: injury.tipo_lesion.trim(),
+        parte_afectada: (injury.parte_afectada || "no especificada").trim(),
         capitulo_ocurre: chapterNumber,
-        severidad: injury.severidad || "moderada",
-        efecto_esperado: injury.efecto_esperado || "Movimiento limitado",
+        severidad: validSeveridades.includes(injury.severidad?.toLowerCase()) 
+          ? injury.severidad.toLowerCase() 
+          : "moderada",
+        efecto_esperado: (injury.efecto_esperado || "Movimiento limitado").trim(),
         estado_actual: "activa",
-        es_temporal: injury.es_temporal || false,
+        es_temporal: injury.es_temporal === true,
         fecha_registro: new Date().toISOString(),
       }));
       
@@ -902,7 +953,7 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
         newInjuries.map((i: any) => `${i.personaje}: ${i.tipo_lesion}`).join(', '));
       
     } catch (error) {
-      console.error(`[OrchestratorV2] Error extracting injuries from Chapter ${chapterNumber}:`, error);
+      console.warn(`[OrchestratorV2] Error extracting injuries from Chapter ${chapterNumber}:`, error);
     }
   }
 
