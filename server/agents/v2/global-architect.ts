@@ -22,6 +22,7 @@ export interface GlobalArchitectInput {
   previousBooksContext?: string;
   minWordsPerChapter?: number;
   maxWordsPerChapter?: number;
+  isKindleUnlimited?: boolean;
 }
 
 export interface GlobalArchitectOutput {
@@ -165,7 +166,8 @@ export class GlobalArchitectAgent extends BaseAgent {
       input.seriesOrder,
       input.previousBooksContext,
       input.minWordsPerChapter,
-      input.maxWordsPerChapter
+      input.maxWordsPerChapter,
+      input.isKindleUnlimited
     );
 
     const response = await this.generateContent(prompt);

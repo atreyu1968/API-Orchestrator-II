@@ -1798,6 +1798,7 @@ ${decisions.join('\n')}
           previousBooksContext,
           minWordsPerChapter: project.minWordsPerChapter || undefined,
           maxWordsPerChapter: project.maxWordsPerChapter || undefined,
+          isKindleUnlimited: project.isKindleUnlimited || false,
         });
 
         if (globalResult.error || !globalResult.parsed) {

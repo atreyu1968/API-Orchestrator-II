@@ -25,7 +25,8 @@ export const PROMPTS_V2 = {
     seriesOrder?: number,
     previousBooksContext?: string,
     minWordsPerChapter?: number,
-    maxWordsPerChapter?: number
+    maxWordsPerChapter?: number,
+    isKindleUnlimited?: boolean
   ) => `
     Eres un Arquitecto Narrativo de Best-Sellers con experiencia en ${genre}.
     IDIOMA: Escribe TODO en ESPAÑOL. Títulos de capítulos, descripciones, nombres de personajes típicos del contexto, todo debe estar en español.
@@ -55,6 +56,36 @@ export const PROMPTS_V2 = {
     ${styleGuide ? `
     === GUÍA DE ESTILO ===
     ${styleGuide}
+    ` : ''}
+    ${isKindleUnlimited ? `
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║ OPTIMIZACIÓN KINDLE UNLIMITED (KU) - OBLIGATORIO                 ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║ Esta novela será publicada en Kindle Unlimited. DISEÑA para     ║
+    ║ maximizar retención de lectores y pages read:                    ║
+    ║                                                                  ║
+    ║ 1. ESTRUCTURA DE CAPÍTULOS:                                      ║
+    ║    - Planifica CLIFFHANGERS al final de CADA capítulo           ║
+    ║    - Cada capítulo debe terminar en: pregunta sin respuesta,    ║
+    ║      revelación impactante, peligro inminente, o decisión       ║
+    ║      crucial pendiente                                           ║
+    ║    - NUNCA termines un capítulo con resolución completa         ║
+    ║                                                                  ║
+    ║ 2. HOOKS DE APERTURA:                                            ║
+    ║    - Planifica que cada capítulo abra con acción o tensión      ║
+    ║    - Las primeras líneas deben capturar inmediatamente          ║
+    ║    - Evita aperturas descriptivas largas o introspectivas       ║
+    ║                                                                  ║
+    ║ 3. RITMO Y PACING:                                               ║
+    ║    - Alterna tensión alta/media - nunca 2 capítulos lentos      ║
+    ║    - Planifica eventos significativos cada 2-3 capítulos        ║
+    ║    - Los capítulos deben tener longitud consistente             ║
+    ║      (2000-3500 palabras ideal para KU)                          ║
+    ║                                                                  ║
+    ║ 4. PUNTOS DE NO RETORNO:                                         ║
+    ║    - Ubica eventos irreversibles en el 25%, 50%, y 75%          ║
+    ║    - Estos eventos deben hacer imposible abandonar la lectura   ║
+    ╚══════════════════════════════════════════════════════════════════╝
     ` : ''}
 
     PROCESO DE DISEÑO:
