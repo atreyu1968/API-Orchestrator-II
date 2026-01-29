@@ -1,7 +1,12 @@
 import { storage } from "./storage";
 import { OrchestratorV2 } from "./orchestrator-v2";
-import { cancelProject } from "./agents";
+import { cancelProject, generateGenerationToken } from "./agents";
 import type { Project, ProjectQueueItem, QueueState } from "@shared/schema";
+
+// Helper to create unique generation token
+function createGenerationToken(projectId: number): string {
+  return `gen_${projectId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 type QueueEventCallback = (event: QueueEvent) => void;
 
@@ -684,6 +689,13 @@ export class QueueManager {
     this.currentProjectId = project.id;
     this.autoRecoveryCount = 0;
     this.startHeartbeatMonitor();
+    
+    // Generate unique token for this generation session to prevent parallel executions
+    const generationToken = createGenerationToken(project.id);
+    await storage.updateProject(project.id, { generationToken });
+    // Also register in memory for immediate cancellation detection
+    generateGenerationToken(project.id);
+    console.log(`[QueueManager] Generated token for project ${project.id}: ${generationToken}`);
 
     this.emit({
       type: "project_started",
@@ -702,64 +714,67 @@ export class QueueManager {
     console.log(`[QueueManager] Project ${project.id} using pipeline: v2 (scene-based)`);
 
     const orchestrator = new OrchestratorV2({
-      onAgentStatus: async (role, status, message) => {
-        self.updateHeartbeat();
-        console.log(`[Queue V2] ${project.title} - ${role}: ${status}`, message || "");
-        
-        // Update agent status in database for UI display
-        try {
-          await storage.updateAgentStatus(project.id, role, { 
-            status, 
-            currentTask: message || undefined 
-          });
-        } catch (err) {
-          console.error(`[Queue V2] Failed to update agent status:`, err);
-        }
-        
-        if (message) {
+      generationToken,
+      callbacks: {
+        onAgentStatus: async (role, status, message) => {
+          self.updateHeartbeat();
+          console.log(`[Queue V2] ${project.title} - ${role}: ${status}`, message || "");
+          
+          // Update agent status in database for UI display
+          try {
+            await storage.updateAgentStatus(project.id, role, { 
+              status, 
+              currentTask: message || undefined 
+            });
+          } catch (err) {
+            console.error(`[Queue V2] Failed to update agent status:`, err);
+          }
+          
+          if (message) {
+            try {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: status === "error" ? "error" : "info",
+                agentRole: role,
+                message: message,
+              });
+            } catch (err) {
+              console.error(`[Queue V2] Failed to save activity log:`, err);
+            }
+          }
+        },
+        onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
+          self.updateHeartbeat();
+          console.log(`[Queue V2] ${project.title} - Chapter ${chapterNumber} complete: ${wordCount} words`);
+          const sectionName = chapterNumber === 0 ? "el Prólogo" : 
+                             chapterNumber === -1 ? "el Epílogo" : 
+                             chapterNumber === -2 ? "la Nota del Autor" :
+                             `el Capítulo ${chapterNumber}`;
           try {
             await storage.createActivityLog({
               projectId: project.id,
-              level: status === "error" ? "error" : "info",
-              agentRole: role,
-              message: message,
+              level: "success",
+              agentRole: "ghostwriter-v2",
+              message: `${sectionName} completado (${wordCount} palabras)`,
             });
           } catch (err) {
-            console.error(`[Queue V2] Failed to save activity log:`, err);
+            console.error(`[Queue V2] Failed to save chapter complete log:`, err);
           }
-        }
-      },
-      onChapterComplete: async (chapterNumber, wordCount, chapterTitle) => {
-        self.updateHeartbeat();
-        console.log(`[Queue V2] ${project.title} - Chapter ${chapterNumber} complete: ${wordCount} words`);
-        const sectionName = chapterNumber === 0 ? "el Prólogo" : 
-                           chapterNumber === -1 ? "el Epílogo" : 
-                           chapterNumber === -2 ? "la Nota del Autor" :
-                           `el Capítulo ${chapterNumber}`;
-        try {
-          await storage.createActivityLog({
-            projectId: project.id,
-            level: "success",
-            agentRole: "ghostwriter-v2",
-            message: `${sectionName} completado (${wordCount} palabras)`,
-          });
-        } catch (err) {
-          console.error(`[Queue V2] Failed to save chapter complete log:`, err);
-        }
-      },
-      onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
-        self.updateHeartbeat();
-        console.log(`[Queue V2] ${project.title} - Scene ${sceneNumber}/${totalScenes} of Chapter ${chapterNumber} complete`);
-      },
-      onProjectComplete: async () => {
-        self.stopHeartbeatMonitor();
-        self.currentProjectId = null;
-        await self.handleProjectComplete(queueItem, project);
-      },
-      onError: async (error) => {
-        self.stopHeartbeatMonitor();
-        self.currentProjectId = null;
-        await self.handleProjectError(queueItem, project, error);
+        },
+        onSceneComplete: (chapterNumber, sceneNumber, totalScenes, wordCount) => {
+          self.updateHeartbeat();
+          console.log(`[Queue V2] ${project.title} - Scene ${sceneNumber}/${totalScenes} of Chapter ${chapterNumber} complete`);
+        },
+        onProjectComplete: async () => {
+          self.stopHeartbeatMonitor();
+          self.currentProjectId = null;
+          await self.handleProjectComplete(queueItem, project);
+        },
+        onError: async (error) => {
+          self.stopHeartbeatMonitor();
+          self.currentProjectId = null;
+          await self.handleProjectError(queueItem, project, error);
+        },
       },
     });
 

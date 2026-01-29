@@ -3,6 +3,11 @@ import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 
 const activeReeditOrchestrators = new Map<number, ReeditOrchestrator>();
 
+// Helper to create unique generation token for reedit projects
+function createReeditGenerationToken(projectId: number): string {
+  return `reedit_${projectId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // Watchdog interval (check every 2 minutes)
 const WATCHDOG_INTERVAL_MS = 2 * 60 * 1000;
 // Projects without heartbeat for more than 8 minutes are considered frozen
@@ -104,17 +109,32 @@ export async function watchdogCheck(): Promise<void> {
         const tracker = recoveryTracker.get(project.id);
         console.log(`[ReeditWatchdog] Recovery attempt ${tracker?.count}/${MAX_RECOVERY_ATTEMPTS} for project ${project.id}`);
         
-        // Update status to show recovery is happening
+        // CRITICAL: Cancel any existing orchestrator BEFORE starting a new one
+        const existingOrchestrator = activeReeditOrchestrators.get(project.id);
+        if (existingOrchestrator) {
+          console.log(`[ReeditWatchdog] Cancelling existing orchestrator for project ${project.id}`);
+          existingOrchestrator.cancel();
+          activeReeditOrchestrators.delete(project.id);
+          // Give it a moment to stop
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        // Generate new token to invalidate any lingering processes
+        const generationToken = createReeditGenerationToken(project.id);
+        console.log(`[ReeditWatchdog] Generated new token for project ${project.id}: ${generationToken}`);
+        
+        // Update status and token to show recovery is happening
         await storage.updateReeditProject(project.id, {
           status: "processing",
           errorMessage: null,
           heartbeatAt: new Date(), // Reset heartbeat to prevent immediate re-detection
+          generationToken, // New token invalidates any old processes
         });
         
         console.log(`[ReeditWatchdog] Project ${project.id} - starting auto-recovery orchestrator`);
         
-        // AUTO-RESTART: Create new orchestrator and resume processing
-        const orchestrator = new ReeditOrchestrator();
+        // AUTO-RESTART: Create new orchestrator with the new token
+        const orchestrator = new ReeditOrchestrator(generationToken);
         activeReeditOrchestrators.set(project.id, orchestrator);
         
         orchestrator.processProject(project.id).then(() => {
@@ -191,7 +211,11 @@ export async function autoResumeReeditProjects(): Promise<void> {
       
       console.log(`[ReeditAutoResume] Auto-resuming project ${project.id}: "${project.title}"...`);
       
-      const orchestrator = new ReeditOrchestrator();
+      // Generate token to prevent parallel executions
+      const generationToken = createReeditGenerationToken(project.id);
+      await storage.updateReeditProject(project.id, { generationToken });
+      
+      const orchestrator = new ReeditOrchestrator(generationToken);
       activeReeditOrchestrators.set(project.id, orchestrator);
       
       orchestrator.processProject(project.id).then(() => {
@@ -229,13 +253,17 @@ export async function resumeReeditProject(projectId: number): Promise<{ success:
     return { success: false, message: "Project is already being processed" };
   }
 
+  // Generate token to prevent parallel executions
+  const generationToken = createReeditGenerationToken(projectId);
+  
   await storage.updateReeditProject(projectId, { 
     status: "processing", 
-    errorMessage: null 
+    errorMessage: null,
+    generationToken
   });
-  console.log(`[ReeditResume] Cleared error state for project ${projectId}, starting orchestrator...`);
+  console.log(`[ReeditResume] Cleared error state for project ${projectId}, starting orchestrator with token ${generationToken}...`);
 
-  const orchestrator = new ReeditOrchestrator();
+  const orchestrator = new ReeditOrchestrator(generationToken);
   activeReeditOrchestrators.set(projectId, orchestrator);
 
   console.log(`[ReeditResume] Calling processProject for project ${projectId}`);

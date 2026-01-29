@@ -1558,8 +1558,13 @@ export class ReeditOrchestrator {
   private maxFinalReviewCycles = 15;
   private minAcceptableScore = 9; // Acepta 9+ como suficiente
   private requiredConsecutiveHighScores = 2; // Necesita 2 puntuaciones 9+ consecutivas para confirmar aprobación
+  
+  // Token-based cancellation to prevent parallel executions
+  private generationToken?: string;
+  private cancelled: boolean = false;
 
-  constructor() {
+  constructor(generationToken?: string) {
+    this.generationToken = generationToken;
     this.editorAgent = new ReeditEditorAgent();
     this.copyEditorAgent = new ReeditCopyEditorAgent();
     this.quickFinalReviewerAgent = new ReeditFinalReviewerAgent();
@@ -1578,6 +1583,12 @@ export class ReeditOrchestrator {
     this.expansionAnalyzer = new ChapterExpansionAnalyzer();
     this.chapterExpander = new ChapterExpanderAgent();
     this.newChapterGenerator = new NewChapterGeneratorAgent();
+  }
+  
+  // Cancel this orchestrator instance
+  cancel(): void {
+    console.log(`[ReeditOrchestrator] Cancellation requested`);
+    this.cancelled = true;
   }
   
   private trackTokens(response: any) {
@@ -2305,8 +2316,23 @@ export class ReeditOrchestrator {
   }
 
   private async checkCancellation(projectId: number): Promise<boolean> {
+    // Check local cancellation flag first (set by cancel() method)
+    if (this.cancelled) {
+      console.log(`[ReeditOrchestrator] Stopping: local cancellation flag set for project ${projectId}`);
+      return true;
+    }
+    
     const project = await storage.getReeditProject(projectId);
-    if (project?.cancelRequested) {
+    if (!project) return true;
+    
+    // Check if our token has been invalidated (another process started)
+    if (this.generationToken && project.generationToken && project.generationToken !== this.generationToken) {
+      console.log(`[ReeditOrchestrator] Stopping: token mismatch for project ${projectId} (ours=${this.generationToken}, DB=${project.generationToken})`);
+      // Don't update status - the new process owns this project now
+      return true;
+    }
+    
+    if (project.cancelRequested) {
       console.log(`[ReeditOrchestrator] Cancellation requested for project ${projectId}`);
       await storage.updateReeditProject(projectId, {
         status: "paused",

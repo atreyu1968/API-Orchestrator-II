@@ -243,6 +243,11 @@ interface OrchestratorV2Callbacks {
   onChaptersBeingCorrected?: (chapterNumbers: number[], revisionCycle: number) => void;
 }
 
+interface OrchestratorV2Options {
+  callbacks: OrchestratorV2Callbacks;
+  generationToken?: string;
+}
+
 export class OrchestratorV2 {
   private globalArchitect = new GlobalArchitectAgent();
   private chapterArchitect = new ChapterArchitectAgent();
@@ -261,6 +266,7 @@ export class OrchestratorV2 {
   // Beta Reader for commercial viability analysis
   private betaReader = new BetaReaderAgent();
   private callbacks: OrchestratorV2Callbacks;
+  private generationToken?: string;
   
   private cumulativeTokens = {
     inputTokens: 0,
@@ -268,8 +274,54 @@ export class OrchestratorV2 {
     thinkingTokens: 0,
   };
 
-  constructor(callbacks: OrchestratorV2Callbacks) {
-    this.callbacks = callbacks;
+  constructor(callbacks: OrchestratorV2Callbacks);
+  constructor(options: OrchestratorV2Options);
+  constructor(callbacksOrOptions: OrchestratorV2Callbacks | OrchestratorV2Options) {
+    if ('callbacks' in callbacksOrOptions) {
+      this.callbacks = callbacksOrOptions.callbacks;
+      this.generationToken = callbacksOrOptions.generationToken;
+    } else {
+      this.callbacks = callbacksOrOptions;
+    }
+  }
+  
+  // Check if this orchestrator instance is still valid (not superseded by a new generation)
+  private async isTokenStillValid(projectId: number): Promise<boolean> {
+    if (!this.generationToken) {
+      return true; // No token = legacy mode, continue
+    }
+    
+    try {
+      const project = await storage.getProject(projectId);
+      if (!project) return false;
+      
+      // If the token in DB doesn't match our token, a new generation started
+      if (project.generationToken && project.generationToken !== this.generationToken) {
+        console.log(`[OrchestratorV2] Token mismatch for project ${projectId}: ours=${this.generationToken}, DB=${project.generationToken}. Stopping obsolete process.`);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      console.error(`[OrchestratorV2] Error checking token validity:`, error);
+      return true; // On error, continue to avoid stopping valid processes
+    }
+  }
+  
+  // Combined check: cancelled OR token invalid = should stop
+  private async shouldStopProcessing(projectId: number): Promise<boolean> {
+    // First check if project was cancelled via normal mechanisms
+    if (await isProjectCancelledFromDb(projectId)) {
+      return true;
+    }
+    
+    // Then check if our token is still valid (prevents parallel executions)
+    if (!(await this.isTokenStillValid(projectId))) {
+      console.log(`[OrchestratorV2] Stopping obsolete process for project ${projectId} - new generation started`);
+      return true;
+    }
+    
+    return false;
   }
 
   private getInsertionDescription(insertionPoint: string): string {
@@ -1950,8 +2002,8 @@ ${decisions.join('\n')}
       }
 
       for (let i = 0; i < outline.length; i++) {
-        if (await isProjectCancelledFromDb(project.id)) {
-          console.log(`[OrchestratorV2] Project ${project.id} was cancelled`);
+        if (await this.shouldStopProcessing(project.id)) {
+          console.log(`[OrchestratorV2] Project ${project.id} stopped (cancelled or superseded)`);
           return;
         }
 
@@ -2066,7 +2118,7 @@ ${decisions.join('\n')}
         let lastContext = "";
 
         for (const scene of sceneBreakdown.scenes) {
-          if (await isProjectCancelledFromDb(project.id)) {
+          if (await this.shouldStopProcessing(project.id)) {
             console.log(`[OrchestratorV2] Project ${project.id} was cancelled during scene writing`);
             return;
           }
@@ -3063,7 +3115,7 @@ ${decisions.join('\n')}
             const preReviewFixes: Array<{ chapter: number; issueCount: number; sources: string[]; success: boolean }> = [];
             
             for (const chapNum of chaptersToFix) {
-              if (await isProjectCancelledFromDb(project.id)) {
+              if (await this.shouldStopProcessing(project.id)) {
                 await this.updateProjectTokens(project.id);
                 await storage.updateProject(project.id, { status: "paused" });
                 return;
@@ -3337,7 +3389,7 @@ ${issuesDescription}`;
           console.log(`[OrchestratorV2] Passing ${correctedIssuesSummaries.length} previously corrected issues to FinalReviewer`);
         }
 
-        if (await isProjectCancelledFromDb(project.id)) {
+        if (await this.shouldStopProcessing(project.id)) {
           console.log(`[OrchestratorV2] Final review cancelled for project ${project.id}`);
           await this.updateProjectTokens(project.id);
           await storage.updateProject(project.id, { status: "paused" });
@@ -3603,7 +3655,7 @@ ${issuesDescription}`;
           const failedChaptersDetails: Array<{ chapterNumber: number; title: string; error: string; issues: string[] }> = [];
 
           for (const chapNum of capitulos_para_reescribir) {
-            if (await isProjectCancelledFromDb(project.id)) {
+            if (await this.shouldStopProcessing(project.id)) {
               await this.updateProjectTokens(project.id);
               await storage.updateProject(project.id, { status: "paused" });
               return;
@@ -4121,7 +4173,7 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
 
       // Create outlines for new chapters using Chapter Architect
       for (let chapterNum = fromChapter + 1; chapterNum <= toChapter; chapterNum++) {
-        if (await isProjectCancelledFromDb(project.id)) {
+        if (await this.shouldStopProcessing(project.id)) {
           console.log(`[OrchestratorV2] Extension cancelled for project ${project.id}`);
           await this.updateProjectTokens(project.id);
           await storage.updateProject(project.id, { status: "paused" });
@@ -4204,7 +4256,7 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
 
         for (const scene of chapterPlan.parsed.scenes) {
           // Check cancellation before each scene
-          if (await isProjectCancelledFromDb(project.id)) {
+          if (await this.shouldStopProcessing(project.id)) {
             console.log(`[OrchestratorV2] Extension cancelled during scene writing for project ${project.id}`);
             scenesCancelled = true;
             break;
@@ -4350,7 +4402,7 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
         `Regenerando ${truncatedChapters.length} capítulos truncados`);
 
       for (let i = 0; i < truncatedChapters.length; i++) {
-        if (await isProjectCancelledFromDb(project.id)) {
+        if (await this.shouldStopProcessing(project.id)) {
           console.log(`[OrchestratorV2] Truncated regeneration cancelled for project ${project.id}`);
           await this.updateProjectTokens(project.id);
           await storage.updateProject(project.id, { status: "paused" });
@@ -4430,7 +4482,7 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
 
         for (const scene of chapterPlan.parsed.scenes) {
           // Check cancellation before each scene
-          if (await isProjectCancelledFromDb(project.id)) {
+          if (await this.shouldStopProcessing(project.id)) {
             console.log(`[OrchestratorV2] Truncated regeneration cancelled during scene writing for project ${project.id}`);
             scenesCancelled = true;
             break;
@@ -4536,7 +4588,7 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
       for (let i = 0; i < chaptersWithContent.length; i++) {
         const chapter = chaptersWithContent[i];
         
-        if (await isProjectCancelledFromDb(project.id)) {
+        if (await this.shouldStopProcessing(project.id)) {
           console.log(`[OrchestratorV2] Sentinel check cancelled for project ${project.id}`);
           await this.updateProjectTokens(project.id);
           await storage.updateProject(project.id, { status: "paused" });
@@ -4747,7 +4799,7 @@ Para continuar, usa el botón "Reanudar" o "Saltar capítulos fallidos" en el pa
 
       // Generate each missing chapter
       for (const chapterOutline of missingChapters) {
-        if (await isProjectCancelledFromDb(project.id)) {
+        if (await this.shouldStopProcessing(project.id)) {
           console.log(`[OrchestratorV2] Project ${project.id} was cancelled`);
           return;
         }

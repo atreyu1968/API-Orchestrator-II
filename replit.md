@@ -50,6 +50,7 @@ Preferred communication style: Simple, everyday language.
 - **Improved Cancellation**: Immediate process cancellation.
 - **Fast-Track Resume System**: Optimizes project resumption by skipping unnecessary stages.
 - **Robust Server Restart Recovery**: QueueManager marks incomplete projects as "paused" for seamless resume.
+- **Generation Token System**: Prevents parallel orchestrator executions. Each new process gets a unique token stored in the database. Orchestrators validate their token before each critical operation, stopping immediately if invalidated by a newer process. This prevents duplicate chapter generation and token waste during auto-recovery.
 - **Translation Export Improvements**: Markdown exports strip artifacts, omit dividers, and use localized chapter labels.
 - **Immediate Continuity Validation**: Validates chapters after writing, enforcing consistency through targeted rewrites.
 - **Mandatory Continuity Constraints**: Ghostwriter receives structured constraints to prevent violations.

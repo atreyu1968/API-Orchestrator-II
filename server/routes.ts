@@ -6337,6 +6337,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   // ===============================
   const activeReeditStreams = new Map<number, Set<Response>>();
   const activeReeditOrchestrators = new Map<number, ReeditOrchestrator>();
+  
+  // Helper to create and register a reedit orchestrator with generation token
+  async function createReeditOrchestratorWithToken(projectId: number): Promise<ReeditOrchestrator> {
+    const generationToken = `reedit_${projectId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    await storage.updateReeditProject(projectId, { generationToken });
+    return new ReeditOrchestrator(generationToken);
+  }
 
   app.get("/api/reedit-projects", async (req: Request, res: Response) => {
     try {
@@ -6662,7 +6669,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         });
       }
 
-      const orchestrator = new ReeditOrchestrator();
+      const orchestrator = await createReeditOrchestratorWithToken(projectId);
       activeReeditOrchestrators.set(projectId, orchestrator);
 
       res.json({
@@ -6809,7 +6816,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           await developmentalEditor.executeApprovedPlan(projectId);
           
           // After plan execution, continue with the regular reedit pipeline
-          const orchestrator = new ReeditOrchestrator();
+          const orchestrator = await createReeditOrchestratorWithToken(projectId);
           activeReeditOrchestrators.set(projectId, orchestrator);
 
           orchestrator.processProject(projectId).finally(() => {
@@ -6910,7 +6917,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       await storage.updateReeditProject(projectId, updateData);
       console.log(`[ReeditResume] Cleared error state for project ${projectId}, starting orchestrator...`);
 
-      const orchestrator = new ReeditOrchestrator();
+      const orchestrator = await createReeditOrchestratorWithToken(projectId);
       activeReeditOrchestrators.set(projectId, orchestrator);
 
       res.json({
@@ -6946,7 +6953,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "Project is already being processed" });
       }
 
-      const orchestrator = new ReeditOrchestrator();
+      const orchestrator = await createReeditOrchestratorWithToken(projectId);
       activeReeditOrchestrators.set(projectId, orchestrator);
 
       res.json({
@@ -6990,7 +6997,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         return res.status(400).json({ error: "Project is already being processed" });
       }
 
-      const orchestrator = new ReeditOrchestrator();
+      const orchestrator = await createReeditOrchestratorWithToken(projectId);
       activeReeditOrchestrators.set(projectId, orchestrator);
 
       res.json({
@@ -7566,7 +7573,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       });
       
       // Create orchestrator and resume processing
-      const orchestrator = new ReeditOrchestrator();
+      const orchestrator = await createReeditOrchestratorWithToken(projectId);
       activeReeditOrchestrators.set(projectId, orchestrator);
       
       res.json({ 
