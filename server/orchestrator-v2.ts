@@ -598,7 +598,7 @@ ${decisions.join('\n')}
 
       console.log(`[OrchestratorV2] Creating ${entities.length} entities in database...`);
       for (let i = 0; i < entities.length; i++) {
-        await storage.createWorldEntity(entities[i]);
+        await storage.createWorldEntity(entities[i] as any);
         if ((i + 1) % 10 === 0) {
           console.log(`[OrchestratorV2] Created ${i + 1}/${entities.length} entities...`);
         }
@@ -1684,8 +1684,7 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
             subjectId,
             targetId,
             relationType: rel.relationType,
-            meta: rel.meta || {},
-            sourceChapter: chapterNumber,
+            meta: { ...(rel.meta || {}), sourceChapter: chapterNumber },
           });
         }
       }
@@ -2085,7 +2084,7 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
           previousBooksContext,
           minWordsPerChapter: project.minWordsPerChapter || undefined,
           maxWordsPerChapter: project.maxWordsPerChapter || undefined,
-          isKindleUnlimited: project.isKindleUnlimited || false,
+          isKindleUnlimited: project.kindleUnlimitedOptimized || false,
         });
 
         if (globalResult.error || !globalResult.parsed) {
@@ -2157,15 +2156,15 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
           worldRules: worldBible.rules as any,
           timeline: timeline as any,
           plotOutline: {
-            chapterOutlines: outline.map(ch => ({
+            chapterOutlines: outline.map((ch: any) => ({
               number: ch.chapter_num,
               title: ch.title,
               summary: ch.summary,
               keyEvents: [ch.key_event],
               emotional_arc: ch.emotional_arc,
-              temporal_notes: ch.temporal_notes,
-              location: ch.location,
-              character_states_entering: ch.character_states_entering,
+              temporal_notes: ch.temporal_notes || '',
+              location: ch.location || '',
+              character_states_entering: ch.character_states_entering || {},
             })),
             threeActStructure: globalResult.parsed.three_act_structure || null,
             plotThreads: plotThreads.map(t => ({
@@ -2174,9 +2173,9 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
               goal: t.goal,
             })),
             // LitAgents 2.1: Store additional Global Architect outputs inside plotOutline for consistency
-            settings: worldBible.settings || [],
-            themes: worldBible.themes || [],
-            location_map: worldBible.location_map || null,
+            settings: (worldBible as any).settings || [],
+            themes: (worldBible as any).themes || [],
+            location_map: (worldBible as any).location_map || null,
             timeline_master: globalResult.parsed.timeline_master || null,
             character_tracking: globalResult.parsed.character_tracking || [],
           } as any,
@@ -2270,7 +2269,7 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
           const context = await this.getConsistencyContext(project.id);
           if (context.entities.length > 0) {
             // Extract timeline and character state info from worldBible
-            const timelineInfo = this.extractTimelineInfo(worldBible, chapterNumber, i > 0 ? orderedOutlines[i - 1]?.chapter_num : undefined);
+            const timelineInfo = this.extractTimelineInfo(worldBible, chapterNumber, i > 0 ? (outline as any)[i - 1]?.chapter_num : undefined);
             const characterStates = this.extractCharacterStates(worldBible, chapterNumber);
             
             consistencyConstraints = universalConsistencyAgent.generateConstraints(
@@ -3131,9 +3130,18 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
         }
       }
 
-      const worldBibleData = {
+      const worldBibleData: any = {
         characters: worldBible.characters || [],
         rules: worldBible.worldRules || [],
+        worldRules: worldBible.worldRules || [],
+        locations: (worldBible as any).locations || [],
+        settings: (worldBible as any).settings || [],
+        plotOutline: worldBible.plotOutline || {},
+        timeline: (worldBible as any).timeline || [],
+        plotDecisions: worldBible.plotDecisions || [],
+        persistentInjuries: worldBible.persistentInjuries || [],
+        threeActStructure: (worldBible.plotOutline as any)?.threeActStructure || null,
+        three_act_structure: (worldBible.plotOutline as any)?.three_act_structure || null,
       };
 
       // CRITICAL: Restore cycle state from database to survive restarts
@@ -3409,7 +3417,7 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
               issuesBySource.get(issue.source)!.push(issue);
             }
             
-            for (const [source, issues] of issuesBySource) {
+            for (const [source, issues] of Array.from(issuesBySource)) {
               qaAuditReportText += `[${source.toUpperCase()}] - ${issues.length} problema(s):\n`;
               for (const issue of issues) {
                 const chapInfo = issue.capitulo ? `Cap ${issue.capitulo}` : (issue.capitulos?.length ? `Caps ${issue.capitulos.join(',')}` : 'General');
@@ -3472,10 +3480,11 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
                 }
                 combinedPreReviewIssues.push({
                   source: 'final-reviewer',
+                  tipo: issue.categoria || 'general',
                   capitulo: chapNum,
                   severidad: issue.severidad || 'mayor',
                   descripcion: issue.descripcion || '',
-                  instrucciones: issue.instrucciones_correccion || issue.instruccion_correccion || '',
+                  instrucciones: issue.instrucciones_correccion || '',
                   categoria: issue.categoria || 'general',
                 });
               }
@@ -4072,11 +4081,12 @@ ${issuesDescription}`;
               
               // Add as issue for correction instructions
               issues.push({
-                categoria: `QA:${qaIssue.source}`,
+                categoria: 'otro',
                 severidad: qaIssue.severidad === 'critica' ? 'critica' : 'mayor',
-                descripcion: qaIssue.descripcion,
+                descripcion: `[QA:${qaIssue.source}] ${qaIssue.descripcion}`,
                 capitulos_afectados: targetChapters,
-                instruccion_correccion: qaIssue.correccion || `Corregir: ${qaIssue.descripcion}`,
+                elementos_a_preservar: '',
+                instrucciones_correccion: qaIssue.correccion || `Corregir: ${qaIssue.descripcion}`,
               } as FinalReviewIssue);
             }
           }
@@ -4174,7 +4184,7 @@ ${issuesDescription}`;
           }
           
           console.log(`[OrchestratorV2] PROBLEM AGGREGATOR: ${aggregatedIssuesByChapter.size} chapters with issues, ${allIssues.length} total issues`);
-          for (const [chapNum, data] of aggregatedIssuesByChapter) {
+          for (const [chapNum, data] of Array.from(aggregatedIssuesByChapter)) {
             console.log(`  - Cap ${chapNum}: ${data.totalCount} issues from [${Array.from(data.sources).join(', ')}]${data.hasCritical ? ' (CRITICAL)' : ''}`);
           }
           
@@ -4217,7 +4227,7 @@ ${issuesDescription}`;
 
             // Build UNIFIED correction prompt from ALL aggregated issues
             const issuesDescription = chapterIssues.map(i => 
-              `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.categoria}: ${i.descripcion}\n  Corrección: ${i.instruccion_correccion || i.instrucciones_correccion || 'Corregir según descripción'}`
+              `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.categoria}: ${i.descripcion}\n  Corrección: ${i.instrucciones_correccion || 'Corregir según descripción'}`
             ).join("\n");
             
             // Build comprehensive context for rewrites FROM WORLD BIBLE
@@ -4375,8 +4385,8 @@ ${issuesDescription}`;
                     // surgicalFix returns patches, apply them
                     if (fixResult.patches && fixResult.patches.length > 0) {
                       const patchResult = applyPatches(chapter.content || "", fixResult.patches);
-                      if (patchResult.modifiedContent && patchResult.modifiedContent.length > 100) {
-                        correctedContent = patchResult.modifiedContent;
+                      if (patchResult.patchedText && patchResult.patchedText.length > 100) {
+                        correctedContent = patchResult.patchedText;
                         console.log(`[OrchestratorV2] Fallback surgicalFix applied ${fixResult.patches.length} patches`);
                       }
                     } else if (fixResult.fullContent && fixResult.fullContent.length > 100) {
@@ -4508,7 +4518,7 @@ ${issuesDescription}`;
                 
                 // Simplify the issues to just the essential corrections needed
                 const simplifiedIssues = chapterIssues.slice(0, 3).map((issue, idx) => 
-                  `${idx + 1}. [${issue.severidad?.toUpperCase() || 'MAYOR'}] ${issue.descripcion?.substring(0, 200) || issue.problema?.substring(0, 200) || 'Error de continuidad'}`
+                  `${idx + 1}. [${issue.severidad?.toUpperCase() || 'MAYOR'}] ${issue.descripcion?.substring(0, 200) || 'Error de continuidad'}`
                 ).join('\n');
                 
                 const directInstructions = `REESCRITURA OBLIGATORIA - INSTRUCCIONES DIRECTAS:
