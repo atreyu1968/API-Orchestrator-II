@@ -1084,7 +1084,7 @@ ${decisions.join('\n')}
       }
     }
     
-    // Format persistent injuries
+    // Format persistent injuries with explicit CAN/CANNOT capabilities
     if (persistentInjuries && persistentInjuries.length > 0) {
       const activeInjuries = persistentInjuries.filter(i => 
         i.capitulo_ocurre <= currentChapter &&
@@ -1092,28 +1092,148 @@ ${decisions.join('\n')}
       );
       
       if (activeInjuries.length > 0) {
-        parts.push("\n\n=== LESIONES PERSISTENTES ACTIVAS ===");
-        parts.push("ESTAS LESIONES DEBEN REFLEJARSE EN EL COMPORTAMIENTO DEL PERSONAJE:");
+        parts.push("\n\n=== LESIONES FÍSICAS ACTIVAS - RESTRICCIONES OBLIGATORIAS ===");
         
         for (const injury of activeInjuries) {
           const isIgnored = injury.seguimiento === "ignorada" || injury.seguimiento === "olvidada";
           const icon = isIgnored ? "🚨" : "🩹";
           
-          parts.push(`\n${icon} ${injury.personaje}: ${injury.tipo_lesion} (desde Cap ${injury.capitulo_ocurre})`);
-          parts.push(`   Efecto esperado: ${injury.efecto_esperado}`);
+          parts.push(`\n${icon} ${injury.personaje.toUpperCase()}: ${injury.tipo_lesion}`);
+          parts.push(`   Desde: Capítulo ${injury.capitulo_ocurre}`);
+          
+          // Generate explicit CAN/CANNOT based on injury type
+          const capabilities = this.getInjuryCapabilities(injury.tipo_lesion, injury.parte_afectada);
+          
+          if (capabilities.cannot.length > 0) {
+            parts.push(`   ❌ NO PUEDE: ${capabilities.cannot.join(", ")}`);
+          }
+          if (capabilities.canWithDifficulty.length > 0) {
+            parts.push(`   ⚠️ CON DIFICULTAD/DOLOR: ${capabilities.canWithDifficulty.join(", ")}`);
+          }
+          if (capabilities.can.length > 0) {
+            parts.push(`   ✓ SÍ PUEDE: ${capabilities.can.join(", ")}`);
+          }
+          if (capabilities.showAs.length > 0) {
+            parts.push(`   📝 MOSTRAR COMO: ${capabilities.showAs.join(", ")}`);
+          }
+          
+          if (injury.efecto_esperado) {
+            parts.push(`   Descripción: ${injury.efecto_esperado}`);
+          }
           
           if (isIgnored) {
-            parts.push(`   ⚠️ ADVERTENCIA: Esta lesión fue IGNORADA en capítulos anteriores`);
-            parts.push(`   → OBLIGATORIO: Mostrar efectos de esta lesión en este capítulo`);
-            if (injury.opcion_correccion) {
-              parts.push(`   Sugerencia: ${injury.opcion_correccion}`);
-            }
+            parts.push(`   🚨 ADVERTENCIA: Lesión IGNORADA anteriormente - OBLIGATORIO mostrar efectos`);
           }
         }
       }
     }
     
     return parts.join("\n");
+  }
+
+  /**
+   * Analyze injury type and body part to determine explicit capabilities.
+   * Returns what the character CAN, CANNOT, and CAN WITH DIFFICULTY do.
+   */
+  private getInjuryCapabilities(injuryType: string, bodyPart?: string): {
+    cannot: string[];
+    canWithDifficulty: string[];
+    can: string[];
+    showAs: string[];
+  } {
+    const injury = (injuryType || "").toLowerCase();
+    const part = (bodyPart || "").toLowerCase();
+    
+    // Default capabilities
+    const result = {
+      cannot: [] as string[],
+      canWithDifficulty: [] as string[],
+      can: [] as string[],
+      showAs: [] as string[]
+    };
+    
+    // Voice/throat injuries
+    if (injury.includes("afonía") || injury.includes("afonia") || injury.includes("mudo") || injury.includes("voz")) {
+      result.cannot.push("hablar normalmente", "gritar", "llamar a alguien");
+      result.canWithDifficulty.push("susurrar débilmente", "emitir sonidos guturales");
+      result.can.push("comunicarse con gestos", "escribir notas", "asentir/negar", "señalar", "expresar con la mirada");
+      result.showAs.push("gestos de frustración al no poder hablar", "uso de libreta/papel", "comunicación visual intensa");
+    }
+    
+    // Arm/hand injuries
+    if (part.includes("brazo") || part.includes("mano") || part.includes("muñeca") || 
+        injury.includes("brazo") || injury.includes("mano") || injury.includes("fractura") && part.includes("superior")) {
+      const side = part.includes("derech") ? "derecha" : part.includes("izquierd") ? "izquierda" : "afectada";
+      result.cannot.push(`usar la mano ${side} con fuerza`, `cargar peso con ese brazo`, `escribir (si es dominante)`);
+      result.canWithDifficulty.push(`movimientos finos`, `agarrar objetos ligeros`);
+      result.can.push(`usar la otra mano`, `caminar`, `correr`, `hablar`);
+      result.showAs.push(`proteger el brazo herido`, `muecas de dolor al moverlo`, `usar cabestrillo/vendaje`);
+    }
+    
+    // Leg/foot injuries
+    if (part.includes("pierna") || part.includes("pie") || part.includes("tobillo") || part.includes("rodilla") ||
+        injury.includes("cojera") || injury.includes("pierna") || injury.includes("pie")) {
+      result.cannot.push("correr", "saltar", "subir escaleras rápido", "perseguir a alguien");
+      result.canWithDifficulty.push("caminar (cojeando)", "subir escaleras lentamente", "mantenerse de pie mucho tiempo");
+      result.can.push("sentarse", "hablar", "usar las manos", "conducir (si es automático)");
+      result.showAs.push("cojera visible", "apoyarse en paredes/muebles", "muecas al caminar", "necesitar ayuda para moverse");
+    }
+    
+    // Head injuries / concussion
+    if (part.includes("cabeza") || injury.includes("conmoción") || injury.includes("contusión craneal") || injury.includes("golpe en la cabeza")) {
+      result.cannot.push("concentrarse por períodos largos", "recordar detalles recientes", "movimientos bruscos");
+      result.canWithDifficulty.push("pensar claramente", "leer", "seguir conversaciones complejas");
+      result.can.push("caminar despacio", "hablar", "descansar");
+      result.showAs.push("mareos", "dolor de cabeza", "sensibilidad a la luz", "confusión momentánea", "náuseas");
+    }
+    
+    // Eye injuries / blindness
+    if (part.includes("ojo") || injury.includes("ceguera") || injury.includes("visión")) {
+      const affected = injury.includes("parcial") || part.includes("un ojo") ? "parcialmente" : "totalmente";
+      if (affected === "totalmente") {
+        result.cannot.push("ver", "leer", "reconocer rostros a distancia", "conducir");
+        result.canWithDifficulty.push("orientarse en espacios conocidos");
+        result.can.push("oír", "hablar", "tocar", "caminar con ayuda");
+        result.showAs.push("pedir descripciones", "tantear con las manos", "depender de otros para guía");
+      } else {
+        result.cannot.push("ver por el ojo afectado", "percibir profundidad correctamente");
+        result.canWithDifficulty.push("leer", "calcular distancias");
+        result.can.push("ver con el otro ojo", "caminar", "hablar");
+        result.showAs.push("girar la cabeza para compensar", "vendaje en el ojo");
+      }
+    }
+    
+    // Rib injuries
+    if (injury.includes("costilla") || part.includes("costilla") || part.includes("torso") || injury.includes("torácic")) {
+      result.cannot.push("respirar profundamente sin dolor", "reír", "toser sin dolor", "levantar peso");
+      result.canWithDifficulty.push("moverse", "agacharse", "girar el torso");
+      result.can.push("hablar (con pausas)", "caminar despacio", "usar las manos");
+      result.showAs.push("respiración superficial", "sujetarse el costado", "evitar movimientos bruscos");
+    }
+    
+    // Burns
+    if (injury.includes("quemadura") || injury.includes("quemado")) {
+      result.cannot.push("tocar la zona afectada", "exponerla al sol/calor");
+      result.canWithDifficulty.push("mover la zona quemada", "usar ropa ajustada");
+      result.can.push("hablar", "pensar", "zonas no afectadas funcionan normal");
+      result.showAs.push("vendajes", "evitar contacto", "muecas de dolor", "piel enrojecida/ampollas visibles");
+    }
+    
+    // Psychological trauma / shock
+    if (injury.includes("trauma") || injury.includes("shock") || injury.includes("pánico") || injury.includes("estrés post")) {
+      result.cannot.push("mantener la calma en situaciones similares al trauma", "dormir bien");
+      result.canWithDifficulty.push("concentrarse", "tomar decisiones bajo presión", "confiar en desconocidos");
+      result.can.push("funciones físicas normales", "hablar", "moverse");
+      result.showAs.push("flashbacks", "sobresaltos", "evitar ciertos lugares/situaciones", "insomnio", "irritabilidad");
+    }
+    
+    // Generic fallback if no specific match
+    if (result.cannot.length === 0 && result.canWithDifficulty.length === 0) {
+      result.canWithDifficulty.push("actividades que involucren la zona afectada");
+      result.showAs.push("signos visibles de malestar", "proteger la zona herida");
+    }
+    
+    return result;
   }
 
   /**
