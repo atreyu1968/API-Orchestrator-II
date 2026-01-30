@@ -588,8 +588,9 @@ export class DatabaseStorage implements IStorage {
         .orderBy(desc(activityLogs.createdAt))
         .limit(limit);
     }
+    // Only return logs for this specific project - do NOT include global (null projectId) logs
     return db.select().from(activityLogs)
-      .where(or(eq(activityLogs.projectId, projectId), isNull(activityLogs.projectId)))
+      .where(eq(activityLogs.projectId, projectId))
       .orderBy(desc(activityLogs.createdAt))
       .limit(limit);
   }
