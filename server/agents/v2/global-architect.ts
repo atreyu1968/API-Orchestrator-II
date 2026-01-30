@@ -176,37 +176,93 @@ export class GlobalArchitectAgent extends BaseAgent {
       return response;
     }
 
-    // Parse JSON response
+    // Parse JSON response with multiple recovery strategies
+    let parsed: GlobalArchitectOutput | null = null;
+    let parseError: string | null = null;
+    const content = response.content || "";
+    
     try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+      // Strategy 1: Match JSON object containing expected keys
+      const jsonMatch = content.match(/\{[\s\S]*"outline"[\s\S]*\}/);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as GlobalArchitectOutput;
-        
-        // Validate chapter count - count only regular chapters (1-N, excluding 0, 998, 999)
-        const regularChapters = parsed.outline?.filter(ch => 
-          ch.chapter_num > 0 && ch.chapter_num < 998
-        ) || [];
-        const expectedChapters = input.chapterCount;
-        
-        if (regularChapters.length !== expectedChapters) {
-          console.error(`[GlobalArchitect] CHAPTER COUNT MISMATCH: Expected ${expectedChapters} regular chapters, got ${regularChapters.length}`);
-          console.error(`[GlobalArchitect] Outline chapter_nums: ${parsed.outline?.map(ch => ch.chapter_num).join(', ')}`);
-          
-          // Return error to trigger retry or manual intervention
-          return {
-            ...response,
-            error: `El outline generado tiene ${regularChapters.length} capítulos regulares pero se solicitaron ${expectedChapters}. Por favor, regenere el proyecto.`,
-            parsed: undefined
-          };
+        try {
+          parsed = JSON.parse(jsonMatch[0]) as GlobalArchitectOutput;
+        } catch (e) {
+          // Strategy 2: Find first { and last } for malformed JSON
+          const firstBrace = content.indexOf('{');
+          const lastBrace = content.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace > firstBrace) {
+            try {
+              parsed = JSON.parse(content.substring(firstBrace, lastBrace + 1)) as GlobalArchitectOutput;
+            } catch (e2) {
+              parseError = `JSON malformado: ${e2}`;
+            }
+          }
         }
-        
-        console.log(`[GlobalArchitect] Successfully parsed and validated: ${regularChapters.length} regular chapters, ${parsed.plot_threads?.length || 0} threads`);
-        return { ...response, parsed };
+      } else {
+        // Strategy 3: Try parsing the entire content
+        try {
+          const trimmed = content.trim();
+          if (trimmed.startsWith('{')) {
+            parsed = JSON.parse(trimmed) as GlobalArchitectOutput;
+          }
+        } catch (e) {
+          parseError = "No se encontró estructura JSON válida en la respuesta";
+        }
       }
     } catch (e) {
-      console.error("[GlobalArchitect] Failed to parse JSON response:", e);
+      parseError = `Error de parsing: ${e}`;
     }
-
-    return response;
+    
+    // Validate parsed result
+    if (!parsed) {
+      console.error("[GlobalArchitect] Failed to parse JSON response:", parseError);
+      console.error("[GlobalArchitect] Raw content preview:", content.substring(0, 500));
+      return {
+        ...response,
+        error: `Error al parsear respuesta del Global Architect: ${parseError}. La IA no devolvió JSON válido.`,
+        parsed: undefined
+      };
+    }
+    
+    // Validate required fields
+    if (!parsed.outline || !Array.isArray(parsed.outline)) {
+      console.error("[GlobalArchitect] Missing or invalid outline in response");
+      return {
+        ...response,
+        error: "La respuesta no contiene un outline válido. Por favor, regenere el proyecto.",
+        parsed: undefined
+      };
+    }
+    
+    if (!parsed.world_bible) {
+      console.error("[GlobalArchitect] Missing world_bible in response");
+      return {
+        ...response,
+        error: "La respuesta no contiene world_bible. Por favor, regenere el proyecto.",
+        parsed: undefined
+      };
+    }
+    
+    // Validate chapter count - count only regular chapters (1-N, excluding 0, 998, 999)
+    const regularChapters = parsed.outline.filter(ch => 
+      ch.chapter_num > 0 && ch.chapter_num < 998
+    );
+    const expectedChapters = input.chapterCount;
+    
+    if (regularChapters.length !== expectedChapters) {
+      console.error(`[GlobalArchitect] CHAPTER COUNT MISMATCH: Expected ${expectedChapters} regular chapters, got ${regularChapters.length}`);
+      console.error(`[GlobalArchitect] Outline chapter_nums: ${parsed.outline.map(ch => ch.chapter_num).join(', ')}`);
+      
+      // Return error to trigger retry or manual intervention
+      return {
+        ...response,
+        error: `El outline generado tiene ${regularChapters.length} capítulos regulares pero se solicitaron ${expectedChapters}. Por favor, regenere el proyecto.`,
+        parsed: undefined
+      };
+    }
+    
+    console.log(`[GlobalArchitect] Successfully parsed and validated: ${regularChapters.length} regular chapters, ${parsed.plot_threads?.length || 0} threads`);
+    return { ...response, parsed };
   }
 }
