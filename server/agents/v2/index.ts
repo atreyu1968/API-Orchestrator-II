@@ -7,5 +7,7 @@ export { SmartEditorAgent, type SmartEditorInput, type SmartEditorOutput, type S
 export { SummarizerAgent, type SummarizerInput } from './summarizer';
 export { NarrativeDirectorAgent, type NarrativeDirectorInput, type NarrativeDirectorOutput, type PlotThread, type ThreadUpdate } from './narrative-director';
 
+export { SeriesWorldBibleExtractor, type ExtractedWorldBibleData } from './series-world-bible-extractor';
+
 // Re-export prompts
 export { PROMPTS_V2, AGENT_MODELS_V2 } from '../agent-prompts-v2';
