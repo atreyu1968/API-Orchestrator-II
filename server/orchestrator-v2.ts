@@ -232,6 +232,9 @@ interface QAIssue {
   capitulos?: number[];
   descripcion: string;
   correccion?: string;
+  contexto?: string; // Text fragment showing the exact location of the problem
+  instrucciones?: string; // Detailed instructions for correction (from FinalReviewer)
+  categoria?: string;
 }
 
 interface OrchestratorV2Callbacks {
@@ -3241,6 +3244,7 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
                     capitulo: error.capitulo,
                     descripcion: error.descripcion,
                     correccion: error.correccion,
+                    contexto: error.contexto, // Include the exact text fragment where the error is located
                   });
                 }
               }
@@ -3513,10 +3517,16 @@ Si NO hay lesiones significativas, responde: {"injuries": []}`;
               });
               console.log(`[OrchestratorV2] Pre-review Chapter ${chapNum}: ${chapterQaIssues.length} issues, hasCriticalOrMajor=${hasCriticalOrMajor}, severities=[${chapterQaIssues.map(i => i.severidad).join(', ')}]`);
               
-              // Build unified correction prompt with FULL CONTEXT
-              const issuesDescription = chapterQaIssues.map(i => 
-                `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.source}: ${i.descripcion}\n  Corrección: ${i.correccion || 'Corregir según descripción'}`
-              ).join("\n");
+              // Build unified correction prompt with FULL CONTEXT including exact text locations
+              const issuesDescription = chapterQaIssues.map(i => {
+                let issue = `- [${i.severidad?.toUpperCase() || 'MAYOR'}] ${i.source}: ${i.descripcion}`;
+                // Include the exact text fragment where the error is located (critical for SmartEditor to find the problem)
+                if (i.contexto) {
+                  issue += `\n  📍 TEXTO PROBLEMÁTICO: "${i.contexto}"`;
+                }
+                issue += `\n  ✏️ Corrección: ${i.correccion || i.instrucciones || 'Corregir según descripción'}`;
+                return issue;
+              }).join("\n\n");
               
               // Build comprehensive context for rewrites FROM WORLD BIBLE
               const chapterContext = {
