@@ -5,6 +5,7 @@
 import { BaseAgent, AgentResponse } from "../base-agent";
 import { PROMPTS_V2 } from "../agent-prompts-v2";
 import { ScenePlan } from "./chapter-architect";
+import { vocabularyTracker } from "./vocabulary-tracker";
 
 export interface GhostwriterV2Input {
   scenePlan: ScenePlan;
@@ -13,6 +14,8 @@ export interface GhostwriterV2Input {
   worldBible: any;
   guiaEstilo: string;
   consistencyConstraints?: string;
+  previousChaptersText?: string;
+  currentChapterText?: string;
 }
 
 const SYSTEM_PROMPT = `
@@ -57,9 +60,22 @@ export class GhostwriterV2Agent extends BaseAgent {
       input.guiaEstilo
     );
 
+    // LitAgents 2.2: Inject consistency constraints
     if (input.consistencyConstraints) {
       prompt = `${input.consistencyConstraints}\n\n---\n\n${prompt}`;
       console.log(`[GhostwriterV2] Injected consistency constraints (${input.consistencyConstraints.length} chars)`);
+    }
+
+    // LitAgents 2.2: Generate anti-repetition vocabulary guidance
+    if (input.previousChaptersText || input.currentChapterText) {
+      const antiRepetitionPrompt = vocabularyTracker.generateAntiRepetitionPrompt(
+        input.previousChaptersText || '',
+        input.currentChapterText || ''
+      );
+      if (antiRepetitionPrompt) {
+        prompt = `${antiRepetitionPrompt}\n\n${prompt}`;
+        console.log(`[GhostwriterV2] Injected anti-repetition vocabulary guidance`);
+      }
     }
 
     const response = await this.generateContent(prompt, undefined, { temperature: 1.1 });

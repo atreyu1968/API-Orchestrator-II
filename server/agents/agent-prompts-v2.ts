@@ -477,10 +477,56 @@ export const PROMPTS_V2 = {
     ║    - Conmoción: mareos, visión borrosa, confusión               ║
     ║    - Pérdida de sangre: debilidad, palidez, fatiga              ║
     ║    - Quemaduras: piel tirante, dolor al moverse                 ║
-    ║    → Al describir acciones, INCLUIR limitaciones si hay lesión  ║
-    ║    → Ejemplo: "Se apoyó en la pared para avanzar, la pierna     ║
+    ║    -> Al describir acciones, INCLUIR limitaciones si hay lesion  ║
+    ║    -> Ejemplo: "Se apoyo en la pared para avanzar, la pierna    ║
     ║      herida palpitando con cada paso."                          ║
-    ╚══════════════════════════════════════════════════════════════════╝
+    +------------------------------------------------------------------+
+    
+    +------------------------------------------------------------------+
+    | HUMANIZACION DEL LENGUAJE - ANTI-REPETICION SEMANTICA            |
+    +------------------------------------------------------------------+
+    |                                                                  |
+    | EVITAR REPETICIONES:                                             |
+    |    - NO repetir la misma palabra en la misma oracion             |
+    |    - NO usar sinonimos obvios en oraciones consecutivas          |
+    |      (dijo/exclamo/murmuro en 3 lineas seguidas)                 |
+    |    - NO abusar de estructuras: "Sujeto + verbo + complemento"    |
+    |    - VARIAR longitud de oraciones: cortas + largas               |
+    |    - EVITAR inicio repetitivo de parrafos (El, La, Un, Una...)   |
+    |                                                                  |
+    | EXPRESIONES PROHIBIDAS (cliches de IA):                          |
+    |    - "un torbellino de emociones"                                |
+    |    - "el peso de [algo] sobre sus hombros"                       |
+    |    - "el silencio era ensordecedor"                              |
+    |    - "una mezcla de [emocion] y [emocion]"                       |
+    |    - "sin previo aviso"                                          |
+    |    - "en cuestion de segundos"                                   |
+    |    - "como si el tiempo se hubiera detenido"                     |
+    |    - "un escalofrio recorrio su espalda"                         |
+    |    - "el corazon le latia con fuerza"                            |
+    |    - "sus ojos se encontraron"                                   |
+    |    - "trago saliva"                                              |
+    |    - "contuvo la respiracion"                                    |
+    |    - "no podia creer lo que estaba viendo"                       |
+    |    - "algo dentro de el/ella"                                    |
+    |    - "en lo mas profundo de su ser"                              |
+    |    -> USA descripciones originales y especificas                 |
+    |                                                                  |
+    | HUMANIZACION - ESCRIBE COMO UN HUMANO:                           |
+    |    - Imperfecciones controladas: pensamientos incompletos        |
+    |    - Ritmo natural: pausas, dudas, interrupciones                |
+    |    - Sensorialidad concreta: olores, texturas, sonidos ESPECIFICOS|
+    |    - Comparaciones frescas, no manidas                           |
+    |    - Dialogo que suena a conversacion real, no a libreto         |
+    |    - Variacion en verbos de dialogo: dijo, pero tambien silencio,|
+    |      pausa, gesto, sin verbo (solo accion + dialogo)             |
+    |                                                                  |
+    | ANTI-MONOTONIA:                                                  |
+    |    - Alterna descripcion + accion + dialogo + reflexion          |
+    |    - Evita bloques largos de un solo tipo                        |
+    |    - Usa fragmentos cuando la tension lo requiera                |
+    |    - "Disparo. Silencio. Luego, el grito."                       |
+    +------------------------------------------------------------------+
     
     SALIDA: Solo el texto de la narrativa. Sin comentarios, sin marcadores.
   `,

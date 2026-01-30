@@ -1726,6 +1726,28 @@ ${decisions.join('\n')}
     }
   }
 
+  // LitAgents 2.2: Get recent chapters text for vocabulary tracking
+  private async getRecentChaptersText(projectId: number, currentChapter: number, maxChapters: number = 2): Promise<string> {
+    try {
+      const chapters = await storage.getChaptersByProject(projectId);
+      if (!chapters || chapters.length === 0) return "";
+
+      // Get last N chapters before current
+      const recentChapters = chapters
+        .filter(c => c.chapterNumber < currentChapter && c.content)
+        .sort((a, b) => b.chapterNumber - a.chapterNumber)
+        .slice(0, maxChapters);
+
+      // Combine text (limit to ~5000 chars per chapter for efficiency)
+      return recentChapters
+        .map(c => (c.content || '').slice(0, 5000))
+        .join('\n\n');
+    } catch (err) {
+      console.error(`[OrchestratorV2] Failed to get recent chapters text:`, err);
+      return "";
+    }
+  }
+
   private async validateAndUpdateConsistency(
     projectId: number,
     chapterNumber: number,
@@ -2521,6 +2543,12 @@ ${decisions.join('\n')}
         let fullChapterText = "";
         let lastContext = "";
 
+        // LitAgents 2.2: Get recent chapters text for vocabulary anti-repetition
+        const previousChaptersText = await this.getRecentChaptersText(project.id, chapterNumber, 2);
+        if (previousChaptersText) {
+          console.log(`[OrchestratorV2] Loaded ${previousChaptersText.length} chars of recent text for vocabulary tracking`);
+        }
+
         for (const scene of sceneBreakdown.scenes) {
           if (await this.shouldStopProcessing(project.id)) {
             console.log(`[OrchestratorV2] Project ${project.id} was cancelled during scene writing`);
@@ -2535,7 +2563,9 @@ ${decisions.join('\n')}
             rollingSummary,
             worldBible,
             guiaEstilo,
-            consistencyConstraints: enrichedConstraints, // Include thought context
+            consistencyConstraints: enrichedConstraints,
+            previousChaptersText, // LitAgents 2.2: For vocabulary anti-repetition
+            currentChapterText: fullChapterText, // LitAgents 2.2: Current chapter so far
           });
 
           if (sceneResult.error) {
@@ -2839,19 +2869,24 @@ ${decisions.join('\n')}
               const prevChapterSummary = chapterSummaries[chapterSummaries.length - 2] || "";
               
               // Rewrite epilogue using Ghostwriter with closure instructions
+              // LitAgents 2.2: Get text for vocabulary tracking
+              const epiloguePrevText = await this.getRecentChaptersText(project.id, 998, 2);
+              
               const rewriteResult = await this.ghostwriter.execute({
                 scenePlan: {
                   scene_num: 1,
                   characters: [],
                   setting: "Final",
                   plot_beat: closureInstructions,
-                  emotional_beat: "Cierre y resolución de todos los hilos narrativos",
-                  ending_hook: "Conclusión satisfactoria",
+                  emotional_beat: "Cierre y resolucion de todos los hilos narrativos",
+                  ending_hook: "Conclusion satisfactoria",
                 },
                 prevSceneContext: prevChapterSummary,
                 rollingSummary: rollingSummary,
                 worldBible,
                 guiaEstilo: "",
+                previousChaptersText: epiloguePrevText,
+                currentChapterText: "",
               });
               
               this.addTokenUsage(rewriteResult.tokenUsage);
@@ -3219,7 +3254,7 @@ ${decisions.join('\n')}
         rollingSummary,
         worldBible,
         guiaEstilo,
-        // Note: consistencyConstraints not available in this simplified helper
+        currentChapterText: fullChapterText,
       });
 
       if (!sceneResult.error) {
@@ -5053,6 +5088,9 @@ ${issuesDescription}`;
         let fullChapterText = "";
         let lastContext = "";
         let scenesCancelled = false;
+        
+        // LitAgents 2.2: Get recent text for vocabulary tracking
+        const extensionPrevText = await this.getRecentChaptersText(project.id, chapterNum, 2);
 
         for (const scene of chapterPlan.parsed.scenes) {
           // Check cancellation before each scene
@@ -5070,7 +5108,9 @@ ${issuesDescription}`;
             rollingSummary,
             worldBible: worldBibleData,
             guiaEstilo,
-            consistencyConstraints, // LitAgents 2.1: Inject to writing stage
+            consistencyConstraints,
+            previousChaptersText: extensionPrevText,
+            currentChapterText: fullChapterText,
           });
 
           if (!sceneResult.error) {
@@ -5280,6 +5320,9 @@ ${issuesDescription}`;
         let fullChapterText = "";
         let lastContext = "";
         let scenesCancelled = false;
+        
+        // LitAgents 2.2: Get recent text for vocabulary tracking
+        const previousChaptersText = await this.getRecentChaptersText(project.id, chapter.chapterNumber, 2);
 
         for (const scene of chapterPlan.parsed.scenes) {
           // Check cancellation before each scene
@@ -5297,7 +5340,9 @@ ${issuesDescription}`;
             rollingSummary,
             worldBible: worldBibleData,
             guiaEstilo,
-            consistencyConstraints, // LitAgents 2.1: Inject to writing stage
+            consistencyConstraints,
+            previousChaptersText,
+            currentChapterText: fullChapterText,
           });
 
           if (!sceneResult.error) {
@@ -5667,6 +5712,9 @@ ${issuesDescription}`;
         let fullChapterText = "";
         let lastContext = "";
 
+        // LitAgents 2.2: Get recent text for vocabulary tracking
+        const regenPrevText = await this.getRecentChaptersText(project.id, chapterNumber, 2);
+        
         for (const scene of sceneBreakdown.scenes) {
           this.callbacks.onAgentStatus("ghostwriter-v2", "active", 
             `Writing scene ${scene.scene_num}/${sceneBreakdown.scenes.length}...`);
@@ -5677,7 +5725,9 @@ ${issuesDescription}`;
             rollingSummary,
             worldBible: worldBible as any,
             guiaEstilo,
-            consistencyConstraints, // LitAgents 2.1: Inject to writing stage
+            consistencyConstraints,
+            previousChaptersText: regenPrevText,
+            currentChapterText: fullChapterText,
           });
 
           this.addTokenUsage(sceneResult.tokenUsage);
