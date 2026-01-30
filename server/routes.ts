@@ -2568,13 +2568,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No series guide uploaded. Upload a guide first." });
       }
 
-      const { GoogleGenAI } = await import("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: process.env.AI_INTEGRATIONS_GEMINI_API_KEY!,
-        httpOptions: { 
-          apiVersion: "",
-          baseUrl: process.env.AI_INTEGRATIONS_GEMINI_BASE_URL! 
-        },
+      const OpenAI = (await import("openai")).default;
+      const deepseek = new OpenAI({
+        apiKey: process.env.DEEPSEEK_API_KEY!,
+        baseURL: "https://api.deepseek.com",
       });
 
       const extractionPrompt = `Analiza esta guía de serie literaria y extrae:
@@ -2608,48 +2605,13 @@ ${series.seriesGuide.substring(0, 50000)}`;
       console.log(`[ExtractMilestones] Starting extraction for series ${id}`);
       console.log(`[ExtractMilestones] Series guide length: ${series.seriesGuide?.length || 0} chars`);
 
-      // Retry logic for rate limiting
-      let response;
-      let attempts = 0;
-      const maxAttempts = 5;
-      
-      while (attempts < maxAttempts) {
-        try {
-          attempts++;
-          console.log(`[ExtractMilestones] Attempt ${attempts}/${maxAttempts}`);
-          response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: [{ role: "user", parts: [{ text: extractionPrompt }] }],
-            config: { temperature: 0.3 },
-          });
-          break; // Success, exit loop
-        } catch (err: any) {
-          const isRateLimit = err?.message?.includes("RATELIMIT") || 
-                             err?.message?.includes("429") ||
-                             err?.message?.includes("Rate limit");
-          if (isRateLimit && attempts < maxAttempts) {
-            const waitTime = Math.pow(2, attempts) * 10; // 20s, 40s, 80s, 160s
-            console.log(`[ExtractMilestones] Rate limit hit (attempt ${attempts}/${maxAttempts}). Waiting ${waitTime}s...`);
-            await new Promise(resolve => setTimeout(resolve, waitTime * 1000));
-          } else {
-            throw err;
-          }
-        }
-      }
+      const response = await deepseek.chat.completions.create({
+        model: "deepseek-chat",
+        messages: [{ role: "user", content: extractionPrompt }],
+        temperature: 0.3,
+      });
 
-      if (!response) {
-        return res.status(503).json({ error: "Servicio temporalmente no disponible. Inténtalo en unos minutos." });
-      }
-
-      // Try multiple ways to extract the text from the response
-      let text = "";
-      if (typeof response.text === "string") {
-        text = response.text;
-      } else if (typeof response.text === "function") {
-        text = (response as any).text();
-      } else if ((response as any).response?.candidates?.[0]?.content?.parts?.[0]?.text) {
-        text = (response as any).response.candidates[0].content.parts[0].text;
-      }
+      const text = response.choices[0]?.message?.content || "";
       
       console.log(`[ExtractMilestones] Raw response length: ${text.length} chars`);
       console.log(`[ExtractMilestones] Response preview: ${text.substring(0, 500)}...`);
