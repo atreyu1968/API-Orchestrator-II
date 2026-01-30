@@ -396,6 +396,7 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
+      // Duplicate ALL configuration fields, but reset generation state
       const duplicated = await storage.createProject({
         title: `${project.title} (Copia)`,
         premise: project.premise,
@@ -407,6 +408,17 @@ export async function registerRoutes(
         hasAuthorNote: project.hasAuthorNote,
         pseudonymId: project.pseudonymId,
         styleGuideId: project.styleGuideId,
+        extendedGuideId: project.extendedGuideId,
+        workType: project.workType,
+        bookboxStructure: project.bookboxStructure as any,
+        seriesId: project.seriesId,
+        seriesOrder: project.seriesOrder,
+        minWordCount: project.minWordCount,
+        minWordsPerChapter: project.minWordsPerChapter,
+        maxWordsPerChapter: project.maxWordsPerChapter,
+        kindleUnlimitedOptimized: project.kindleUnlimitedOptimized,
+        architectInstructions: project.architectInstructions,
+        pipelineVersion: project.pipelineVersion,
       });
 
       for (const agentName of ["architect", "ghostwriter", "editor", "copyeditor"]) {
