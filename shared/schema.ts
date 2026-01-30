@@ -631,6 +631,20 @@ export const seriesArcVerifications = pgTable("series_arc_verifications", {
   status: text("status").notNull().default("pending"), // pending, passed, needs_attention, failed
 });
 
+export const seriesWorldBible = pgTable("series_world_bible", {
+  id: serial("id").primaryKey(),
+  seriesId: integer("series_id").notNull().references(() => series.id, { onDelete: "cascade" }),
+  characters: jsonb("characters").default([]),
+  locations: jsonb("locations").default([]),
+  lessons: jsonb("lessons").default([]),
+  worldRules: jsonb("world_rules").default([]),
+  timeline: jsonb("timeline").default([]),
+  objects: jsonb("objects").default([]),
+  secrets: jsonb("secrets").default([]),
+  lastUpdatedVolume: integer("last_updated_volume").default(0),
+  updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
 export const translations = pgTable("translations", {
   id: serial("id").primaryKey(),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "cascade" }),
@@ -680,12 +694,19 @@ export const insertSeriesArcVerificationSchema = createInsertSchema(seriesArcVer
   verificationDate: true,
 });
 
+export const insertSeriesWorldBibleSchema = createInsertSchema(seriesWorldBible).omit({
+  id: true,
+  updatedAt: true,
+});
+
 export type SeriesArcMilestone = typeof seriesArcMilestones.$inferSelect;
 export type InsertSeriesArcMilestone = z.infer<typeof insertSeriesArcMilestoneSchema>;
 export type SeriesPlotThread = typeof seriesPlotThreads.$inferSelect;
 export type InsertSeriesPlotThread = z.infer<typeof insertSeriesPlotThreadSchema>;
 export type SeriesArcVerification = typeof seriesArcVerifications.$inferSelect;
 export type InsertSeriesArcVerification = z.infer<typeof insertSeriesArcVerificationSchema>;
+export type SeriesWorldBible = typeof seriesWorldBible.$inferSelect;
+export type InsertSeriesWorldBible = z.infer<typeof insertSeriesWorldBibleSchema>;
 
 // AI Usage Events for cost tracking
 export const aiUsageEvents = pgTable("ai_usage_events", {
