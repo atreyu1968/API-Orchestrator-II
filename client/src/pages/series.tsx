@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download } from "lucide-react";
+import { Library, Plus, Trash2, User, BookOpen, Check, FileText, Loader2, Pencil, X, Upload, Target, Sparkles, ChevronDown, Link2, Download, Globe, MapPin, BookMarked, Clock, Key, Package, Eye, EyeOff } from "lucide-react";
 import { SERIES_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { ArcVerificationPanel } from "@/components/arc-verification-panel";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -70,6 +70,302 @@ interface SeriesWithDetails extends Series {
   importedManuscripts?: ImportedManuscript[];
   volumes?: SeriesVolume[];
   completedVolumes: number;
+}
+
+interface SeriesWorldBible {
+  id: number;
+  seriesId: number;
+  characters: Array<{
+    name: string;
+    role?: string;
+    current_status?: string;
+    arc_summary?: string;
+    relationships?: string[];
+    last_volume_appearance?: number;
+  }>;
+  locations: Array<{
+    name: string;
+    significance?: string;
+    current_state?: string;
+    key_events?: string[];
+  }>;
+  lessons: Array<{
+    theme?: string;
+    title?: string;
+    volume_learned?: number;
+    description?: string;
+  }>;
+  worldRules: Array<{
+    rule_name?: string;
+    name?: string;
+    description?: string;
+  }>;
+  timelineEvents: Array<{
+    volume: number;
+    event: string;
+    consequences?: string;
+  }>;
+  objects: Array<{
+    name: string;
+    description?: string;
+    current_owner?: string;
+    current_status?: string;
+  }>;
+  secrets: Array<{
+    secret: string;
+    known_by?: string[];
+    resolved?: boolean;
+    resolution?: string;
+  }>;
+}
+
+function SeriesWorldBiblePanel({ seriesId }: { seriesId: number }) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  const { data: worldBible, isLoading } = useQuery<SeriesWorldBible>({
+    queryKey: ["/api/series", seriesId, "world-bible"],
+    queryFn: async () => {
+      const response = await fetch(`/api/series/${seriesId}/world-bible`);
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        throw new Error("Failed to fetch series world bible");
+      }
+      return response.json();
+    },
+    enabled: isExpanded,
+  });
+
+  const hasContent = worldBible && (
+    (worldBible.characters?.length || 0) > 0 ||
+    (worldBible.locations?.length || 0) > 0 ||
+    (worldBible.lessons?.length || 0) > 0 ||
+    (worldBible.worldRules?.length || 0) > 0 ||
+    (worldBible.timelineEvents?.length || 0) > 0 ||
+    (worldBible.objects?.length || 0) > 0 ||
+    (worldBible.secrets?.length || 0) > 0
+  );
+
+  return (
+    <div className="space-y-3">
+      <Button
+        variant="ghost"
+        size="sm"
+        className="w-full justify-between"
+        onClick={() => setIsExpanded(!isExpanded)}
+        data-testid={`button-toggle-world-bible-${seriesId}`}
+      >
+        <div className="flex items-center gap-2">
+          <Globe className="h-4 w-4" />
+          <span>Biblia del Mundo de la Serie</span>
+        </div>
+        <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+      </Button>
+
+      {isExpanded && (
+        <div className="pl-6 space-y-4">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-muted-foreground text-sm py-4">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span>Cargando biblia del mundo...</span>
+            </div>
+          ) : !hasContent ? (
+            <div className="text-sm text-muted-foreground/60 py-4 text-center bg-muted/30 rounded-md">
+              No hay informacion acumulada todavia.
+              <br />
+              Se extraera automaticamente al completar volumenes.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Characters */}
+              {worldBible?.characters && worldBible.characters.length > 0 && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Personajes ({worldBible.characters.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    {worldBible.characters.map((char, idx) => (
+                      <div key={idx} className="p-2 bg-background rounded border">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{char.name}</span>
+                          {char.role && <Badge variant="outline" className="text-xs">{char.role}</Badge>}
+                        </div>
+                        {char.current_status && (
+                          <p className="text-xs text-muted-foreground mt-1">Estado: {char.current_status}</p>
+                        )}
+                        {char.arc_summary && (
+                          <p className="text-xs text-muted-foreground mt-1">{char.arc_summary}</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Locations */}
+              {worldBible?.locations && worldBible.locations.length > 0 && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <MapPin className="h-4 w-4" />
+                      Locaciones ({worldBible.locations.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    {worldBible.locations.map((loc, idx) => (
+                      <div key={idx} className="p-2 bg-background rounded border">
+                        <span className="font-medium">{loc.name}</span>
+                        {loc.significance && (
+                          <p className="text-xs text-muted-foreground mt-1">{loc.significance}</p>
+                        )}
+                        {loc.current_state && (
+                          <p className="text-xs text-muted-foreground">[{loc.current_state}]</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* World Rules */}
+              {worldBible?.worldRules && worldBible.worldRules.length > 0 && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <BookMarked className="h-4 w-4" />
+                      Reglas del Mundo ({worldBible.worldRules.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    {worldBible.worldRules.map((rule, idx) => (
+                      <div key={idx} className="p-2 bg-background rounded border">
+                        <span className="font-medium">{rule.rule_name || rule.name}</span>
+                        {rule.description && (
+                          <p className="text-xs text-muted-foreground mt-1">{rule.description}</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Timeline Events */}
+              {worldBible?.timelineEvents && worldBible.timelineEvents.length > 0 && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      Linea Temporal ({worldBible.timelineEvents.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    {worldBible.timelineEvents
+                      .sort((a, b) => (a.volume || 0) - (b.volume || 0))
+                      .map((event, idx) => (
+                        <div key={idx} className="p-2 bg-background rounded border">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">Vol. {event.volume}</Badge>
+                            <span className="text-xs">{event.event}</span>
+                          </div>
+                          {event.consequences && (
+                            <p className="text-xs text-muted-foreground mt-1">→ {event.consequences}</p>
+                          )}
+                        </div>
+                      ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Objects */}
+              {worldBible?.objects && worldBible.objects.length > 0 && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Package className="h-4 w-4" />
+                      Objetos Significativos ({worldBible.objects.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    {worldBible.objects.map((obj, idx) => (
+                      <div key={idx} className="p-2 bg-background rounded border">
+                        <span className="font-medium">{obj.name}</span>
+                        {obj.description && (
+                          <p className="text-xs text-muted-foreground mt-1">{obj.description}</p>
+                        )}
+                        {obj.current_owner && (
+                          <p className="text-xs text-muted-foreground">Poseedor: {obj.current_owner}</p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Secrets */}
+              {worldBible?.secrets && worldBible.secrets.length > 0 && (
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Key className="h-4 w-4" />
+                      Secretos ({worldBible.secrets.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    {worldBible.secrets.map((secret, idx) => (
+                      <div key={idx} className="p-2 bg-background rounded border">
+                        <div className="flex items-center gap-2">
+                          {secret.resolved ? (
+                            <Eye className="h-3 w-3 text-green-500" />
+                          ) : (
+                            <EyeOff className="h-3 w-3 text-amber-500" />
+                          )}
+                          <span className="text-xs">{secret.secret}</span>
+                        </div>
+                        {secret.known_by && secret.known_by.length > 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Conocido por: {secret.known_by.join(", ")}
+                          </p>
+                        )}
+                        {secret.resolved && secret.resolution && (
+                          <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                            Resolucion: {secret.resolution}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Lessons */}
+              {worldBible?.lessons && worldBible.lessons.length > 0 && (
+                <Card className="bg-muted/30 md:col-span-2">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      Lecciones y Temas ({worldBible.lessons.length})
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm">
+                    <div className="flex flex-wrap gap-2">
+                      {worldBible.lessons.map((lesson, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-xs">
+                          {lesson.theme || lesson.title}
+                          {lesson.volume_learned && ` (Vol. ${lesson.volume_learned})`}
+                        </Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function SeriesPage() {
@@ -954,6 +1250,12 @@ export default function SeriesPage() {
                     seriesTitle={s.title}
                     totalVolumes={s.totalPlannedBooks || 0}
                   />
+                </div>
+
+                <Separator />
+
+                <div>
+                  <SeriesWorldBiblePanel seriesId={s.id} />
                 </div>
                 </div>
               </AccordionContent>

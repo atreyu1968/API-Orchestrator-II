@@ -6,7 +6,7 @@ import {
   aiUsageEvents, reeditProjects, reeditChapters, reeditAuditReports, reeditWorldBibles, reeditIssues,
   chatSessions, chatMessages, chatProposals, plotThreads,
   worldEntities, worldRulesTable, entityRelationships, consistencyViolations,
-  chapterVersions, editingQueue,
+  chapterVersions, editingQueue, seriesWorldBible,
   type Project, type InsertProject, type Chapter, type InsertChapter,
   type WorldBible, type InsertWorldBible, type ThoughtLog, type InsertThoughtLog,
   type AgentStatus, type InsertAgentStatus, type Pseudonym, type InsertPseudonym,
@@ -256,6 +256,9 @@ export interface IStorage {
   getConsistencyViolationsByProject(projectId: number): Promise<ConsistencyViolation[]>;
   getConsistencyViolationsByChapter(projectId: number, chapterNumber: number): Promise<ConsistencyViolation[]>;
   updateConsistencyViolation(id: number, data: Partial<ConsistencyViolation>): Promise<ConsistencyViolation | undefined>;
+  
+  // Series World Bible
+  getSeriesWorldBible(seriesId: number): Promise<any | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1494,6 +1497,78 @@ export class DatabaseStorage implements IStorage {
       .where(eq(editingQueue.id, id))
       .returning();
     return updated;
+  }
+
+  async getSeriesWorldBible(seriesId: number): Promise<any | null> {
+    const result = await db.select().from(seriesWorldBible).where(eq(seriesWorldBible.seriesId, seriesId)).limit(1);
+    
+    if (result.length === 0) return null;
+    
+    const data = result[0];
+    
+    const normalizeCharacter = (char: any) => ({
+      name: char.name || '',
+      role: char.role || '',
+      current_status: char.status || char.current_status || 'unknown',
+      arc_summary: char.development || char.arc_summary || '',
+      relationships: Array.isArray(char.relationships) 
+        ? char.relationships.map((r: any) => typeof r === 'string' ? r : `${r.relation} de ${r.character}`)
+        : [],
+      last_volume_appearance: char.lastSeenVolume || char.last_volume_appearance || 1,
+    });
+    
+    const normalizeLocation = (loc: any) => ({
+      name: loc.name || '',
+      significance: loc.significance || loc.description || '',
+      current_state: loc.currentState || loc.current_state || '',
+      key_events: loc.keyEvents || loc.key_events || [],
+    });
+    
+    const normalizeLesson = (lesson: any) => ({
+      theme: lesson.description || lesson.theme || lesson.title || '',
+      title: lesson.description || lesson.title || '',
+      volume_learned: lesson.volumeNumber || lesson.volume_learned || 1,
+      description: lesson.impact || lesson.description || '',
+    });
+    
+    const normalizeRule = (rule: any) => ({
+      rule_name: rule.category || rule.rule_name || rule.name || '',
+      name: rule.rule || rule.name || '',
+      description: rule.rule || rule.description || '',
+    });
+    
+    const normalizeTimelineEvent = (event: any) => ({
+      volume: event.volumeNumber || event.volume || 1,
+      event: event.description || event.event || '',
+      consequences: event.consequences || '',
+    });
+    
+    const normalizeObject = (obj: any) => ({
+      name: obj.name || '',
+      description: obj.description || '',
+      current_owner: obj.owner || obj.current_owner || '',
+      current_status: obj.status || obj.current_status || '',
+    });
+    
+    const normalizeSecret = (secret: any) => ({
+      secret: secret.description || secret.secret || '',
+      known_by: secret.knownBy || secret.known_by || [],
+      resolved: secret.isResolved || secret.resolved || false,
+      resolution: secret.resolution || '',
+    });
+    
+    return {
+      id: data.id,
+      seriesId: data.seriesId,
+      characters: ((data.characters as any[]) || []).map(normalizeCharacter),
+      locations: ((data.locations as any[]) || []).map(normalizeLocation),
+      lessons: ((data.lessons as any[]) || []).map(normalizeLesson),
+      worldRules: ((data.worldRules as any[]) || []).map(normalizeRule),
+      timelineEvents: ((data.timeline as any[]) || []).map(normalizeTimelineEvent),
+      objects: ((data.objects as any[]) || []).map(normalizeObject),
+      secrets: ((data.secrets as any[]) || []).map(normalizeSecret),
+      lastUpdatedVolume: data.lastUpdatedVolume,
+    };
   }
 }
 

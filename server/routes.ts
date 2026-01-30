@@ -2678,13 +2678,11 @@ ${series.seriesGuide.substring(0, 50000)}`;
 
   // ===== SERIES WORLD BIBLE ENDPOINTS =====
   
-  // Get series world bible (accumulated data from all volumes)
+  // Get series world bible (accumulated data from all volumes) with normalized field names
   app.get("/api/series/:id/world-bible", async (req: Request, res: Response) => {
     try {
       const seriesId = parseInt(req.params.id);
-      const { SeriesWorldBibleExtractor } = await import("./agents/v2/series-world-bible-extractor");
-      const extractor = new SeriesWorldBibleExtractor();
-      const worldBible = await extractor.getSeriesWorldBible(seriesId);
+      const worldBible = await storage.getSeriesWorldBible(seriesId);
       
       if (!worldBible) {
         return res.json({
@@ -2692,7 +2690,7 @@ ${series.seriesGuide.substring(0, 50000)}`;
           locations: [],
           lessons: [],
           worldRules: [],
-          timeline: [],
+          timelineEvents: [],
           objects: [],
           secrets: [],
         });
