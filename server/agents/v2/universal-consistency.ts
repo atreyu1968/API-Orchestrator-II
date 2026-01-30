@@ -102,38 +102,38 @@ export class UniversalConsistencyAgent {
           );
           
           let result = `\n══════════════════════════════════════\n`;
-          result += `📋 FICHA: ${e.name.toUpperCase()} (${e.status})`;
+          result += `[FICHA] ${e.name.toUpperCase()} (${e.status})`;
           result += `\n══════════════════════════════════════`;
           
           // Truly immutable attributes (cannot change)
           if (trulyImmutable.length > 0) {
-            result += `\n🔒 INMUTABLE (no puede cambiar):`;
+            result += `\n[INMUTABLE] (no puede cambiar):`;
             trulyImmutable.forEach(([k, v]) => {
               const cleanKey = k.replace('_INMUTABLE', '').replace(/_/g, ' ');
-              result += `\n   • ${cleanKey}: ${v}`;
+              result += `\n   - ${cleanKey}: ${v}`;
             });
           }
           
           // Mutable with explanation
           if (mutableWithExplanation.length > 0) {
-            result += `\n📝 ACTUAL (puede cambiar SI SE EXPLICA):`;
+            result += `\n[ACTUAL] (puede cambiar SI SE EXPLICA):`;
             mutableWithExplanation.forEach(([k, v]) => {
               const cleanKey = k.replace('_INMUTABLE', '').replace(/_/g, ' ');
-              result += `\n   • ${cleanKey}: ${v}`;
+              result += `\n   - ${cleanKey}: ${v}`;
             });
           }
           
           // No description yet
           if (trulyImmutable.length === 0 && mutableWithExplanation.length === 0) {
-            result += `\n📐 DESCRIPCIÓN FÍSICA: (No establecida - puedes describirla, será registrada)`;
+            result += `\n[DESCRIPCION FISICA]: (No establecida - puedes describirla, sera registrada)`;
           }
           
           // Other attributes (role, personality, etc.)
           if (otherAttrs.length > 0) {
-            result += `\n\n👤 PERFIL:`;
+            result += `\n\n[PERFIL]:`;
             otherAttrs.forEach(([k, v]) => {
               if (typeof v === 'string' && v.length < 200) {
-                result += `\n   • ${k}: ${v}`;
+                result += `\n   - ${k}: ${v}`;
               }
             });
           }
@@ -147,7 +147,7 @@ export class UniversalConsistencyAgent {
       ? entities.filter(e => e.type === 'LOCATION').map(e => {
           const allAttrs = Object.entries(e.attributes || {});
           
-          let result = `\n🏛️ ${e.name.toUpperCase()}`;
+          let result = `\n[LUGAR] ${e.name.toUpperCase()}`;
           result += `\n   Estado: ${e.status}`;
           
           // Location characteristics
@@ -158,14 +158,14 @@ export class UniversalConsistencyAgent {
           if (locAttrs.length > 0) {
             locAttrs.forEach(([k, v]) => {
               const cleanKey = k.replace('_INMUTABLE', '').replace(/_/g, ' ');
-              result += `\n   • ${cleanKey}: ${v}`;
+              result += `\n   - ${cleanKey}: ${v}`;
             });
           }
           
           // Current occupants
           const occupants = allAttrs.find(([k]) => k.toLowerCase().includes('ocupantes') || k.toLowerCase().includes('occupants'));
           if (occupants) {
-            result += `\n   👥 Ocupantes actuales: ${occupants[1]}`;
+            result += `\n   Ocupantes actuales: ${occupants[1]}`;
           }
           
           return result;
@@ -178,13 +178,13 @@ export class UniversalConsistencyAgent {
       const location = attrs.ubicacion_actual || attrs.current_location || attrs.location;
       const lastSeen = e.lastSeenChapter;
       if (location) {
-        return `   • ${e.name}: ${location} (desde Cap ${lastSeen || '?'})`;
+        return `   - ${e.name}: ${location} (desde Cap ${lastSeen || '?'})`;
       }
       return null;
     }).filter(Boolean);
 
     const positionBlock = characterPositions.length > 0
-      ? `\n📍 POSICIÓN ACTUAL DE PERSONAJES:\n${characterPositions.join('\n')}\n   ⚠️ Los personajes NO pueden cambiar de ubicación sin mostrar el desplazamiento`
+      ? `\n[POSICION ACTUAL DE PERSONAJES]:\n${characterPositions.join('\n')}\n   ADVERTENCIA: Los personajes NO pueden cambiar de ubicacion sin mostrar el desplazamiento`
       : '';
 
     const rulesBlock = rules.length > 0
@@ -195,33 +195,102 @@ export class UniversalConsistencyAgent {
       ? relationships.map(r => `- ${r.subject} --[${r.relationType}]--> ${r.target}`).join('\n')
       : '(Sin relaciones registradas)';
 
+    // LitAgents 2.2: Extract OBJECTS tracking
+    const objectEntities = entities.filter(e => e.type === 'OBJECT');
+    const objectsBlock = objectEntities.length > 0
+      ? objectEntities.map(obj => {
+          const attrs = obj.attributes || {};
+          const owner = attrs.propietario || attrs.owner || attrs.poseedor || 'desconocido';
+          const location = attrs.ubicacion || attrs.location || 'desconocida';
+          const desc = attrs.descripcion || attrs.description || '';
+          return `   [OBJ] ${obj.name}: en posesion de ${owner} | ubicacion: ${location}${desc ? ` | ${desc}` : ''}`;
+        }).join('\n')
+      : '';
+
+    // LitAgents 2.2: Extract EMOTIONAL STATES
+    const emotionalStates = entities.filter(e => e.type === 'CHARACTER' && e.attributes).map(e => {
+      const attrs = e.attributes as Record<string, any>;
+      const emotion = attrs.estado_emocional || attrs.emotional_state || attrs.emocion;
+      const trauma = attrs.trauma || attrs.duelo || attrs.grief;
+      if (emotion || trauma) {
+        let state = `   [EMO] ${e.name}: `;
+        if (emotion) state += `${emotion}`;
+        if (trauma) state += ` | TRAUMA: ${trauma}`;
+        return state;
+      }
+      return null;
+    }).filter(Boolean);
+    const emotionalBlock = emotionalStates.length > 0
+      ? `\n[ESTADOS EMOCIONALES ACTIVOS]:\n${emotionalStates.join('\n')}\n   ADVERTENCIA: Las emociones intensas persisten - no pueden estar felices tras una tragedia sin transicion`
+      : '';
+
+    // LitAgents 2.2: Extract SECRETS (what each character knows)
+    const secretEntities = entities.filter(e => e.type === 'SECRET');
+    const characterKnowledge = entities.filter(e => e.type === 'CHARACTER' && e.attributes).map(e => {
+      const attrs = e.attributes as Record<string, any>;
+      const knows = attrs.conoce || attrs.knows || attrs.sabe;
+      const ignora = attrs.ignora || attrs.doesnt_know || attrs.no_sabe;
+      if (knows || ignora) {
+        let knowledge = `   [INFO] ${e.name}:`;
+        if (knows) knowledge += `\n      SABE: ${knows}`;
+        if (ignora) knowledge += `\n      NO SABE: ${ignora}`;
+        return knowledge;
+      }
+      return null;
+    }).filter(Boolean);
+    const secretsBlock = (secretEntities.length > 0 || characterKnowledge.length > 0)
+      ? `\n[SECRETOS Y CONOCIMIENTO]:\n${secretEntities.map(s => `   [SECRETO] ${s.name}: ${s.attributes?.descripcion || s.attributes?.description || ''} (conocido por: ${s.attributes?.conocido_por || s.attributes?.known_by || 'nadie'})`).join('\n')}${characterKnowledge.length > 0 ? '\n' + characterKnowledge.join('\n') : ''}\n   ADVERTENCIA: Un personaje NO puede actuar sobre informacion que NO posee`
+      : '';
+
+    // LitAgents 2.2: Extract NARRATIVE PROMISES (Chekhov's gun)
+    const promises = entities.filter(e => e.type === 'NARRATIVE_PROMISE' || e.type === 'FORESHADOWING');
+    const promisesBlock = promises.length > 0
+      ? `\n[PROMESAS NARRATIVAS - Chekhov's Gun]:\n${promises.map(p => {
+          const attrs = p.attributes || {};
+          const resolved = attrs.resuelto || attrs.resolved;
+          const status = resolved ? '[OK]' : '[PENDIENTE]';
+          return `   ${status} ${p.name}: ${attrs.descripcion || attrs.description || ''} (Cap ${p.lastSeenChapter || '?'})`;
+        }).join('\n')}\n   ADVERTENCIA: Elementos mencionados deben cumplir su proposito narrativo`
+      : '';
+
+    // LitAgents 2.2: Extract AGREEMENTS and LIES
+    const agreementRelations = relationships.filter(r => 
+      ['PROMETIO', 'PROMISE', 'ACUERDO', 'AGREEMENT', 'MINTIO', 'LIED', 'JURO', 'SWORE'].some(t => r.relationType.toUpperCase().includes(t))
+    );
+    const agreementsBlock = agreementRelations.length > 0
+      ? `\n[ACUERDOS, PROMESAS Y MENTIRAS]:\n${agreementRelations.map(r => {
+          const label = r.relationType.toUpperCase().includes('MINT') || r.relationType.toUpperCase().includes('LIE') ? '[MENTIRA]' : '[ACUERDO]';
+          return `   ${label} ${r.subject} -> ${r.target}: ${r.relationType}${r.meta?.detalle ? ` (${r.meta.detalle})` : ''}`;
+        }).join('\n')}\n   ADVERTENCIA: Las promesas rotas tienen consecuencias. Las mentiras deben mantenerse consistentes.`
+      : '';
+
     const genreRules = config.critical_rules.map(r => `- ${r}`).join('\n');
 
     // NEW: Build temporal coherence block
     let temporalBlock = "";
     if (timelineInfo) {
       temporalBlock = `
-🕐 COHERENCIA TEMPORAL (OBLIGATORIA):
+[COHERENCIA TEMPORAL] (OBLIGATORIA):
 `;
       if (timelineInfo.previous_chapter) {
-        temporalBlock += `- Capítulo anterior: ${timelineInfo.previous_chapter.day}, ${timelineInfo.previous_chapter.time_of_day}`;
+        temporalBlock += `- Capitulo anterior: ${timelineInfo.previous_chapter.day}, ${timelineInfo.previous_chapter.time_of_day}`;
         if (timelineInfo.previous_chapter.location) {
           temporalBlock += ` en ${timelineInfo.previous_chapter.location}`;
         }
         temporalBlock += `\n`;
       }
       if (timelineInfo.current_chapter) {
-        temporalBlock += `- Este capítulo (${chapterNumber}): ${timelineInfo.current_chapter.day}, ${timelineInfo.current_chapter.time_of_day}`;
+        temporalBlock += `- Este capitulo (${chapterNumber}): ${timelineInfo.current_chapter.day}, ${timelineInfo.current_chapter.time_of_day}`;
         if (timelineInfo.current_chapter.location) {
           temporalBlock += ` en ${timelineInfo.current_chapter.location}`;
         }
         temporalBlock += `\n`;
       }
       if (timelineInfo.travel_times && timelineInfo.travel_times.length > 0) {
-        temporalBlock += `\n📍 TIEMPOS DE VIAJE (respetar para transiciones):\n`;
+        temporalBlock += `\n[TIEMPOS DE VIAJE] (respetar para transiciones):\n`;
         timelineInfo.travel_times.slice(0, 8).forEach(t => {
-          const times = [t.by_car && `coche: ${t.by_car}`, t.by_plane && `avión: ${t.by_plane}`, t.by_train && `tren: ${t.by_train}`].filter(Boolean).join(', ');
-          temporalBlock += `- ${t.from} → ${t.to}: ${times}\n`;
+          const times = [t.by_car && `coche: ${t.by_car}`, t.by_plane && `avion: ${t.by_plane}`, t.by_train && `tren: ${t.by_train}`].filter(Boolean).join(', ');
+          temporalBlock += `- ${t.from} -> ${t.to}: ${times}\n`;
         });
       }
     }
@@ -230,15 +299,15 @@ export class UniversalConsistencyAgent {
     let characterStateBlock = "";
     if (characterStates && characterStates.length > 0) {
       characterStateBlock = `
-🏥 ESTADO FÍSICO DE PERSONAJES AL INICIO DEL CAPÍTULO:
+[ESTADO FISICO DE PERSONAJES AL INICIO DEL CAPITULO]:
 `;
       characterStates.forEach(cs => {
         characterStateBlock += `- ${cs.character}:\n`;
-        if (cs.current_location) characterStateBlock += `    Ubicación: ${cs.current_location}\n`;
-        if (cs.physical_state) characterStateBlock += `    Estado físico: ${cs.physical_state}\n`;
+        if (cs.current_location) characterStateBlock += `    Ubicacion: ${cs.current_location}\n`;
+        if (cs.physical_state) characterStateBlock += `    Estado fisico: ${cs.physical_state}\n`;
         if (cs.active_injuries && cs.active_injuries.length > 0) {
-          characterStateBlock += `    ⚠️ LESIONES ACTIVAS: ${cs.active_injuries.join(', ')}\n`;
-          characterStateBlock += `       → Estas lesiones LIMITAN sus acciones físicas\n`;
+          characterStateBlock += `    [LESIONES ACTIVAS]: ${cs.active_injuries.join(', ')}\n`;
+          characterStateBlock += `       -> Estas lesiones LIMITAN sus acciones fisicas\n`;
         }
         if (cs.key_possessions && cs.key_possessions.length > 0) {
           characterStateBlock += `    Posesiones: ${cs.key_possessions.join(', ')}\n`;
@@ -247,39 +316,52 @@ export class UniversalConsistencyAgent {
     }
 
     return `
-⛔ SISTEMA DE CONSISTENCIA UNIVERSAL ACTIVO (${genre.toUpperCase()})
-═══════════════════════════════════════════════════════════════════
+[SISTEMA DE CONSISTENCIA UNIVERSAL ACTIVO] (${genre.toUpperCase()})
+===================================================================
 
-ESCRIBIENDO CAPÍTULO ${chapterNumber}. Debes respetar ESTRICTAMENTE la Base de Datos de Verdad.
-El lector notará cualquier contradicción. Las violaciones causarán RECHAZO AUTOMÁTICO.
+ESCRIBIENDO CAPITULO ${chapterNumber}. Debes respetar ESTRICTAMENTE la Base de Datos de Verdad.
+El lector notara cualquier contradiccion. Las violaciones causaran RECHAZO AUTOMATICO.
 
-FOCO DEL GÉNERO: ${config.focus}
+FOCO DEL GENERO: ${config.focus}
 ${temporalBlock}
 ${characterStateBlock}
-📊 FICHAS DE PERSONAJES:
+[FICHAS DE PERSONAJES]:
 ${entityBlock}
 ${positionBlock}
+${emotionalBlock}
 ${locationBlock ? `
-🏛️ LOCALIZACIONES CONOCIDAS:
+[LOCALIZACIONES CONOCIDAS]:
 ${locationBlock}
 ` : ''}
-🔗 RELACIONES ENTRE PERSONAJES:
+${objectsBlock ? `
+[OBJETOS IMPORTANTES] (Tracking de posesiones):
+${objectsBlock}
+   ADVERTENCIA: Un personaje NO puede usar un objeto que no posee
+` : ''}
+[RELACIONES ENTRE PERSONAJES]:
 ${relationshipsBlock}
+${agreementsBlock}
+${secretsBlock}
+${promisesBlock}
 
-📜 HECHOS INMUTABLES ESTABLECIDOS:
+[HECHOS INMUTABLES ESTABLECIDOS]:
 ${rulesBlock}
 
-⚠️ REGLAS CRÍTICAS DEL GÉNERO (${genre}):
+[REGLAS CRITICAS DEL GENERO] (${genre}):
 ${genreRules}
 
-═══════════════════════════════════════════════════════════════════
-REGLAS DE MOVIMIENTO Y UBICACIÓN:
-• Un personaje NO puede estar en dos lugares al mismo tiempo
-• Para cambiar de ubicación, MOSTRAR el desplazamiento (caminando, en coche, etc.)
-• Respetar tiempos de viaje realistas entre ubicaciones
-• Las descripciones de lugares deben ser CONSISTENTES en toda la novela
-• Si un lugar tiene características establecidas (color paredes, distribución), mantenerlas
-═══════════════════════════════════════════════════════════════════
+===================================================================
+REGLAS DE CONSISTENCIA NARRATIVA:
+- Un personaje NO puede estar en dos lugares al mismo tiempo
+- Para cambiar de ubicacion, MOSTRAR el desplazamiento (caminando, en coche, etc.)
+- Respetar tiempos de viaje realistas entre ubicaciones
+- Las descripciones de lugares deben ser CONSISTENTES en toda la novela
+- Si un lugar tiene caracteristicas establecidas (color paredes, distribucion), mantenerlas
+- Un personaje NO puede usar informacion que NO tiene
+- Los estados emocionales persisten - transiciones realistas
+- Las promesas y mentiras deben ser consistentes
+- Los objetos no aparecen magicamente - tracking de posesiones
+===================================================================
 `;
   }
 
@@ -323,7 +405,7 @@ CRITERIOS DE ERROR CRÍTICO (SOLO estos bloquean):
 
 1. MUERTO QUE ACTÚA: Un personaje explícitamente muerto aparece vivo y actuando
 2. BILOCACIÓN: El mismo personaje en DOS lugares FÍSICAMENTE al MISMO tiempo
-3. CAMBIO FÍSICO IMPOSIBLE: Ojos azules → verdes, pelo rubio → negro (sin explicación mágica/tinte)
+3. CAMBIO FISICO IMPOSIBLE: Ojos azules a verdes, pelo rubio a negro (sin explicacion magica/tinte)
 4. CONTRADICCIÓN DIRECTA DE TEXTO: El texto dice "A" y luego dice "no-A" sin justificación
 
 IMPORTANTE - NO SON ERRORES CRÍTICOS:
@@ -338,9 +420,37 @@ TAMBIÉN EXTRAE (siempre, incluso si el capítulo es válido):
 - Nuevos hechos importantes para futuros capítulos
 - Nuevas relaciones reveladas
 - Cambios de estado (ubicación, heridas, muerte)
-- DETALLES FÍSICOS NUEVOS: Si el capítulo menciona por primera vez el color de ojos, pelo, altura, edad, cicatrices, tatuajes, o cualquier rasgo físico de un personaje que NO estaba en la base de datos, EXTRÁELO como newFact con entityType="PHYSICAL_TRAIT"
-- LOCALIZACIONES NUEVAS: Si aparece un lugar nuevo con descripción (edificio, habitación, ciudad), extráelo como newFact con entityType="LOCATION" incluyendo: descripcion, atmosfera, caracteristicas
-- CAMBIOS DE UBICACIÓN: Si un personaje cambia de ubicación, extráelo como newFact con entityType="CHARACTER" y update: { "ubicacion_actual": "nuevo lugar" }
+
+EXTRACCIÓN DETALLADA (usar entityType correspondiente):
+
+1. DETALLES FÍSICOS: entityType="PHYSICAL_TRAIT"
+   Color de ojos, pelo, altura, edad, cicatrices, tatuajes
+
+2. LOCALIZACIONES: entityType="LOCATION"
+   Incluir: descripcion, atmosfera, caracteristicas
+
+3. CAMBIOS DE UBICACIÓN: entityType="CHARACTER"
+   update: { "ubicacion_actual": "nuevo lugar" }
+
+4. OBJETOS IMPORTANTES: entityType="OBJECT"
+   Armas, llaves, documentos, joyas, evidencias
+   update: { "propietario": "quién lo tiene", "ubicacion": "dónde está", "descripcion": "qué es" }
+
+5. ESTADOS EMOCIONALES: entityType="CHARACTER"
+   update: { "estado_emocional": "emoción actual", "trauma": "si hay duelo/trauma activo" }
+
+6. SECRETOS/INFORMACIÓN: entityType="SECRET"
+   update: { "descripcion": "el secreto", "conocido_por": "quién lo sabe" }
+   O para conocimiento de personaje: entityType="CHARACTER"
+   update: { "conoce": "qué sabe", "ignora": "qué NO sabe" }
+
+7. PROMESAS NARRATIVAS (Chekhov): entityType="NARRATIVE_PROMISE"
+   Elementos mencionados que deben resolverse
+   update: { "descripcion": "qué se promete", "resuelto": false }
+
+8. ACUERDOS/MENTIRAS: Usar newRelationships con relationType:
+   "PROMETIO_A", "MINTIO_A", "JURO_A", "ACORDO_CON"
+   meta: { "detalle": "descripción del acuerdo/mentira" }
 
 RESPONDE EN JSON:
 {
@@ -505,7 +615,7 @@ IMPORTANTE SOBRE correctionInstructions:
   formatValidationResultForRewrite(result: ValidationResult): string {
     if (result.isValid) return '';
 
-    let feedback = `⛔ RECHAZO POR INCONSISTENCIA DE CONTINUIDAD
+    let feedback = `[RECHAZO] - INCONSISTENCIA DE CONTINUIDAD
 
 ERROR CRÍTICO: ${result.criticalError}
 
