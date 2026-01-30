@@ -76,6 +76,15 @@ Preferred communication style: Simple, everyday language.
 - **Context Injection**: All Ghostwriter calls receive `previousChaptersText` and `currentChapterText` for anti-repetition guidance BEFORE writing.
 - **Truncated Chapter Protection**: System automatically detects chapters with <500 words and marks them for regeneration on resume. NEVER leaves truncated chapters.
 
+### Series World Bible Propagation (LitAgents 2.3)
+- **Purpose**: Carries forward accumulated world-building knowledge across volumes in a multi-book series.
+- **Database Schema**: New `series_world_bible` table with JSONB fields for characters, locations, lessons, worldRules, timelineEvents, objects, and secrets.
+- **SeriesWorldBibleExtractor Agent**: Uses DeepSeek to extract world-building elements from completed volumes, analyzing characters (traits, arcs, relationships), locations (significance, key events), narrative lessons, world rules, timeline events, and plot objects/secrets.
+- **Automatic Extraction**: Triggers on all project completion paths (6 scenarios) in orchestrator-v2, merging new volume data with existing series knowledge.
+- **Ghostwriter Injection**: formatSeriesWorldBible method provides contextualized world knowledge to Ghostwriter during scene writing for enhanced continuity.
+- **Data Normalization**: Storage layer normalizes field names between extractor output and consumer expectations for consistent data contracts.
+- **UI Component**: SeriesWorldBiblePanel displays accumulated data with expandable sections for all entity types.
+
 ### Re-editor (LitEditors) Development Editor
 - **Purpose**: Transforms the Re-editor into a Development Editor with forensic consistency audits and commercial viability analysis.
 - **ForensicConsistencyAuditor**: Processes manuscripts in batches, detects 7 violation types, and builds incremental entity states.
