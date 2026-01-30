@@ -70,6 +70,12 @@ Preferred communication style: Simple, everyday language.
 - **UniversalConsistencyAgent**: Extracts entities, generates constraints, validates chapters, and generates rewrite instructions for violations.
 - **Orchestrator Integration**: Initializes consistency DB, injects constraints, validates chapters, and logs violations.
 
+### LitAgents 2.2 (Anti-Repetition and Humanization)
+- **VocabularyTracker**: Analyzes recent text to detect overused words, repeated dialogue verbs, repetitive paragraph starters, and AI cliches. Normalizes Spanish accents for consistent detection.
+- **Humanization Instructions**: Ghostwriter receives 15+ prohibited AI expressions, rhythm variation rules, and anti-monotony guidelines.
+- **Context Injection**: All Ghostwriter calls receive `previousChaptersText` and `currentChapterText` for anti-repetition guidance BEFORE writing.
+- **Truncated Chapter Protection**: System automatically detects chapters with <500 words and marks them for regeneration on resume. NEVER leaves truncated chapters.
+
 ### Re-editor (LitEditors) Development Editor
 - **Purpose**: Transforms the Re-editor into a Development Editor with forensic consistency audits and commercial viability analysis.
 - **ForensicConsistencyAuditor**: Processes manuscripts in batches, detects 7 violation types, and builds incremental entity states.

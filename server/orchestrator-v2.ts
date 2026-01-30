@@ -2404,9 +2404,32 @@ ${decisions.join('\n')}
 
       // Check for existing chapters to resume from
       const existingChapters = await storage.getChaptersByProject(project.id);
+      
+      // LitAgents 2.2: Detect and handle truncated chapters (NEVER leave truncated chapters)
+      const MIN_WORDS_FOR_COMPLETE_CHAPTER = 500; // Chapters with less than this are considered truncated
+      const truncatedChapters = existingChapters.filter(c => {
+        if (c.status !== "completed" && c.status !== "approved") return false;
+        const wordCount = c.content ? c.content.split(/\s+/).length : 0;
+        return wordCount < MIN_WORDS_FOR_COMPLETE_CHAPTER;
+      });
+      
+      if (truncatedChapters.length > 0) {
+        console.log(`[OrchestratorV2] [CRITICAL] Found ${truncatedChapters.length} truncated chapters - will regenerate them`);
+        this.callbacks.onAgentStatus("orchestrator", "active", `Detectados ${truncatedChapters.length} capitulos truncados - regenerando...`);
+        
+        // Mark truncated chapters as "draft" so they get regenerated
+        for (const chapter of truncatedChapters) {
+          await storage.updateChapter(chapter.id, { status: "draft" as any });
+          console.log(`[OrchestratorV2] Marked Chapter ${chapter.chapterNumber} as draft (was truncated: ${chapter.content?.split(/\s+/).length || 0} words)`);
+        }
+      }
+      
+      // Refresh chapters after marking truncated ones
+      const refreshedChapters = await storage.getChaptersByProject(project.id);
       const completedChapterNumbers = new Set(
-        existingChapters
-          .filter(c => c.status === "completed" || c.status === "approved")
+        refreshedChapters
+          .filter(c => (c.status === "completed" || c.status === "approved") && 
+                       (c.content?.split(/\s+/).length || 0) >= MIN_WORDS_FOR_COMPLETE_CHAPTER)
           .map(c => c.chapterNumber)
       );
       
@@ -2418,8 +2441,10 @@ ${decisions.join('\n')}
           await this.syncChapterHeaders(project.id, outline);
         }
         
-        // Load existing summaries for context
-        for (const chapter of existingChapters.sort((a, b) => a.chapterNumber - b.chapterNumber)) {
+        // Load existing summaries for context (only from truly complete chapters)
+        for (const chapter of refreshedChapters
+          .filter(c => completedChapterNumbers.has(c.chapterNumber))
+          .sort((a, b) => a.chapterNumber - b.chapterNumber)) {
           if (chapter.summary) {
             chapterSummaries.push(chapter.summary);
             rollingSummary = chapter.summary;
