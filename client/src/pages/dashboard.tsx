@@ -248,6 +248,7 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    setLogs([]); // Limpiar logs al cambiar de proyecto para evitar que se mezclen
     fetchLogs();
   }, [currentProject?.id]);
 
