@@ -78,34 +78,50 @@ export class UniversalConsistencyAgent {
   ): string {
     const config = getGenreConfig(genre);
 
-    // LitAgents 2.1: Separate immutable and mutable attributes for clarity
+    // LitAgents 2.1+: Build detailed character profiles with physical descriptions
     const entityBlock = entities.length > 0
-      ? entities.map(e => {
+      ? entities.filter(e => e.type === 'CHARACTER').map(e => {
           const allAttrs = Object.entries(e.attributes || {});
-          // Separate immutable (physical) attributes from other attributes
-          const immutableAttrs = allAttrs.filter(([k]) => k.endsWith('_INMUTABLE'));
-          const otherAttrs = allAttrs.filter(([k]) => !k.endsWith('_INMUTABLE'));
+          // Separate physical attributes (immutable and discovered)
+          const physicalAttrs = allAttrs.filter(([k]) => 
+            k.endsWith('_INMUTABLE') || 
+            ['ojos', 'eyes', 'pelo', 'hair', 'cabello', 'altura', 'height', 'edad', 'age', 'piel', 'skin', 'complexion', 'cicatriz', 'scar', 'tatuaje', 'tattoo', 'barba', 'beard', 'build', 'peso', 'weight'].some(phys => k.toLowerCase().includes(phys))
+          );
+          const otherAttrs = allAttrs.filter(([k]) => 
+            !k.endsWith('_INMUTABLE') && 
+            !['ojos', 'eyes', 'pelo', 'hair', 'cabello', 'altura', 'height', 'edad', 'age', 'piel', 'skin', 'complexion', 'cicatriz', 'scar', 'tatuaje', 'tattoo', 'barba', 'beard', 'build', 'peso', 'weight'].some(phys => k.toLowerCase().includes(phys))
+          );
           
-          let result = `- [${e.type}] ${e.name} (${e.status}):`;
+          let result = `\n══════════════════════════════════════\n`;
+          result += `📋 FICHA: ${e.name.toUpperCase()} (${e.status})`;
+          result += `\n══════════════════════════════════════`;
           
-          // Show immutable attributes prominently with warning
-          if (immutableAttrs.length > 0) {
-            result += `\n    ⚠️ ATRIBUTOS FÍSICOS INMUTABLES (NUNCA CAMBIAR):`;
-            immutableAttrs.forEach(([k, v]) => {
-              const cleanKey = k.replace('_INMUTABLE', '');
-              result += `\n      • ${cleanKey}: ${JSON.stringify(v)}`;
+          // Physical profile section
+          if (physicalAttrs.length > 0) {
+            result += `\n📐 DESCRIPCIÓN FÍSICA (OBLIGATORIO RESPETAR):`;
+            physicalAttrs.forEach(([k, v]) => {
+              const cleanKey = k.replace('_INMUTABLE', '').replace(/_/g, ' ');
+              const isImmutable = k.endsWith('_INMUTABLE');
+              const icon = isImmutable ? '🔒' : '📝';
+              result += `\n   ${icon} ${cleanKey}: ${v}`;
             });
+          } else {
+            result += `\n📐 DESCRIPCIÓN FÍSICA: (No establecida aún - puedes describirla, será registrada)`;
           }
           
-          // Show other attributes
+          // Other attributes (role, personality, etc.)
           if (otherAttrs.length > 0) {
-            const attrs = otherAttrs.map(([k, v]) => `${k}=${JSON.stringify(v)}`).join(', ');
-            result += `\n    Otros: ${attrs}`;
+            result += `\n\n👤 PERFIL:`;
+            otherAttrs.forEach(([k, v]) => {
+              if (typeof v === 'string' && v.length < 200) {
+                result += `\n   • ${k}: ${v}`;
+              }
+            });
           }
           
           return result;
         }).join('\n')
-      : '(Sin entidades registradas aún)';
+      : '(Sin personajes registrados aún - las descripciones físicas serán extraídas automáticamente)';
 
     const rulesBlock = rules.length > 0
       ? rules.map(r => `- [${r.category || 'GENERAL'}] ${r.ruleDescription}`).join('\n')
@@ -257,6 +273,7 @@ TAMBIÉN EXTRAE (siempre, incluso si el capítulo es válido):
 - Nuevos hechos importantes para futuros capítulos
 - Nuevas relaciones reveladas
 - Cambios de estado (ubicación, heridas, muerte)
+- DETALLES FÍSICOS NUEVOS: Si el capítulo menciona por primera vez el color de ojos, pelo, altura, edad, cicatrices, tatuajes, o cualquier rasgo físico de un personaje que NO estaba en la base de datos, EXTRÁELO como newFact con entityType="PHYSICAL_TRAIT"
 
 RESPONDE EN JSON:
 {

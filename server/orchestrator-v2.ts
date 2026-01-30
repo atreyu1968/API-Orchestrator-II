@@ -1772,8 +1772,33 @@ ${decisions.join('\n')}
     if (result.newFacts && result.newFacts.length > 0) {
       for (const fact of result.newFacts) {
         const existing = await storage.getWorldEntityByName(projectId, fact.entityName);
+        
+        // LitAgents 2.1+: Mark physical traits as immutable when first discovered
+        let processedUpdate = { ...fact.update };
+        if (fact.entityType === 'PHYSICAL_TRAIT' || fact.entityType === 'CHARACTER') {
+          const physicalKeys = ['ojos', 'eyes', 'pelo', 'hair', 'cabello', 'altura', 'height', 'edad', 'age', 'piel', 'skin', 'cicatriz', 'scar', 'tatuaje', 'tattoo', 'barba', 'beard', 'complexion', 'build'];
+          for (const [key, value] of Object.entries(fact.update)) {
+            const isPhysical = physicalKeys.some(pk => key.toLowerCase().includes(pk));
+            if (isPhysical && !key.endsWith('_INMUTABLE')) {
+              // Mark as immutable and create a rule for it
+              processedUpdate[`${key}_INMUTABLE`] = value;
+              delete processedUpdate[key];
+              
+              // Create immutable rule for this physical trait
+              await storage.createWorldRule({
+                projectId,
+                ruleDescription: `${fact.entityName} tiene ${key} = "${value}" (DESCUBIERTO en Cap ${chapterNumber} - INMUTABLE)`,
+                category: 'PHYSICAL_ATTRIBUTE',
+                isActive: true,
+                sourceChapter: chapterNumber,
+              });
+              console.log(`[OrchestratorV2] Registered physical trait: ${fact.entityName}.${key} = ${value}`);
+            }
+          }
+        }
+        
         if (existing) {
-          const newAttrs = { ...((existing.attributes as any) || {}), ...fact.update };
+          const newAttrs = { ...((existing.attributes as any) || {}), ...processedUpdate };
           await storage.updateWorldEntity(existing.id, {
             attributes: newAttrs,
             lastSeenChapter: chapterNumber,
@@ -1782,8 +1807,8 @@ ${decisions.join('\n')}
           await storage.createWorldEntity({
             projectId,
             name: fact.entityName,
-            type: fact.entityType || 'CHARACTER',
-            attributes: fact.update,
+            type: fact.entityType === 'PHYSICAL_TRAIT' ? 'CHARACTER' : (fact.entityType || 'CHARACTER'),
+            attributes: processedUpdate,
             status: 'active',
             lastSeenChapter: chapterNumber,
           });
