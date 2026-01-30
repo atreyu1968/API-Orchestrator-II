@@ -3672,24 +3672,96 @@ ${issuesDescription}`;
                 
                 const chapterSources = Array.from(new Set(chapterQaIssues.map(i => i.source)));
                 
-                if (correctedContent) {
+                // Helper to normalize content for comparison
+                const normalizeContent = (text: string) => text.replace(/\s+/g, ' ').trim().toLowerCase();
+                const originalNormalized = normalizeContent(chapter.content);
+                
+                // Helper function to handle successful correction
+                const handleSuccessfulCorrection = async (content: string, source: string) => {
+                  const wordCount = content.split(/\s+/).length;
                   await storage.updateChapter(chapter.id, {
-                    content: correctedContent,
+                    content: content,
                     status: "completed",
+                    wordCount,
                   });
                   preReviewCorrected++;
                   preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: true });
-                  console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} corrected successfully`);
+                  console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} corrected via ${source} (${wordCount} words)`);
                   
-                  // === UPDATE WORLD BIBLE AFTER REWRITE ===
-                  // Extract any new plot decisions or character changes from rewritten chapter
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "info",
+                    agentRole: "smart-editor",
+                    message: `Capitulo ${chapNum} corregido (${wordCount} palabras)`,
+                  });
+                  this.callbacks.onChapterComplete(chapNum, wordCount, chapter.title || `Capítulo ${chapNum}`);
+                  
+                  // Update World Bible after correction
                   try {
-                    await this.updateWorldBibleFromChapter(project.id, chapNum, correctedContent, chapterQaIssues);
+                    await this.updateWorldBibleFromChapter(project.id, chapNum, content, chapterQaIssues);
                   } catch (wbError) {
                     console.error(`[OrchestratorV2] Failed to update World Bible after Chapter ${chapNum} rewrite:`, wbError);
                   }
+                };
+                
+                // Check if content is valid AND different from original
+                const isValidCorrection = (content: string | null | undefined): boolean => {
+                  if (!content || content.length < 100) return false;
+                  const contentNormalized = normalizeContent(content);
+                  // Must be meaningfully different (at least 1% difference)
+                  if (contentNormalized === originalNormalized) return false;
+                  return true;
+                };
+                
+                if (isValidCorrection(correctedContent)) {
+                  await handleSuccessfulCorrection(correctedContent!, "fullRewrite");
                 } else {
-                  preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: false });
+                  // RETRY: Try surgicalFix as fallback
+                  console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} fullRewrite failed (empty or unchanged), trying surgicalFix...`);
+                  let retrySuccess = false;
+                  
+                  try {
+                    const patchResult = await this.smartEditor.surgicalFix({
+                      chapterContent: chapter.content,
+                      errorDescription: issuesDescription,
+                    });
+                    this.addTokenUsage(patchResult.tokenUsage);
+                    
+                    if (patchResult.patches && patchResult.patches.length > 0) {
+                      const applied = applyPatches(chapter.content, patchResult.patches);
+                      if (isValidCorrection(applied.patchedText)) {
+                        await handleSuccessfulCorrection(applied.patchedText, "surgicalFix");
+                        retrySuccess = true;
+                      }
+                    }
+                  } catch (patchError) {
+                    console.error(`[OrchestratorV2] Pre-review surgicalFix failed for Chapter ${chapNum}:`, patchError);
+                  }
+                  
+                  // LAST RESORT: Try fullRewrite again with simpler prompt
+                  if (!retrySuccess) {
+                    console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} surgicalFix failed, final fullRewrite attempt...`);
+                    try {
+                      const retryResult = await this.smartEditor.fullRewrite({
+                        chapterContent: chapter.content,
+                        errorDescription: `CORRIGE ESTOS PROBLEMAS:\n${issuesDescription.substring(0, 2000)}\n\nReescribe el capítulo corrigiendo los problemas. El resultado DEBE ser diferente del original.`,
+                      });
+                      this.addTokenUsage(retryResult.tokenUsage);
+                      
+                      const retryContent = retryResult.rewrittenContent || retryResult.content;
+                      if (isValidCorrection(retryContent)) {
+                        await handleSuccessfulCorrection(retryContent!, "fullRewrite-retry");
+                        retrySuccess = true;
+                      }
+                    } catch (retryError) {
+                      console.error(`[OrchestratorV2] Pre-review final retry failed for Chapter ${chapNum}:`, retryError);
+                    }
+                  }
+                  
+                  if (!retrySuccess) {
+                    preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: false });
+                    console.warn(`[OrchestratorV2] Pre-review: Chapter ${chapNum} all correction attempts failed`);
+                  }
                 }
               } catch (fixError) {
                 const chapterSources = Array.from(new Set(chapterQaIssues.map(i => i.source)));

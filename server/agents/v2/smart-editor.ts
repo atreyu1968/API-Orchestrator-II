@@ -222,7 +222,16 @@ Responde ÚNICAMENTE con el capítulo reescrito, sin explicaciones ni comentario
     const response = await this.generateContent(rewritePrompt);
     
     if (response.error) {
+      console.error(`[SmartEditor] Full rewrite API error: ${response.error}`);
       return response;
+    }
+
+    // Log raw response for debugging
+    console.log(`[SmartEditor] Full rewrite raw response length: ${response.content?.length || 0} chars`);
+    
+    if (!response.content || response.content.length === 0) {
+      console.error(`[SmartEditor] Full rewrite returned empty content`);
+      return { ...response, rewrittenContent: undefined };
     }
 
     // Clean up the response - remove any markdown formatting
@@ -232,7 +241,13 @@ Responde ÚNICAMENTE con el capítulo reescrito, sin explicaciones ni comentario
       .trim();
     
     // Validate the rewrite is substantial
-    if (rewrittenContent.length < input.chapterContent.length * 0.5) {
+    if (rewrittenContent.length < 100) {
+      console.error(`[SmartEditor] Full rewrite content too short after cleanup: ${rewrittenContent.length} chars`);
+      // Try using raw content as fallback
+      rewrittenContent = response.content.trim();
+    }
+    
+    if (rewrittenContent.length < input.chapterContent.length * 0.3) {
       console.warn(`[SmartEditor] Full rewrite seems too short (${rewrittenContent.length} vs original ${input.chapterContent.length})`);
     }
     
