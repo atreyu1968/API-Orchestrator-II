@@ -1212,6 +1212,7 @@ ${decisions.join('\n')}
       
       if (response.tokenUsage) {
         this.addTokenUsage(response.tokenUsage);
+        await this.logAiUsage(projectId, "injury-extractor", "deepseek-chat", response.tokenUsage, chapterNumber);
       }
       
       const parsed = response;
@@ -3147,6 +3148,7 @@ ${decisions.join('\n')}
               });
               
               this.addTokenUsage(rewriteResult.tokenUsage);
+              await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", rewriteResult.tokenUsage, epilogueChapter.chapterNumber);
               
               if (rewriteResult.content) {
                 await storage.updateChapter(epilogueChapter.id, {
@@ -3355,6 +3357,7 @@ ${decisions.join('\n')}
             });
 
             this.addTokenUsage(fixResult.tokenUsage);
+            await this.logAiUsage(project.id, "series-thread-fixer", "deepseek-chat", fixResult.tokenUsage, chapter.chapterNumber);
 
             if (fixResult.patches && fixResult.patches.length > 0) {
               // Apply patches using patcher for fuzzy matching
@@ -3429,6 +3432,7 @@ ${decisions.join('\n')}
     });
 
     this.addTokenUsage(result.tokenUsage);
+    await this.logAiUsage(projectId, "narrative-director", "deepseek-chat", result.tokenUsage, currentChapter);
 
     let needsRewrite = false;
     let directive = "";
@@ -3751,7 +3755,10 @@ ${decisions.join('\n')}
                   });
                 }
               }
-              if (qaResult.result.tokenUsage) this.addTokenUsage(qaResult.result.tokenUsage);
+              if (qaResult.result.tokenUsage) {
+                this.addTokenUsage(qaResult.result.tokenUsage);
+                await this.logAiUsage(project.id, "forensic-auditor", "deepseek-chat", qaResult.result.tokenUsage);
+              }
             }
             
             if (qaResult.type === 'voice' && qaResult.result?.problemasTono) {
@@ -3767,7 +3774,10 @@ ${decisions.join('\n')}
                   });
                 }
               }
-              if (qaResult.result.tokenUsage) this.addTokenUsage(qaResult.result.tokenUsage);
+              if (qaResult.result.tokenUsage) {
+                this.addTokenUsage(qaResult.result.tokenUsage);
+                await this.logAiUsage(project.id, "voice-rhythm-auditor", "deepseek-chat", qaResult.result.tokenUsage);
+              }
             }
             
             if (qaResult.type === 'semantic' && qaResult.result?.repeticionesSemanticas) {
@@ -3783,7 +3793,10 @@ ${decisions.join('\n')}
                   });
                 }
               }
-              if (qaResult.result.tokenUsage) this.addTokenUsage(qaResult.result.tokenUsage);
+              if (qaResult.result.tokenUsage) {
+                this.addTokenUsage(qaResult.result.tokenUsage);
+                await this.logAiUsage(project.id, "semantic-repetition-detector", "deepseek-chat", qaResult.result.tokenUsage);
+              }
             }
           }
           
@@ -3812,6 +3825,7 @@ ${decisions.join('\n')}
             );
             
             this.addTokenUsage(betaResult.tokenUsage);
+            await this.logAiUsage(project.id, "beta-reader", "deepseek-chat", betaResult.tokenUsage);
             
             const betaReport = betaResult.report;
             console.log(`[OrchestratorV2] Beta Reader: Score ${betaReport.score}/10, Viability: ${betaReport.viability}, Flagged chapters: ${betaReport.flagged_chapters?.length || 0}`);
@@ -4255,6 +4269,7 @@ ${issuesDescription}`;
                       errorDescription: issuesDescription,
                     });
                     this.addTokenUsage(patchResult.tokenUsage);
+                    await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", patchResult.tokenUsage, chapNum);
                     
                     if (patchResult.patches && patchResult.patches.length > 0) {
                       const applied = applyPatches(chapter.content, patchResult.patches);
@@ -4290,6 +4305,7 @@ ${issuesDescription}`;
                         genre: project.genre || undefined,
                       });
                       this.addTokenUsage(retryResult.tokenUsage);
+                      await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", retryResult.tokenUsage, chapNum);
                       
                       const retryContent = retryResult.rewrittenContent || retryResult.content;
                       if (isValidCorrection(retryContent)) {
@@ -4945,6 +4961,7 @@ ${issuesDescription}`;
                       errorDescription: issuesDescription,
                     });
                     this.addTokenUsage(fixResult.tokenUsage);
+                    await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
                     // surgicalFix returns patches, apply them
                     if (fixResult.patches && fixResult.patches.length > 0) {
                       const patchResult = applyPatches(chapter.content || "", fixResult.patches);
@@ -4980,6 +4997,7 @@ ${issuesDescription}`;
                       genre: project.genre || undefined,
                     });
                     this.addTokenUsage(fixResult.tokenUsage);
+                    await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
                     if (fixResult.rewrittenContent && fixResult.rewrittenContent.length > 100) {
                       correctedContent = fixResult.rewrittenContent;
                       console.log(`[OrchestratorV2] Last resort fullRewrite successful`);
@@ -5048,6 +5066,7 @@ ${issuesDescription}`;
                     errorDescription: aggressiveIssues,
                   });
                   this.addTokenUsage(retryResult.tokenUsage);
+                  await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", retryResult.tokenUsage, chapNum);
                   
                   let correctedText: string | null = null;
                   
@@ -5118,6 +5137,7 @@ ${issuesDescription}`;
                     genre: project.genre || undefined,
                   });
                   this.addTokenUsage(fullRewriteResult.tokenUsage);
+                  await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fullRewriteResult.tokenUsage, chapNum);
                   
                   // Accept result if it has content and is different (even if slightly)
                   const resultContent = fullRewriteResult.rewrittenContent || fullRewriteResult.content;
@@ -5441,6 +5461,7 @@ ${issuesDescription}`;
         }
 
         this.addTokenUsage(chapterPlan.tokenUsage);
+        await this.logAiUsage(project.id, "chapter-architect", "deepseek-reasoner", chapterPlan.tokenUsage, chapterNum);
         
         // Generate a better title from the chapter hook or first scene
         const generatedTitle = chapterPlan.parsed.chapter_hook 
@@ -5492,6 +5513,7 @@ ${issuesDescription}`;
           }
 
           this.addTokenUsage(sceneResult.tokenUsage);
+          await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", sceneResult.tokenUsage, chapterNum);
         }
         
         if (scenesCancelled) {
@@ -5514,6 +5536,7 @@ ${issuesDescription}`;
         }
 
         this.addTokenUsage(editResult.tokenUsage);
+        await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapterNum);
 
         // Summarize
         const summaryResult = await this.summarizer.execute({
@@ -5522,6 +5545,7 @@ ${issuesDescription}`;
         });
 
         this.addTokenUsage(summaryResult.tokenUsage);
+        await this.logAiUsage(project.id, "summarizer", "deepseek-chat", summaryResult.tokenUsage, chapterNum);
 
         const chapterSummary = summaryResult.content || `Capítulo ${chapterNum} completado.`;
         rollingSummary = chapterSummary;
@@ -5706,6 +5730,7 @@ ${issuesDescription}`;
         }
 
         this.addTokenUsage(chapterPlan.tokenUsage);
+        await this.logAiUsage(project.id, "chapter-architect", "deepseek-reasoner", chapterPlan.tokenUsage, chapter.chapterNumber);
 
         // Write new scenes
         let fullChapterText = "";
@@ -5744,6 +5769,7 @@ ${issuesDescription}`;
           }
 
           this.addTokenUsage(sceneResult.tokenUsage);
+          await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", sceneResult.tokenUsage, chapter.chapterNumber);
           this.callbacks.onSceneComplete(chapter.chapterNumber, scene.scene_num, chapterPlan.parsed.scenes.length, sceneResult.content?.split(/\s+/).length || 0);
         }
         
@@ -5767,6 +5793,7 @@ ${issuesDescription}`;
         }
 
         this.addTokenUsage(editResult.tokenUsage);
+        await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapter.chapterNumber);
 
         // Update chapter
         const wordCount = finalText.split(/\s+/).length;
@@ -5861,6 +5888,7 @@ ${issuesDescription}`;
         });
 
         this.addTokenUsage(editResult.tokenUsage);
+        await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", editResult.tokenUsage, chapter.chapterNumber);
 
         if (editResult.parsed && !editResult.parsed.is_approved) {
           issuesFound++;
