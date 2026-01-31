@@ -718,6 +718,145 @@ ${decisions.join('\n')}
   }
 
   // ============================================
+  // PERSISTENT ISSUE LOOP DETECTION (LitAgents 2.4)
+  // ============================================
+
+  /**
+   * Track issue persistence across cycles to detect infinite correction loops.
+   * Returns issues that have persisted for 3+ cycles and need escalated correction.
+   */
+  private async trackPersistentIssues(
+    projectId: number,
+    issues: FinalReviewIssue[],
+    currentCycle: number
+  ): Promise<{ persistentIssues: FinalReviewIssue[]; newIssueCounts: Map<string, number> }> {
+    const project = await storage.getProject(projectId);
+    // Persistent issue counts stored in chapterCorrectionCounts._persistentIssues to reuse existing jsonb field
+    const chapterCounts = (project?.chapterCorrectionCounts as any) || {};
+    const existingCounts = (chapterCounts._persistentIssues as Record<string, number>) || {};
+    
+    const persistentIssues: FinalReviewIssue[] = [];
+    const newIssueCounts = new Map<string, number>();
+    
+    for (const issue of issues) {
+      const hash = this.generateIssueHash(issue);
+      const previousCount = existingCounts[hash] || 0;
+      const newCount = previousCount + 1;
+      newIssueCounts.set(hash, newCount);
+      
+      // Issue persists for 3+ cycles = needs escalation
+      if (newCount >= 3) {
+        persistentIssues.push(issue);
+        console.log(`[OrchestratorV2] LOOP DETECTED: Issue "${issue.categoria}" in caps ${issue.capitulos_afectados?.join(',')} persisted ${newCount} cycles`);
+      }
+    }
+    
+    // Save updated counts to database using SEPARATE key prefix to avoid overwriting chapter counts
+    const countsObject: Record<string, number> = {};
+    const entries = Array.from(newIssueCounts.entries());
+    for (const [hash, count] of entries) {
+      countsObject[hash] = count;
+    }
+    
+    // Get fresh project data and preserve ALL existing chapter correction counts
+    const project2 = await storage.getProject(projectId);
+    const existingData = (project2?.chapterCorrectionCounts as Record<string, any>) || {};
+    
+    // Separate existing chapter counts from persistent issue tracking
+    const preservedChapterCounts: Record<string, number> = {};
+    for (const key of Object.keys(existingData)) {
+      if (key !== '_persistentIssues' && typeof existingData[key] === 'number') {
+        preservedChapterCounts[key] = existingData[key];
+      }
+    }
+    
+    // Merge: preserve chapter counts AND update persistent issues
+    const mergedCounts = {
+      ...preservedChapterCounts,
+      _persistentIssues: countsObject,
+    };
+    
+    await storage.updateProject(projectId, {
+      chapterCorrectionCounts: mergedCounts as any,
+    });
+    
+    return { persistentIssues, newIssueCounts };
+  }
+
+  /**
+   * Detect if an issue represents a "resurrection" error (dead character appearing alive).
+   */
+  private isResurrectionError(issue: FinalReviewIssue): boolean {
+    const desc = (issue.descripcion || '').toLowerCase();
+    const instr = (issue.instrucciones_correccion || '').toLowerCase();
+    const cat = (issue.categoria || '').toLowerCase();
+    
+    const RESURRECTION_PATTERNS = [
+      'muerto', 'muere', 'murió', 'fallecido', 'fallece', 'muerte',
+      'resucita', 'resurreccion', 'reaparece vivo', 'aparece vivo',
+      'personaje muerto aparece', 'muerto habla', 'muerto actúa',
+      'dead', 'dies', 'died', 'deceased', 'killed', 'resurrect'
+    ];
+    
+    const hasResurrectionPattern = RESURRECTION_PATTERNS.some(p => desc.includes(p) || instr.includes(p));
+    
+    // Normalize severity check (case-insensitive, handle variations with/without accent)
+    const severity = (issue.severidad || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const isCritical = severity === 'critica' || severity === 'critical';
+    
+    // Either critical with resurrection pattern, or any critical continuity error about characters
+    if (hasResurrectionPattern && isCritical) return true;
+    if (isCritical && (desc.includes('personaje') || cat.includes('continuidad'))) return true;
+    
+    return false;
+  }
+
+  /**
+   * Generate escalated correction instructions for persistent issues.
+   * For resurrection errors, generates instructions to remove the dead character from subsequent chapters.
+   */
+  private generateEscalatedCorrection(
+    issue: FinalReviewIssue,
+    allChapters: Array<{ chapterNumber: number; title: string; content: string }>
+  ): { affectedChapters: number[]; instruction: string } {
+    const isResurrection = this.isResurrectionError(issue);
+    const originalChapters = issue.capitulos_afectados || [];
+    
+    if (isResurrection) {
+      // For resurrection errors, we need to identify ALL chapters after the death
+      // and remove/modify references to the dead character
+      const desc = issue.descripcion || '';
+      
+      // Try to extract character name from description
+      const nameMatch = desc.match(/(?:personaje|character|Clara|[A-Z][a-záéíóú]+(?:\s+[A-Z][a-záéíóú]+)?)\s+(?:que\s+)?(?:muere|murió|muerto|fallece|fallecido)/i);
+      const characterName = nameMatch ? nameMatch[0].split(/\s+que\s+/i)[0].replace(/personaje|character/i, '').trim() : 'el personaje fallecido';
+      
+      // Find the earliest death chapter mentioned
+      const minChapter = Math.min(...originalChapters);
+      
+      // Expand to include all subsequent chapters
+      const affectedChapters = allChapters
+        .filter(c => c.chapterNumber > minChapter)
+        .map(c => c.chapterNumber);
+      
+      const instruction = `[CORRECCIÓN DE RESURRECCIÓN] ${characterName} murió en el capítulo ${minChapter}. ` +
+        `OBLIGATORIO: Eliminar TODAS las apariciones activas de ${characterName} en capítulos ${affectedChapters.join(', ')}. ` +
+        `${characterName} solo puede aparecer en: (1) recuerdos explícitamente marcados como flashback, ` +
+        `(2) referencias en pasado ("cuando estaba vivo..."), (3) duelo de otros personajes. ` +
+        `NO puede hablar, actuar, caminar, ni ser descrito como presente.`;
+      
+      return { affectedChapters: [...originalChapters, ...affectedChapters], instruction };
+    }
+    
+    // For other persistent issues, expand correction scope
+    const instruction = `[CORRECCIÓN EXPANDIDA] Este problema ha persistido ${3}+ ciclos sin resolverse. ` +
+      `Se requiere una reescritura más amplia de los capítulos afectados (${originalChapters.join(', ')}) ` +
+      `para eliminar la raíz del problema: ${issue.descripcion}`;
+    
+    return { affectedChapters: originalChapters, instruction };
+  }
+
+  // ============================================
   // UNIVERSAL CONSISTENCY MODULE INTEGRATION
   // ============================================
 
@@ -4374,6 +4513,62 @@ ${issuesDescription}`;
         });
         
         console.log(`[OrchestratorV2] Cycle ${currentCycle} report persisted: ${puntuacion_global}/10, ${issues?.length || 0} issues`);
+
+        // === LOOP DETECTION (LitAgents 2.4) ===
+        // Track which issues persist across cycles and escalate if they recur 3+ times
+        if (issues && issues.length > 0 && currentCycle >= 3) {
+          const { persistentIssues } = await this.trackPersistentIssues(project.id, issues, currentCycle);
+          
+          if (persistentIssues.length > 0) {
+            console.log(`[OrchestratorV2] LOOP ESCALATION: ${persistentIssues.length} issues have persisted 3+ cycles`);
+            
+            // Log warning to UI
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "error",
+              agentRole: "final-reviewer",
+              message: `Problemas detectados: ${persistentIssues.filter(i => i.severidad === 'critica').length} críticos, ${persistentIssues.filter(i => i.severidad === 'mayor').length} mayores. ${persistentIssues.map(i => `[${i.severidad?.toUpperCase() || 'MAYOR'}] Cap ${i.capitulos_afectados?.join(', ')}: ${i.descripcion?.substring(0, 100)}`).join(' | ')}`,
+            });
+            
+            // Generate escalated corrections for persistent issues
+            const allChaptersForEscalation = currentChapters.map(c => ({
+              chapterNumber: c.chapterNumber,
+              title: c.title || '',
+              content: c.content || ''
+            }));
+            
+            for (const persistentIssue of persistentIssues) {
+              const escalated = this.generateEscalatedCorrection(persistentIssue, allChaptersForEscalation);
+              
+              // Replace the original issue with escalated version
+              persistentIssue.instrucciones_correccion = escalated.instruction;
+              persistentIssue.capitulos_afectados = escalated.affectedChapters;
+              
+              // Add all affected chapters to rewrite list
+              for (const chapNum of escalated.affectedChapters) {
+                if (!capitulos_para_reescribir?.includes(chapNum)) {
+                  capitulos_para_reescribir = capitulos_para_reescribir || [];
+                  capitulos_para_reescribir.push(chapNum);
+                }
+              }
+            }
+            
+            finalResult.capitulos_para_reescribir = capitulos_para_reescribir;
+            finalResult.issues = issues; // Updated with escalated instructions
+            
+            // Persist escalated corrections back to database
+            await storage.updateProject(project.id, {
+              finalReviewResult: {
+                ...finalResult,
+                revisionCycle: currentCycle,
+                evaluatedAt: new Date().toISOString(),
+                escalatedAt: new Date().toISOString(),
+              } as any,
+            });
+            
+            console.log(`[OrchestratorV2] Escalated correction: ${capitulos_para_reescribir?.length || 0} chapters to rewrite (persisted)`);
+          }
+        }
 
         // ORCHESTRATOR SAFETY NET: If capitulos_para_reescribir is empty but there are ANY issues,
         // extract chapters from ALL issues to trigger auto-correction (not just critical/major)

@@ -86,6 +86,15 @@ Preferred communication style: Simple, everyday language.
 - **Data Normalization**: Storage layer normalizes field names between extractor output and consumer expectations for consistent data contracts.
 - **UI Component**: SeriesWorldBiblePanel displays accumulated data with expandable sections for all entity types.
 
+### LitAgents 2.4 (Death Tracking & Loop Prevention)
+- **Purpose**: Prevents character resurrection errors and infinite correction loops in the FinalReviewer.
+- **Deceased Character Tracking**: UniversalConsistency automatically extracts deaths (estado_vital=MUERTO, capitulo_muerte, causa_muerte) and injects a prominent "PERSONAJES FALLECIDOS" block into Ghostwriter constraints, prohibiting dead characters from appearing alive.
+- **Death Detection in Validation**: validateChapter prompt explicitly instructs AI to detect and register character deaths with chapter number and cause.
+- **Loop Detection System**: trackPersistentIssues() tracks issue hashes across cycles; issues recurring 3+ times trigger escalation.
+- **Resurrection Error Detection**: isResurrectionError() identifies critical issues involving dead characters appearing alive.
+- **Escalated Corrections**: generateEscalatedCorrection() creates expanded rewrite instructions that affect ALL chapters after the death event, with specific instructions to remove the dead character's active appearances.
+- **Automatic Scope Expansion**: When resurrection errors persist, the system automatically expands the correction scope to include all post-death chapters instead of just the flagged ones.
+
 ### Re-editor (LitEditors) Development Editor
 - **Purpose**: Transforms the Re-editor into a Development Editor with forensic consistency audits and commercial viability analysis.
 - **ForensicConsistencyAuditor**: Processes manuscripts in batches, detects 7 violation types, and builds incremental entity states.

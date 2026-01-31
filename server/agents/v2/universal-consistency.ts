@@ -315,6 +315,42 @@ export class UniversalConsistencyAgent {
       });
     }
 
+    // LitAgents 2.4: DECEASED CHARACTERS TRACKING
+    // Extract all characters marked as DEAD/MUERTO/FALLECIDO to prevent resurrection
+    const DEATH_STATUS_MARKERS = ['dead', 'muerto', 'fallecido', 'deceased', 'killed', 'asesinado', 'ejecutado'];
+    const deceasedCharacters = entities.filter(e => {
+      if (e.type !== 'CHARACTER') return false;
+      const status = (e.status || '').toLowerCase();
+      const attrs = e.attributes || {};
+      const vitalStatus = (attrs.estado_vital || attrs.vital_status || attrs.status || '').toString().toLowerCase();
+      const deathChapter = attrs.capitulo_muerte || attrs.death_chapter;
+      
+      return DEATH_STATUS_MARKERS.some(marker => 
+        status.includes(marker) || vitalStatus.includes(marker)
+      ) || deathChapter;
+    });
+
+    let deceasedBlock = '';
+    if (deceasedCharacters.length > 0) {
+      deceasedBlock = `
+╔══════════════════════════════════════════════════════════════════╗
+║  [ALERTA CRITICA] PERSONAJES FALLECIDOS - NO PUEDEN APARECER     ║
+╠══════════════════════════════════════════════════════════════════╣
+`;
+      deceasedCharacters.forEach(char => {
+        const attrs = char.attributes || {};
+        const deathChapter = attrs.capitulo_muerte || attrs.death_chapter || '?';
+        const deathCause = attrs.causa_muerte || attrs.death_cause || attrs.cause_of_death || 'no especificada';
+        deceasedBlock += `║  [MUERTO] ${char.name.toUpperCase().padEnd(20)} | Murió Cap ${deathChapter} | Causa: ${deathCause.substring(0, 30)}\n`;
+      });
+      deceasedBlock += `╠══════════════════════════════════════════════════════════════════╣
+║  PROHIBIDO: Estos personajes NO pueden hablar, actuar, aparecer  ║
+║  NI ser mencionados como si estuvieran vivos después de su       ║
+║  muerte. Solo pueden aparecer en flashbacks CLARAMENTE marcados. ║
+╚══════════════════════════════════════════════════════════════════╝
+`;
+    }
+
     return `
 [SISTEMA DE CONSISTENCIA UNIVERSAL ACTIVO] (${genre.toUpperCase()})
 ===================================================================
@@ -323,6 +359,7 @@ ESCRIBIENDO CAPITULO ${chapterNumber}. Debes respetar ESTRICTAMENTE la Base de D
 El lector notara cualquier contradiccion. Las violaciones causaran RECHAZO AUTOMATICO.
 
 FOCO DEL GENERO: ${config.focus}
+${deceasedBlock}
 ${temporalBlock}
 ${characterStateBlock}
 [FICHAS DE PERSONAJES]:
@@ -422,6 +459,16 @@ TAMBIÉN EXTRAE (siempre, incluso si el capítulo es válido):
 - Cambios de estado (ubicación, heridas, muerte)
 
 EXTRACCIÓN DETALLADA (usar entityType correspondiente):
+
+0. [CRITICO] MUERTES DE PERSONAJES: entityType="CHARACTER"
+   Si un personaje MUERE en este capítulo, OBLIGATORIO registrar:
+   update: { 
+     "estado_vital": "MUERTO",
+     "capitulo_muerte": ${chapterNumber},
+     "causa_muerte": "descripción breve de cómo murió"
+   }
+   ADEMÁS agregar en newRules:
+   { "ruleDescription": "[NOMBRE] está MUERTO desde el capítulo ${chapterNumber}. NO puede aparecer vivo en capítulos posteriores.", "category": "DEATH_EVENT" }
 
 1. DETALLES FÍSICOS: entityType="PHYSICAL_TRAIT"
    Color de ojos, pelo, altura, edad, cicatrices, tatuajes
