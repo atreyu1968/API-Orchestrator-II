@@ -5234,8 +5234,15 @@ ${issuesDescription}`;
 
       // Determine final status based on review result
       if (!finalResult) {
-        await storage.updateProject(project.id, { status: "error" });
-        this.callbacks.onError("No se pudo completar la revisión final");
+        await storage.updateProject(project.id, { status: "paused" });
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: "No se pudo completar la revisión final. Presiona 'Continuar' para reintentar.",
+          agentRole: "final-reviewer",
+          metadata: { recoverable: true },
+        });
+        this.callbacks.onError("No se pudo completar la revisión final - presiona Continuar para reintentar");
         return;
       }
 
@@ -5333,7 +5340,14 @@ ${issuesDescription}`;
       const worldBible = await storage.getWorldBibleByProject(project.id);
       if (!worldBible || !worldBible.plotOutline) {
         this.callbacks.onError("No se encontró la World Bible con escaleta para este proyecto");
-        await storage.updateProject(project.id, { status: "error" });
+        await storage.updateProject(project.id, { status: "paused" });
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: "Falta World Bible o escaleta. Verifica la configuración del proyecto.",
+          agentRole: "system",
+          metadata: { recoverable: false, requiresConfiguration: true },
+        });
         return;
       }
 
@@ -5556,8 +5570,16 @@ ${issuesDescription}`;
 
     } catch (error) {
       console.error("[OrchestratorV2] Extension error:", error);
-      this.callbacks.onError(error instanceof Error ? error.message : String(error));
-      await storage.updateProject(project.id, { status: "error" });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.callbacks.onError(errorMessage);
+      await storage.updateProject(project.id, { status: "paused" });
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "error",
+        message: `Error extendiendo novela: ${errorMessage.substring(0, 300)}. Presiona "Continuar" para reintentar.`,
+        agentRole: "system",
+        metadata: { error: errorMessage, recoverable: true },
+      });
     }
   }
 
@@ -5585,7 +5607,14 @@ ${issuesDescription}`;
       const worldBible = await storage.getWorldBibleByProject(project.id);
       if (!worldBible) {
         this.callbacks.onError("No se encontró la World Bible para este proyecto");
-        await storage.updateProject(project.id, { status: "error" });
+        await storage.updateProject(project.id, { status: "paused" });
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: "Falta World Bible. Verifica la configuración del proyecto.",
+          agentRole: "system",
+          metadata: { recoverable: false, requiresConfiguration: true },
+        });
         return;
       }
 
@@ -5760,8 +5789,16 @@ ${issuesDescription}`;
 
     } catch (error) {
       console.error("[OrchestratorV2] Truncated regeneration error:", error);
-      this.callbacks.onError(error instanceof Error ? error.message : String(error));
-      await storage.updateProject(project.id, { status: "error" });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.callbacks.onError(errorMessage);
+      await storage.updateProject(project.id, { status: "paused" });
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "error",
+        message: `Error regenerando capítulos truncados: ${errorMessage.substring(0, 300)}. Presiona "Continuar" para reintentar.`,
+        agentRole: "system",
+        metadata: { error: errorMessage, recoverable: true },
+      });
     }
   }
 
@@ -5779,7 +5816,14 @@ ${issuesDescription}`;
       
       if (!worldBible) {
         this.callbacks.onError("No se encontró la World Bible para este proyecto");
-        await storage.updateProject(project.id, { status: "error" });
+        await storage.updateProject(project.id, { status: "paused" });
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "error",
+          message: "Falta World Bible. Verifica la configuración del proyecto.",
+          agentRole: "system",
+          metadata: { recoverable: false, requiresConfiguration: true },
+        });
         return;
       }
 
@@ -5861,8 +5905,16 @@ ${issuesDescription}`;
 
     } catch (error) {
       console.error("[OrchestratorV2] Sentinel error:", error);
-      this.callbacks.onError(error instanceof Error ? error.message : String(error));
-      await storage.updateProject(project.id, { status: "error" });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.callbacks.onError(errorMessage);
+      await storage.updateProject(project.id, { status: "paused" });
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "error",
+        message: `Error en validación de continuidad: ${errorMessage.substring(0, 300)}. Presiona "Continuar" para reintentar.`,
+        agentRole: "system",
+        metadata: { error: errorMessage, recoverable: true },
+      });
     }
   }
 
@@ -6221,8 +6273,16 @@ ${issuesDescription}`;
 
     } catch (error) {
       console.error("[OrchestratorV2] Generate missing chapters error:", error);
-      this.callbacks.onError(error instanceof Error ? error.message : String(error));
-      await storage.updateProject(project.id, { status: "error" });
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.callbacks.onError(errorMessage);
+      await storage.updateProject(project.id, { status: "paused" });
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "error",
+        message: `Error generando capítulos faltantes: ${errorMessage.substring(0, 300)}. Presiona "Continuar" para reintentar.`,
+        agentRole: "system",
+        metadata: { error: errorMessage, recoverable: true },
+      });
     }
   }
 }

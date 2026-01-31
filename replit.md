@@ -94,6 +94,13 @@ Preferred communication style: Simple, everyday language.
 - **Ghostwriter Prevention**: Explicit instructions about smooth transitions ("Veinte minutos después...") and object establishment before use.
 - **Architecture Principle**: Prevention > Detection > Correction (minimize token waste on corrections during FinalReviewer cycles).
 
+### LitAgents 2.6 (Enhanced Error Recovery)
+- **Purpose**: Prevents projects from getting permanently stuck after FinalReviewer or orchestrator errors.
+- **"Paused" Instead of "Error"**: All error paths in orchestrator-v2.ts now use `status: "paused"` instead of `status: "error"`, allowing easy resume via the "Continuar" button.
+- **Activity Logs with Context**: Each error creates an activity log with a user-facing message and `recoverable: true` metadata, showing exactly what happened and how to continue.
+- **State Preservation**: The current cycle, resolved issue hashes, and correction counts are preserved in the database, so resuming picks up exactly where it left off.
+- **Configuration Errors**: World Bible/escaleta missing errors use `recoverable: false` with `requiresConfiguration: true` metadata to indicate user action is needed.
+
 ### LitAgents 2.4 (Death Tracking & Loop Prevention)
 - **Purpose**: Prevents character resurrection errors and infinite correction loops in the FinalReviewer.
 - **Deceased Character Tracking**: UniversalConsistency automatically extracts deaths (estado_vital=MUERTO, capitulo_muerte, causa_muerte) and injects a prominent "PERSONAJES FALLECIDOS" block into Ghostwriter constraints, prohibiting dead characters from appearing alive.
