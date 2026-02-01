@@ -640,6 +640,53 @@ ${decisions.join('\n')}
   }
 
   // ============================================
+  // CHAPTER NUMBER NORMALIZATION
+  // ============================================
+  
+  /**
+   * Normalize chapter numbers from FinalReviewer to match database storage.
+   * FinalReviewer may report -1 for epilogue, but database stores it as 998.
+   * FinalReviewer may report -2 for author note, but database stores it as 999.
+   * This function returns all possible chapter numbers to search for.
+   */
+  private normalizeChapterNumber(chapNum: number): number[] {
+    // Epilogue: -1 or 998
+    if (chapNum === -1) return [-1, 998];
+    if (chapNum === 998) return [998, -1];
+    
+    // Author note: -2 or 999
+    if (chapNum === -2) return [-2, 999];
+    if (chapNum === 999) return [999, -2];
+    
+    // Regular chapters: no normalization needed
+    return [chapNum];
+  }
+  
+  /**
+   * Find a chapter in the list by number, considering normalization.
+   * Handles the -1/998 (epilogue) and -2/999 (author note) mapping.
+   */
+  private findChapterByNumber<T extends { chapterNumber: number }>(
+    chapters: T[],
+    targetNum: number
+  ): T | undefined {
+    const possibleNumbers = this.normalizeChapterNumber(targetNum);
+    for (const num of possibleNumbers) {
+      const found = chapters.find(c => c.chapterNumber === num);
+      if (found) return found;
+    }
+    return undefined;
+  }
+  
+  /**
+   * Check if a chapter number matches a target, considering normalization.
+   */
+  private chapterNumberMatches(chapterNum: number, targetNum: number): boolean {
+    const possibleNumbers = this.normalizeChapterNumber(targetNum);
+    return possibleNumbers.includes(chapterNum);
+  }
+
+  // ============================================
   // ISSUE HASH TRACKING SYSTEM (synced with reedit-orchestrator)
   // ============================================
 
@@ -4147,8 +4194,12 @@ ${decisions.join('\n')}
                 return;
               }
               
-              const chapter = completedChapters.find(c => c.chapterNumber === chapNum);
-              if (!chapter || !chapter.content) continue;
+              // Use normalized chapter number lookup to handle -1/998 (epilogue) and -2/999 (author note) mapping
+              const chapter = this.findChapterByNumber(completedChapters, chapNum);
+              if (!chapter || !chapter.content) {
+                console.log(`[OrchestratorV2] Chapter ${chapNum} not found in completedChapters, skipping`);
+                continue;
+              }
               
               const chapterQaIssues = qaIssuesByChapter.get(chapNum) || [];
               if (chapterQaIssues.length === 0) continue;
@@ -4944,9 +4995,10 @@ ${issuesDescription}`;
               return;
             }
 
-            const chapter = currentChapters.find(c => c.chapterNumber === chapNum);
+            // Use normalized chapter number lookup to handle -1/998 (epilogue) and -2/999 (author note) mapping
+            const chapter = this.findChapterByNumber(currentChapters, chapNum);
             if (!chapter) {
-              console.log(`[OrchestratorV2] Chapter ${chapNum} not found, skipping`);
+              console.log(`[OrchestratorV2] Chapter ${chapNum} not found in currentChapters (checked normalized numbers), skipping`);
               continue;
             }
 
