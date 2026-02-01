@@ -19,6 +19,7 @@ export interface ChapterArchitectInput {
   storyState: string;
   consistencyConstraints?: string;
   fullPlotOutline?: ChapterOutline[]; // Complete plot outline for all chapters
+  isKindleUnlimited?: boolean; // LitAgents 2.5: Direct KU flag for guaranteed pacing enforcement
 }
 
 export interface ScenePlan {
@@ -161,6 +162,29 @@ export class ChapterArchitectAgent extends BaseAgent {
     if (input.consistencyConstraints) {
       prompt = `${input.consistencyConstraints}\n\n---\n\nAHORA, TENIENDO EN CUENTA LAS RESTRICCIONES DE CONSISTENCIA Y LA TRAMA COMPLETA, diseña las escenas:\n\n${prompt}`;
       console.log(`[ChapterArchitect] Injected consistency constraints (${input.consistencyConstraints.length} chars) - Preventing inconsistent scene planning`);
+    }
+
+    // LitAgents 2.5: Inject KU pacing requirements directly - guaranteed to be present regardless of constraints
+    if (input.isKindleUnlimited) {
+      const kuPacingDirective = `
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ⚡ KINDLE UNLIMITED - RITMO RÁPIDO OBLIGATORIO EN DISEÑO DE ESCENAS ⚡       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  DISEÑA escenas CORTAS y TENSAS. Cada escena debe:                          ║
+║  • Tener un CONFLICTO ACTIVO (no solo conversación)                         ║
+║  • Empezar en medio de la acción (in media res)                             ║
+║  • Terminar en CLIFFHANGER o momento de tensión                             ║
+║  • Máximo 400-500 palabras por escena                                       ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  PROHIBIDO en escenas KU:                                                   ║
+║  • Escenas de solo diálogo sin acción física                                ║
+║  • Setup lento o "escenas de transición"                                    ║
+║  • Más de 3 escenas por capítulo                                            ║
+║  • Escenas contemplativas o de pura descripción                             ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+`;
+      prompt = `${kuPacingDirective}\n\n${prompt}`;
+      console.log(`[ChapterArchitect] Injected KU pacing directive - FAST PACING ENFORCED`);
     }
 
     const response = await this.generateContent(prompt);

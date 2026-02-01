@@ -1720,17 +1720,40 @@ ${decisions.join('\n')}
     const parts: string[] = [];
     
     // 0. Kindle Unlimited optimization guidelines (if enabled)
+    // LitAgents 2.5: Enhanced KU pacing guidelines to prevent slow pacing issues BEFORE they occur
     if (options?.kindleUnlimitedOptimized) {
-      parts.push("=== ⚡ OPTIMIZACIÓN KINDLE UNLIMITED (KU) ===");
-      parts.push("Este libro está optimizado para KU. REQUISITOS OBLIGATORIOS:");
-      parts.push("• Ganchos fuertes al inicio de cada capítulo para retener lectores");
-      parts.push("• Cliffhangers al final de cada capítulo para incentivar lectura continua");
-      parts.push("• Ritmo ágil: evitar descripciones excesivas o párrafos muy largos");
-      parts.push("• Diálogos dinámicos y frecuentes para aumentar velocidad de lectura");
-      parts.push("• Capítulos de longitud consistente (2000-3500 palabras ideal)");
-      parts.push("• Tensión constante: cada escena debe avanzar la trama");
-      parts.push("• Evitar flashbacks extensos que interrumpan el momentum");
-      parts.push("");
+      parts.push(`
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ⚡ OPTIMIZACIÓN KINDLE UNLIMITED - RITMO RÁPIDO OBLIGATORIO ⚡              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  Este libro es para KU. Los lectores de KU abandonan si el ritmo es lento.  ║
+║  CADA ESCENA debe mantener al lector enganchado.                            ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  PROHIBIDO (causa rechazo por "pacing slow"):                               ║
+║  • Párrafos de descripción de más de 3 líneas seguidas                      ║
+║  • Escenas donde los personajes solo hablan sin acción                      ║
+║  • Monólogos internos extensos (máximo 2-3 oraciones seguidas)              ║
+║  • Flashbacks de más de 1 párrafo                                           ║
+║  • Descripciones de paisajes, habitaciones o vestimenta detalladas          ║
+║  • Escenas de "transición" sin conflicto ni tensión                         ║
+║  • Diálogos sobre temas irrelevantes para la trama                          ║
+║  • Repetir información que el lector ya conoce                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  OBLIGATORIO (mantiene ritmo rápido):                                       ║
+║  • Empezar IN MEDIA RES - acción o diálogo desde la primera línea           ║
+║  • Intercalar descripción con acción (nunca más de 2 líneas descripción)    ║
+║  • Diálogos con subtexto, tensión o información nueva                       ║
+║  • Cada página debe tener al menos un micro-conflicto o revelación          ║
+║  • Terminar escenas en momento de tensión (antes de la resolución)          ║
+║  • Cortar escenas cuando el objetivo se cumple (no estirar)                 ║
+║  • Usar verbos activos, oraciones cortas en momentos de tensión             ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  ESTRUCTURA DE ESCENA KU:                                                   ║
+║  • 20% Setup rápido → 60% Desarrollo con tensión → 20% Cliffhanger          ║
+║  • Máximo 400-500 palabras por escena (excepto escenas clímax)              ║
+║  • Si una escena no avanza trama O personajes, ELIMINARLA                   ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+`);
     }
     
     // 0.1. Series context (if part of a series)
@@ -3042,6 +3065,7 @@ ${decisions.join('\n')}
           storyState,
           consistencyConstraints: enrichedConstraints, // LitAgents 2.1: Inject constraints + thought context
           fullPlotOutline: outline, // LitAgents 2.1: Full plot context for coherent scene planning
+          isKindleUnlimited: project.kindleUnlimitedOptimized || false, // LitAgents 2.5: Direct KU pacing flag
         });
 
         if (chapterPlan.error || !chapterPlan.parsed) {
@@ -3781,6 +3805,7 @@ ${decisions.join('\n')}
 
   /**
    * Generate a single chapter using the V2 pipeline
+   * LitAgents 2.5: Added consistencyConstraints parameter to ensure KU pacing guidelines are passed
    */
   async generateSingleChapter(
     project: Project,
@@ -3794,21 +3819,32 @@ ${decisions.join('\n')}
     worldBible: any,
     previousChapterSummary: string,
     rollingSummary: string,
-    guiaEstilo: string
+    guiaEstilo: string,
+    consistencyConstraints?: string // LitAgents 2.5: Now accepts constraints with KU pacing
   ): Promise<{ content: string; summary: string; wordCount: number; sceneBreakdown: ChapterArchitectOutput }> {
     
-    // Plan scenes (note: this helper doesn't have full consistency constraints context)
+    // Plan scenes with constraints (now includes KU pacing if enabled)
     // Extract outline from worldBible if available for plot context
     // Note: World Bible stores as chapterOutlines, not chapters
     const plotOutlineData = worldBible?.plotOutline as any;
     const fullOutline = plotOutlineData?.chapterOutlines || plotOutlineData?.chapters || [];
+    
+    // LitAgents 2.5: If no constraints provided, generate basic KU context if project has KU enabled
+    let effectiveConstraints = consistencyConstraints || "";
+    if (!effectiveConstraints && project.kindleUnlimitedOptimized) {
+      const enrichedOptions = await this.buildEnrichedContextOptions(project);
+      effectiveConstraints = await this.buildEnrichedWritingContext(project.id, chapterOutline.chapter_num, worldBible, enrichedOptions);
+      console.log(`[OrchestratorV2] Generated KU pacing constraints for helper (${effectiveConstraints.length} chars)`);
+    }
     
     const chapterPlan = await this.chapterArchitect.execute({
       chapterOutline,
       worldBible,
       previousChapterSummary,
       storyState: rollingSummary,
+      consistencyConstraints: effectiveConstraints, // LitAgents 2.5: Pass KU pacing constraints
       fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
+      isKindleUnlimited: project.kindleUnlimitedOptimized || false, // LitAgents 2.5: Direct KU pacing flag
     });
 
     if (!chapterPlan.parsed) {
@@ -5855,6 +5891,7 @@ ${issuesDescription}`;
           storyState: rollingSummary,
           consistencyConstraints,
           fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
+          isKindleUnlimited: project.kindleUnlimitedOptimized || false, // LitAgents 2.5: Direct KU pacing flag
         });
 
         if (!chapterPlan.parsed) {
@@ -6136,6 +6173,7 @@ ${issuesDescription}`;
           storyState: rollingSummary,
           consistencyConstraints,
           fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
+          isKindleUnlimited: project.kindleUnlimitedOptimized || false, // LitAgents 2.5: Direct KU pacing flag
         });
 
         if (!chapterPlan.parsed) {
@@ -6561,6 +6599,7 @@ ${issuesDescription}`;
           storyState: rollingSummary,
           consistencyConstraints,
           fullPlotOutline: fullOutline, // LitAgents 2.1: Full plot context
+          isKindleUnlimited: project.kindleUnlimitedOptimized || false, // LitAgents 2.5: Direct KU pacing flag
         });
 
         if (chapterPlan.error || !chapterPlan.parsed) {
