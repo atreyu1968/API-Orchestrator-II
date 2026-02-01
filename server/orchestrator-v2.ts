@@ -2782,11 +2782,23 @@ ${decisions.join('\n')}
       const existingChapters = await storage.getChaptersByProject(project.id);
       
       // LitAgents 2.2: Detect and handle truncated chapters (NEVER leave truncated chapters)
-      const MIN_WORDS_FOR_COMPLETE_CHAPTER = 500; // Chapters with less than this are considered truncated
+      // Use different thresholds for special chapters vs regular chapters
+      const MIN_WORDS_REGULAR_CHAPTER = 500; // Regular chapters need at least 500 words
+      const MIN_WORDS_SPECIAL_CHAPTER = 150; // Prologues, epilogues, and author notes can be shorter
+      
+      const isSpecialChapter = (chapterNumber: number): boolean => {
+        // Prologue: 0
+        // Epilogue: -1 or 998
+        // Author note: -2 or 999
+        return chapterNumber === 0 || chapterNumber === -1 || chapterNumber === 998 || 
+               chapterNumber === -2 || chapterNumber === 999;
+      };
+      
       const truncatedChapters = existingChapters.filter(c => {
         if (c.status !== "completed" && c.status !== "approved") return false;
         const wordCount = c.content ? c.content.split(/\s+/).length : 0;
-        return wordCount < MIN_WORDS_FOR_COMPLETE_CHAPTER;
+        const minWords = isSpecialChapter(c.chapterNumber) ? MIN_WORDS_SPECIAL_CHAPTER : MIN_WORDS_REGULAR_CHAPTER;
+        return wordCount < minWords;
       });
       
       if (truncatedChapters.length > 0) {
@@ -2804,8 +2816,12 @@ ${decisions.join('\n')}
       const refreshedChapters = await storage.getChaptersByProject(project.id);
       const completedChapterNumbers = new Set(
         refreshedChapters
-          .filter(c => (c.status === "completed" || c.status === "approved") && 
-                       (c.content?.split(/\s+/).length || 0) >= MIN_WORDS_FOR_COMPLETE_CHAPTER)
+          .filter(c => {
+            if (c.status !== "completed" && c.status !== "approved") return false;
+            const wordCount = c.content?.split(/\s+/).length || 0;
+            const minWords = isSpecialChapter(c.chapterNumber) ? MIN_WORDS_SPECIAL_CHAPTER : MIN_WORDS_REGULAR_CHAPTER;
+            return wordCount >= minWords;
+          })
           .map(c => c.chapterNumber)
       );
       
