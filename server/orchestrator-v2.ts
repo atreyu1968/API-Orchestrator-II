@@ -1894,6 +1894,92 @@ ${decisions.join('\n')}
   }
 
   /**
+   * Build FULL consistency context for SmartEditor corrections.
+   * This ensures SmartEditor receives the SAME context as Ghostwriter during writing,
+   * preventing new consistency errors from being introduced during corrections.
+   */
+  private async buildConsistencyContextForCorrection(
+    projectId: number,
+    chapterNumber: number,
+    worldBible: any,
+    project: any
+  ): Promise<string> {
+    const parts: string[] = [];
+    
+    try {
+      // 1. Get consistency entities, rules, and relationships
+      const context = await this.getConsistencyContext(projectId);
+      if (context.entities.length > 0) {
+        // Extract timeline and character state info
+        const timelineInfo = this.extractTimelineInfo(worldBible, chapterNumber);
+        const characterStates = this.extractCharacterStates(worldBible, chapterNumber);
+        
+        // Generate constraints using Universal Consistency Agent
+        const constraints = universalConsistencyAgent.generateConstraints(
+          project.genre,
+          context.entities,
+          context.rules,
+          context.relationships,
+          chapterNumber,
+          timelineInfo,
+          characterStates
+        );
+        if (constraints) {
+          parts.push(constraints);
+        }
+      }
+      
+      // 2. Add plot decisions and persistent injuries
+      const currentWorldBible = await storage.getWorldBibleByProject(projectId);
+      if (currentWorldBible) {
+        const decisionsConstraints = this.formatDecisionsAndInjuriesAsConstraints(
+          currentWorldBible.plotDecisions as any[],
+          currentWorldBible.persistentInjuries as any[],
+          chapterNumber
+        );
+        if (decisionsConstraints) {
+          parts.push(decisionsConstraints);
+        }
+      }
+      
+      // 3. Add scene summaries from previous chapters
+      const sceneSummaries = await this.getSceneSummariesContext(projectId, chapterNumber);
+      if (sceneSummaries) {
+        parts.push(sceneSummaries);
+      }
+      
+      // 4. Add enriched writing context (characters, rules, locations, error patterns)
+      const enrichedOptions = await this.buildEnrichedContextOptions(project);
+      const enrichedContext = await this.buildEnrichedWritingContext(projectId, chapterNumber, worldBible, enrichedOptions);
+      if (enrichedContext) {
+        parts.push(enrichedContext);
+      }
+      
+      // 5. Add dead characters warning (CRITICAL for preventing resurrections)
+      const deadCharacters = context.entities.filter(e => 
+        e.type === 'character' && (e.status === 'dead' || e.status === 'deceased' || e.status === 'muerto')
+      );
+      if (deadCharacters.length > 0) {
+        parts.push("\n=== ⚠️ PERSONAJES FALLECIDOS (NO PUEDEN ACTUAR, HABLAR NI APARECER ACTIVAMENTE) ===");
+        for (const char of deadCharacters) {
+          parts.push(`• ${char.name}: MUERTO desde capítulo ${char.lastSeenChapter || '?'}. Solo puede aparecer en flashbacks o recuerdos.`);
+        }
+      }
+      
+      // 6. Add thought context from previous agents
+      const thoughtContext = await this.getChapterDecisionContext(projectId, chapterNumber);
+      if (thoughtContext) {
+        parts.push(thoughtContext);
+      }
+      
+    } catch (err) {
+      console.error(`[OrchestratorV2] Error building correction context:`, err);
+    }
+    
+    return parts.join("\n\n");
+  }
+
+  /**
    * Analyze and summarize a style guide, extracting key writing instructions.
    * Saves the condensed style guide to the World Bible for consistent use.
    */
