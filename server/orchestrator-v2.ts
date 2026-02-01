@@ -3241,16 +3241,37 @@ ${decisions.join('\n')}
         return;
       }
 
-      // Get all chapters for this project
+      // Get all chapters for this project - use summaries to stay within token limits
+      // DeepSeek has 131K context limit, full novel content often exceeds 150K+ tokens
       const chapters = await storage.getChaptersByProject(project.id);
-      const chaptersWithContent = chapters
+      
+      // Calculate approximate token budget: ~100K for content, rest for system prompt + output
+      const MAX_CONTENT_TOKENS = 80000; // Conservative limit for chapter content
+      const CHARS_PER_TOKEN = 4; // Approximate characters per token
+      const MAX_CHARS = MAX_CONTENT_TOKENS * CHARS_PER_TOKEN;
+      
+      // First try to use summaries (much more compact)
+      let chaptersWithContent = chapters
         .filter(ch => ch.content && ch.content.length > 100)
         .map(ch => ({
           id: ch.id,
           chapterNumber: ch.chapterNumber,
           title: ch.title || `Capitulo ${ch.chapterNumber}`,
-          content: ch.content || "",
+          content: ch.summary || ch.content?.slice(0, 3000) || "", // Prefer summary, fallback to truncated content
         }));
+      
+      // Calculate total content size
+      let totalChars = chaptersWithContent.reduce((sum, ch) => sum + ch.content.length, 0);
+      
+      // If still too large (even with summaries), truncate each chapter proportionally
+      if (totalChars > MAX_CHARS) {
+        const charBudgetPerChapter = Math.floor(MAX_CHARS / chaptersWithContent.length);
+        chaptersWithContent = chaptersWithContent.map(ch => ({
+          ...ch,
+          content: ch.content.slice(0, charBudgetPerChapter),
+        }));
+        console.log(`[OrchestratorV2] SeriesThreadFixer: Truncated chapters to ${charBudgetPerChapter} chars each (${chaptersWithContent.length} chapters)`);
+      }
 
       if (chaptersWithContent.length === 0) {
         console.log(`[OrchestratorV2] No chapters with content found, skipping thread fixer`);
