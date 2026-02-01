@@ -4454,11 +4454,16 @@ ${chapterContext.styleGuide ? `GUÍA DE ESTILO:\n${chapterContext.styleGuide}\n`
 PROBLEMAS A CORREGIR (OBLIGATORIO):
 ${issuesDescription}`;
 
-                  // LitAgents 2.1: Use fullRewrite for critical/major issues (surgicalFix returns patches, not corrected_text)
+                  // LitAgents 2.1: Use fullRewrite for critical/major issues with FULL consistency context
+                  // Build the same consistency context that Ghostwriter receives during writing
+                  const preReviewConsistencyContext = await this.buildConsistencyContextForCorrection(
+                    project.id, chapNum, worldBibleData, project
+                  );
+                  
                   const fixResult = await this.smartEditor.fullRewrite({
                     chapterContent: chapter.content,
                     errorDescription: fullContextPrompt,
-                    consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
+                    consistencyConstraints: preReviewConsistencyContext || JSON.stringify(chapterContext.mainCharacters),
                   });
                   
                   this.addTokenUsage(fixResult.tokenUsage);
@@ -4481,10 +4486,15 @@ ${issuesDescription}`;
                   // MINOR ISSUES: Use fullRewrite with FULL CONTEXT for reliability
                   console.log(`[OrchestratorV2] Minor issues for Chapter ${chapNum}, using fullRewrite with full context`);
                   
+                  // Build full consistency context for minor issues too
+                  const minorIssuesConsistencyContext = await this.buildConsistencyContextForCorrection(
+                    project.id, chapNum, worldBibleData, project
+                  );
+                  
                   const fixResult = await this.smartEditor.fullRewrite({
                     chapterContent: chapter.content,
                     errorDescription: issuesDescription,
-                    consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
+                    consistencyConstraints: minorIssuesConsistencyContext,
                     // Pass full context for better corrections
                     worldBible: {
                       characters: chapterContext.mainCharacters,
@@ -5258,11 +5268,16 @@ ${chapterContext.styleGuide ? `GUÍA DE ESTILO:\n${chapterContext.styleGuide}\n`
 PROBLEMAS A CORREGIR (OBLIGATORIO):
 ${issuesDescription}`;
 
-                // LitAgents 2.1: Use fullRewrite for critical/major issues
+                // LitAgents 2.1: Use fullRewrite for critical/major issues with FULL consistency context
+                // Build the same consistency context that Ghostwriter receives during writing
+                const fullConsistencyContext = await this.buildConsistencyContextForCorrection(
+                  project.id, chapNum, worldBibleData, project
+                );
+                
                 const fixResult = await this.smartEditor.fullRewrite({
                   chapterContent: chapter.content || "",
                   errorDescription: fullContextPrompt,
-                  consistencyConstraints: JSON.stringify(chapterContext.mainCharacters),
+                  consistencyConstraints: fullConsistencyContext || JSON.stringify(chapterContext.mainCharacters),
                 });
 
                 this.addTokenUsage(fixResult.tokenUsage);
@@ -5277,13 +5292,17 @@ ${issuesDescription}`;
                   console.log(`[OrchestratorV2] Full rewrite fallback: ${correctedContent.length} chars`);
                 }
               } else {
-                // MINOR ISSUES ONLY: Try patches first
+                // MINOR ISSUES ONLY: Try patches first with full consistency context
                 console.log(`[OrchestratorV2] Minor issues only, trying patches for Chapter ${chapNum}`);
+                // Build consistency context even for minor issues to prevent new errors
+                const minorPatchConsistencyContext = await this.buildConsistencyContextForCorrection(
+                  project.id, chapNum, worldBibleData, project
+                );
                 const editResult = await this.smartEditor.execute({
                   chapterContent: chapter.content || "",
                   sceneBreakdown: chapter.sceneBreakdown as any || { scenes: [] },
                   worldBible: worldBibleData,
-                  additionalContext: `PROBLEMAS DETECTADOS POR EL CRÍTICO (CORREGIR OBLIGATORIAMENTE):\n${issuesDescription}`,
+                  additionalContext: `${minorPatchConsistencyContext}\n\nPROBLEMAS DETECTADOS POR EL CRÍTICO (CORREGIR OBLIGATORIAMENTE):\n${issuesDescription}`,
                 });
 
                 this.addTokenUsage(editResult.tokenUsage);
@@ -5305,9 +5324,14 @@ ${issuesDescription}`;
                   // If no patches applied but needs_rewrite is true, use surgicalFix as fallback
                   if (!correctedContent && editResult.parsed.needs_rewrite) {
                     console.log(`[OrchestratorV2] Using surgicalFix as fallback for Chapter ${chapNum}`);
+                    // Build full consistency context to prevent new errors
+                    const surgicalConsistencyContext = await this.buildConsistencyContextForCorrection(
+                      project.id, chapNum, worldBibleData, project
+                    );
                     const fixResult = await this.smartEditor.surgicalFix({
                       chapterContent: chapter.content || "",
                       errorDescription: issuesDescription,
+                      consistencyConstraints: surgicalConsistencyContext,
                     });
                     this.addTokenUsage(fixResult.tokenUsage);
                     await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, chapNum);
@@ -5327,9 +5351,14 @@ ${issuesDescription}`;
                   // FALLBACK: If still no content, use fullRewrite as last resort with full context
                   if (!correctedContent) {
                     console.log(`[OrchestratorV2] Forcing fullRewrite as last resort for Chapter ${chapNum} with full context`);
+                    // Build full consistency context for fallback rewrite
+                    const fallbackConsistencyContext = await this.buildConsistencyContextForCorrection(
+                      project.id, chapNum, worldBibleData, project
+                    );
                     const fixResult = await this.smartEditor.fullRewrite({
                       chapterContent: chapter.content || "",
                       errorDescription: issuesDescription,
+                      consistencyConstraints: fallbackConsistencyContext,
                       worldBible: {
                         characters: chapterContext.mainCharacters,
                         locations: chapterContext.locations,
@@ -5410,9 +5439,15 @@ ${issuesDescription}`;
                 
                 try {
                   const aggressiveIssues = `REINTENTO ${attempt}/${maxRetries} - ES OBLIGATORIO MODIFICAR ESTE CAPITULO.\n\nProblemas que DEBEN corregirse:\n${issuesDescription}\n\nINSTRUCCIONES ESTRICTAS:\n- NO devuelvas el texto sin cambios bajo ninguna circunstancia\n- Realiza TODAS las correcciones indicadas\n- Si no ves problemas obvios, mejora la prosa y el ritmo narrativo\n- El texto devuelto DEBE ser diferente al original`;
+                  
+                  // Build full consistency context for retry
+                  const retryConsistencyContext = await this.buildConsistencyContextForCorrection(
+                    project.id, chapNum, worldBibleData, project
+                  );
                   const retryResult = await this.smartEditor.surgicalFix({
                     chapterContent: chapter.content || "",
                     errorDescription: aggressiveIssues,
+                    consistencyConstraints: retryConsistencyContext,
                   });
                   this.addTokenUsage(retryResult.tokenUsage);
                   await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", retryResult.tokenUsage, chapNum);
@@ -5467,9 +5502,14 @@ ${issuesDescription}`;
                 ).join('\n');
 
                 try {
+                  // Build full consistency context for last resort full rewrite
+                  const lastResortConsistencyContext = await this.buildConsistencyContextForCorrection(
+                    project.id, chapNum, worldBibleData, project
+                  );
                   const fullRewriteResult = await this.smartEditor.fullRewrite({
                     chapterContent: chapter.content || "",
                     errorDescription: allIssuesDescription,
+                    consistencyConstraints: lastResortConsistencyContext,
                     worldBible: {
                       characters: chapterContext.mainCharacters,
                       locations: chapterContext.locations,
