@@ -351,6 +351,161 @@ export class UniversalConsistencyAgent {
 `;
     }
 
+    // LitAgents 2.5: CRITICAL CHARACTER CONSTRAINTS EXTRACTION
+    // Extract rules about permanent disabilities (aphonia, blindness, deafness, etc.)
+    // These are the most commonly violated constraints and need PROMINENT visibility
+    // ONLY target specific disability keywords, not generic terms like "permanent"
+    
+    // Define constraint types for targeted alternatives
+    interface CriticalConstraint {
+      keywords: string[];
+      type: 'SPEECH' | 'VISION' | 'HEARING' | 'MOBILITY' | 'MEMORY';
+    }
+    
+    const CONSTRAINT_TYPES: CriticalConstraint[] = [
+      { 
+        keywords: ['afonía', 'afonia', 'mudo', 'muda', 'no puede hablar', 'no habla', 'sin voz', 
+                   'aphonia', 'mute', 'cannot speak', 'voiceless', 'speechless', 'psicógena'],
+        type: 'SPEECH'
+      },
+      {
+        keywords: ['ciego', 'ciega', 'ceguera', 'no puede ver', 'sin vision', 'blind', 'blindness', 'cannot see'],
+        type: 'VISION'
+      },
+      {
+        keywords: ['sordo', 'sorda', 'sordera', 'no puede oir', 'no oye', 'deaf', 'deafness', 'cannot hear'],
+        type: 'HEARING'
+      },
+      {
+        keywords: ['paralizado', 'paralizada', 'paralisis', 'no puede caminar', 'silla de ruedas',
+                   'paralyzed', 'paralysis', 'wheelchair', 'cannot walk'],
+        type: 'MOBILITY'
+      },
+      {
+        keywords: ['amnesia', 'no recuerda', 'perdio la memoria', 'memory loss', 'cannot remember'],
+        type: 'MEMORY'
+      }
+    ];
+    
+    // Helper to detect which constraint type matches
+    const detectConstraintType = (text: string): CriticalConstraint['type'] | null => {
+      const textLower = text.toLowerCase();
+      for (const constraint of CONSTRAINT_TYPES) {
+        if (constraint.keywords.some(kw => textLower.includes(kw))) {
+          return constraint.type;
+        }
+      }
+      return null;
+    };
+    
+    // Only extract rules in CHARACTER_TRAIT category that match critical constraints
+    const CRITICAL_RULE_CATEGORIES = ['CHARACTER_TRAIT', 'PHYSICAL_ATTRIBUTE', 'DISABILITY', 'CONDICION_FISICA'];
+    const criticalRulesWithType: Array<{rule: RuleForPrompt, constraintType: CriticalConstraint['type']}> = [];
+    
+    rules.forEach(r => {
+      // Only check rules in critical categories
+      if (r.category && CRITICAL_RULE_CATEGORIES.some(cat => r.category.toUpperCase().includes(cat))) {
+        const constraintType = detectConstraintType(r.ruleDescription);
+        if (constraintType) {
+          criticalRulesWithType.push({ rule: r, constraintType });
+        }
+      } else {
+        // Also check rules without category but with explicit constraint keywords
+        const constraintType = detectConstraintType(r.ruleDescription);
+        if (constraintType) {
+          criticalRulesWithType.push({ rule: r, constraintType });
+        }
+      }
+    });
+    
+    // Extract from character attributes (only physical/trait attributes)
+    const CRITICAL_ATTRIBUTE_KEYS = ['condicion', 'discapacidad', 'disability', 'trait', 'estado_fisico', 
+                                      'physical_state', 'voz', 'voice', 'habla', 'speech', 'vision', 'oido', 'hearing'];
+    const charactersWithCriticalConstraints: Array<{name: string, constraint: string, details: string, constraintType: CriticalConstraint['type']}> = [];
+    
+    entities.filter(e => e.type === 'CHARACTER').forEach(char => {
+      const attrs = char.attributes || {};
+      Object.entries(attrs).forEach(([key, value]) => {
+        const keyLower = key.toLowerCase();
+        // Only check attributes that are likely to be physical/trait related
+        if (CRITICAL_ATTRIBUTE_KEYS.some(ak => keyLower.includes(ak))) {
+          const constraintType = detectConstraintType(String(value));
+          if (constraintType) {
+            charactersWithCriticalConstraints.push({
+              name: char.name,
+              constraint: key.replace(/_/g, ' ').toUpperCase(),
+              details: String(value),
+              constraintType
+            });
+          }
+        }
+      });
+    });
+    
+    // Collect detected constraint types to show relevant alternatives only
+    const detectedTypes = new Set<CriticalConstraint['type']>();
+    criticalRulesWithType.forEach(r => detectedTypes.add(r.constraintType));
+    charactersWithCriticalConstraints.forEach(c => detectedTypes.add(c.constraintType));
+
+    let criticalConstraintsBlock = '';
+    if (criticalRulesWithType.length > 0 || charactersWithCriticalConstraints.length > 0) {
+      criticalConstraintsBlock = `
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  [RESTRICCIONES CRITICAS DE PERSONAJES] - VIOLACION = RECHAZO AUTOMATICO    ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+`;
+      // Add rules
+      criticalRulesWithType.forEach(({rule}) => {
+        const truncatedRule = rule.ruleDescription.length > 75 
+          ? rule.ruleDescription.substring(0, 72) + '...'
+          : rule.ruleDescription;
+        criticalConstraintsBlock += `║  [!] ${truncatedRule.padEnd(72)}║\n`;
+      });
+      
+      // Add character-specific constraints
+      charactersWithCriticalConstraints.forEach(cc => {
+        const line = `${cc.name}: ${cc.constraint} = ${cc.details}`;
+        const truncatedLine = line.length > 72 ? line.substring(0, 69) + '...' : line;
+        criticalConstraintsBlock += `║  [!] ${truncatedLine.padEnd(72)}║\n`;
+      });
+      
+      // Show type-specific alternatives only for detected constraint types
+      if (detectedTypes.has('SPEECH')) {
+        criticalConstraintsBlock += `╠══════════════════════════════════════════════════════════════════════════════╣
+║  ALTERNATIVAS para personajes que NO PUEDEN HABLAR (afonía/mudez):          ║
+║  - Gestos, señas, lenguaje corporal, expresiones faciales                   ║
+║  - Comunicacion escrita (notas, mensajes, escribir en superficies)          ║
+║  - Movimientos de cabeza (asentir, negar), apuntar con el dedo              ║
+║  - Sonidos no verbales (sollozos, jadeos) - NUNCA palabras articuladas      ║
+║  PROHIBIDO: Susurros, palabras entrecortadas, "articular", "musitar", "dijo"║
+`;
+      }
+      if (detectedTypes.has('VISION')) {
+        criticalConstraintsBlock += `╠══════════════════════════════════════════════════════════════════════════════╣
+║  ALTERNATIVAS para personajes CIEGOS:                                       ║
+║  - Describir otros sentidos (tacto, oido, olfato) - NUNCA "vio", "miro"     ║
+║  - Orientacion por sonidos, texturas, olores familiares                     ║
+║  PROHIBIDO: "sus ojos captaron", "observo", "contemplo", "diviso"           ║
+`;
+      }
+      if (detectedTypes.has('HEARING')) {
+        criticalConstraintsBlock += `╠══════════════════════════════════════════════════════════════════════════════╣
+║  ALTERNATIVAS para personajes SORDOS:                                       ║
+║  - Lectura de labios, lenguaje de signos, vibraciones                       ║
+║  PROHIBIDO: "escucho", "oyo", referencias a sonidos percibidos              ║
+`;
+      }
+      if (detectedTypes.has('MOBILITY')) {
+        criticalConstraintsBlock += `╠══════════════════════════════════════════════════════════════════════════════╣
+║  ALTERNATIVAS para personajes con MOVILIDAD REDUCIDA:                       ║
+║  - Silla de ruedas, muletas, ayuda de otros personajes                      ║
+║  PROHIBIDO: "camino", "corrio", "se levanto" sin asistencia                 ║
+`;
+      }
+      criticalConstraintsBlock += `╚══════════════════════════════════════════════════════════════════════════════╝
+`;
+    }
+
     return `
 [SISTEMA DE CONSISTENCIA UNIVERSAL ACTIVO] (${genre.toUpperCase()})
 ===================================================================
@@ -360,6 +515,7 @@ El lector notara cualquier contradiccion. Las violaciones causaran RECHAZO AUTOM
 
 FOCO DEL GENERO: ${config.focus}
 ${deceasedBlock}
+${criticalConstraintsBlock}
 ${temporalBlock}
 ${characterStateBlock}
 [FICHAS DE PERSONAJES]:
