@@ -838,17 +838,30 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
           const result = JSON.parse(jsonMatch[0]) as FinalReviewerResult;
           console.log(`[FinalReviewer] Tramo ${trancheNum}: score ${result.puntuacion_global}/10, issues: ${result.issues?.length || 0}`);
           return result;
+        } else {
+          console.error(`[FinalReviewer] Tramo ${trancheNum}: No JSON found in response. Content preview: ${response.content?.substring(0, 500) || "(empty)"}`);
         }
       } catch (e) {
         console.error(`[FinalReviewer] Tramo ${trancheNum}: Failed to parse JSON:`, e);
+        console.error(`[FinalReviewer] Tramo ${trancheNum}: Response content preview: ${response.content?.substring(0, 500) || "(empty)"}`);
       }
     
       // Return empty partial result on parse failure
+      console.warn(`[FinalReviewer] Tramo ${trancheNum}: Returning fallback result (score=8, no issues) due to parse failure`);
       return {
         puntuacion_global: 8,
         issues: [],
         capitulos_para_reescribir: [],
       };
+    } catch (apiError: any) {
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+      console.error(`[FinalReviewer] Tramo ${trancheNum}/${totalTranches}: API error after ${elapsedSec}s:`, apiError.message || apiError);
+      // Re-throw with additional context
+      throw new Error(`FinalReviewer tramo ${trancheNum}/${totalTranches} failed after ${elapsedSec}s: ${apiError.message || String(apiError)}`);
     } finally {
       // Ensure heartbeat is always cleared
       if (heartbeatInterval) {

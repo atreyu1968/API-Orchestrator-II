@@ -5275,15 +5275,28 @@ ${issuesDescription}`;
 
       // Determine final status based on review result
       if (!finalResult) {
+        // Provide detailed context about why finalResult is null
+        const contextInfo = {
+          cycleReached: currentCycle,
+          maxCycles,
+          consecutiveHighScores,
+          previousScores,
+          resolvedHashesCount: localResolvedHashes.length,
+        };
+        console.error(`[OrchestratorV2] FinalReviewer completed loop but finalResult is null. Context:`, contextInfo);
+        
         await storage.updateProject(project.id, { status: "paused" });
         await storage.createActivityLog({
           projectId: project.id,
           level: "error",
-          message: "No se pudo completar la revisión final. Presiona 'Continuar' para reintentar.",
+          message: `La revisión final no produjo resultado después de ${currentCycle} ciclos (máximo: ${maxCycles}). Puntuaciones anteriores: [${previousScores.join(", ") || "ninguna"}]. Presiona 'Continuar' para reintentar.`,
           agentRole: "final-reviewer",
-          metadata: { recoverable: true },
+          metadata: { 
+            recoverable: true, 
+            ...contextInfo,
+          },
         });
-        this.callbacks.onError("No se pudo completar la revisión final - presiona Continuar para reintentar");
+        this.callbacks.onError(`No se completó la revisión final (ciclo ${currentCycle}/${maxCycles}) - presiona Continuar para reintentar`);
         return;
       }
 
