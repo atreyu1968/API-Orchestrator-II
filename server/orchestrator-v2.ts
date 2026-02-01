@@ -4761,9 +4761,81 @@ ${issuesDescription}`;
                     }
                   }
                   
+                  // LitAgents 2.9: ESCALATED CORRECTION - Very specific prompt with exact text to change
+                  if (!retrySuccess) {
+                    console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} standard attempts failed, trying ESCALATED correction...`);
+                    try {
+                      // Build ultra-specific prompt with exact quotes from the issues
+                      const escalatedPrompt = `CORRECCIÓN ESCALADA - ÚLTIMA OPORTUNIDAD
+
+Este capítulo tiene errores que DEBEN corregirse. Los intentos anteriores fallaron.
+
+ERRORES ESPECÍFICOS A CORREGIR:
+${chapterQaIssues.map(i => {
+  let errorDetail = `[${i.severidad?.toUpperCase() || 'ERROR'}] ${i.descripcion}`;
+  if (i.contexto) {
+    errorDetail += `\n   TEXTO PROBLEMÁTICO: "${i.contexto.substring(0, 200)}"`;
+  }
+  return errorDetail;
+}).join('\n\n')}
+
+INSTRUCCIONES OBLIGATORIAS:
+1. Busca EXACTAMENTE los textos problemáticos citados arriba
+2. Reescríbelos para eliminar el error
+3. Mantén el estilo y tono del resto del capítulo
+4. El resultado DEBE ser diferente del original
+
+Si el error es de conocimiento imposible (personaje sabe algo que no debería):
+- ELIMINA la referencia al conocimiento
+- O añade una explicación de CÓMO lo supo
+
+Si el error es de transición confusa:
+- Añade una frase de transición que explique el cambio de lugar/tiempo
+
+Si el error es de inconsistencia física/edad:
+- Corrige el dato para que coincida con lo establecido`;
+
+                      // Build consistency context for escalated fix
+                      const escalatedConsistencyContext = await this.buildConsistencyContextForCorrection(
+                        project.id, chapNum, worldBibleData, project
+                      );
+
+                      const escalatedResult = await this.smartEditor.fullRewrite({
+                        chapterContent: chapter.content,
+                        errorDescription: escalatedPrompt,
+                        consistencyConstraints: escalatedConsistencyContext,
+                        worldBible: {
+                          characters: chapterContext.mainCharacters,
+                          locations: chapterContext.locations,
+                          worldRules: chapterContext.worldRules,
+                          persistentInjuries: chapterContext.persistentInjuries,
+                          plotDecisions: chapterContext.plotDecisions,
+                        },
+                        chapterNumber: chapNum,
+                        chapterTitle: chapter.title || undefined,
+                        previousChapterSummary: chapterContext.previousChapterSummary,
+                        nextChapterSummary: chapterContext.nextChapterSummary,
+                        styleGuide: chapterContext.styleGuide,
+                        projectTitle: project.title,
+                        genre: project.genre || undefined,
+                      });
+                      this.addTokenUsage(escalatedResult.tokenUsage);
+                      await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", escalatedResult.tokenUsage, chapNum);
+                      
+                      const escalatedContent = escalatedResult.rewrittenContent || escalatedResult.content;
+                      if (isValidCorrection(escalatedContent)) {
+                        await handleSuccessfulCorrection(escalatedContent!, "escalated-fix");
+                        retrySuccess = true;
+                        console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} ESCALATED correction succeeded!`);
+                      }
+                    } catch (escalatedError) {
+                      console.error(`[OrchestratorV2] Pre-review escalated fix failed for Chapter ${chapNum}:`, escalatedError);
+                    }
+                  }
+                  
                   if (!retrySuccess) {
                     preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: false });
-                    console.warn(`[OrchestratorV2] Pre-review: Chapter ${chapNum} all correction attempts failed`);
+                    console.warn(`[OrchestratorV2] Pre-review: Chapter ${chapNum} ALL correction attempts failed (including escalated)`);
                   }
                 }
               } catch (fixError) {

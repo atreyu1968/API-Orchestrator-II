@@ -600,6 +600,9 @@ CRITERIOS DE ERROR CRÍTICO (SOLO estos bloquean):
 2. BILOCACIÓN: El mismo personaje en DOS lugares FÍSICAMENTE al MISMO tiempo
 3. CAMBIO FISICO IMPOSIBLE: Ojos azules a verdes, pelo rubio a negro (sin explicacion magica/tinte)
 4. CONTRADICCIÓN DIRECTA DE TEXTO: El texto dice "A" y luego dice "no-A" sin justificación
+5. INCONSISTENCIA DE EDAD: Edad del personaje no coincide con lo establecido (ej: tenía 10 años en prólogo, ahora tiene 25 sin time skip explícito)
+6. OBJETO PERSONAL INCONSISTENTE: Joya/anillo/reloj que estaba presente ahora no lo está sin explicación (o viceversa)
+7. CONOCIMIENTO IMPOSIBLE: Personaje sabe información que no ha obtenido en ninguna escena anterior
 
 IMPORTANTE - NO SON ERRORES CRÍTICOS:
 - Variaciones de voz/habla (susurros, ronquera, afonía temporal)
@@ -628,6 +631,21 @@ EXTRACCIÓN DETALLADA (usar entityType correspondiente):
 
 1. DETALLES FÍSICOS: entityType="PHYSICAL_TRAIT"
    Color de ojos, pelo, altura, edad, cicatrices, tatuajes
+
+1b. [NUEVO] EDAD DEL PERSONAJE: entityType="CHARACTER"
+   Si se menciona la edad de un personaje, registrar OBLIGATORIAMENTE:
+   update: { "edad": número, "capitulo_edad_establecida": ${chapterNumber} }
+   CRÍTICO: La edad debe ser consistente en toda la novela (salvo time skips explícitos)
+
+1c. [NUEVO] OBJETOS PERSONALES PERSISTENTES: entityType="PERSONAL_ITEM"
+   Anillos, relojes, collares, pulseras, joyas que un personaje LLEVA habitualmente
+   update: { 
+     "propietario": "nombre del personaje",
+     "descripcion": "anillo de oro con rubí en dedo anular izquierdo",
+     "estado": "presente" o "ausente" o "perdido",
+     "capitulo_primera_mencion": ${chapterNumber}
+   }
+   CRÍTICO: Si un personaje lleva un anillo distintivo, debe seguir llevándolo (o explicar por qué no)
 
 2. LOCALIZACIONES: entityType="LOCATION"
    Incluir: descripcion, atmosfera, caracteristicas

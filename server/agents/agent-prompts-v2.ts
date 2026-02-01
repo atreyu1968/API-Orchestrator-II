@@ -618,19 +618,58 @@ export const PROMPTS_V2 = {
     ╚══════════════════════════════════════════════════════════════════╝
     
     ╔══════════════════════════════════════════════════════════════════╗
-    ║ 🔗 TRANSICIONES Y CHEKHOV'S GUN (LitAgents 2.5)                 ║
+    ║ 🔗 TRANSICIONES, CONOCIMIENTO Y CHEKHOV'S GUN (LitAgents 2.9)  ║
     ╠══════════════════════════════════════════════════════════════════╣
     ║                                                                  ║
-    ║ ❌ TRANSICIÓN ABRUPTA: Si hay un cambio de ubicación o tiempo   ║
-    ║    sin conectar narrativamente (salto brusco entre escenas)     ║
-    ║    → ESTILO - 1 punto por cada transición abrupta.              ║
-    ║    → FEEDBACK: especificar dónde ocurre el salto.               ║
+    ║ ❌ TRANSICIÓN ESPACIAL CONFUSA (PENALIZACIÓN SEVERA):           ║
+    ║    - Personaje cambia de ubicación sin explicar cómo llegó      ║
+    ║      (estaba en A, ahora está en B sin transición)              ║
+    ║      → LÓGICA = 6 máximo.                                       ║
+    ║    - "Puerta que lleva a lugar incongruente" (sótano→terraza)   ║
+    ║      → LÓGICA = 5 máximo.                                       ║
+    ║    → FEEDBACK: especificar la transición confusa exacta.        ║
+    ║                                                                  ║
+    ║ ❌ TRANSICIÓN TEMPORAL CONFUSA (PENALIZACIÓN SEVERA):           ║
+    ║    - Salto de tiempo sin indicador (mañana→noche sin contexto)  ║
+    ║      → ESTILO = 6 máximo.                                       ║
+    ║    - Capítulo termina de noche, siguiente empieza de día sin    ║
+    ║      indicar paso del tiempo                                    ║
+    ║      → LÓGICA = 6 máximo.                                       ║
+    ║    → FEEDBACK: identificar el salto temporal no señalado.       ║
+    ║                                                                  ║
+    ║ ❌ CONOCIMIENTO INTERNO INCORRECTO (CRÍTICO):                   ║
+    ║    - Personaje "reconoce" algo/alguien que nunca ha visto       ║
+    ║      (ej: "reconoció los ojos del cuadro" sin haber visto al    ║
+    ║       dueño de esos ojos antes)                                 ║
+    ║      → LÓGICA = 4 máximo.                                       ║
+    ║    - Personaje sabe información que no ha obtenido en escena    ║
+    ║      (ej: sabe el nombre de alguien sin que se lo dijeran)      ║
+    ║      → LÓGICA = 5 máximo.                                       ║
+    ║    - Personaje deduce correctamente sin pistas suficientes      ║
+    ║      → LÓGICA = 6 máximo.                                       ║
+    ║    → FEEDBACK: explicar qué sabe y por qué no debería saberlo.  ║
+    ║                                                                  ║
+    ║ ❌ INCONSISTENCIA DE EDAD/TIEMPO NARRATIVO:                     ║
+    ║    - Edad del personaje no coincide con lo establecido          ║
+    ║      (tenía 10 años en prólogo, ahora tiene 25 sin time skip)   ║
+    ║      → LÓGICA = 4 máximo.                                       ║
+    ║    - Eventos que no cuadran con línea temporal                  ║
+    ║      → LÓGICA = 5 máximo.                                       ║
+    ║    → FEEDBACK: indicar la inconsistencia de edad/tiempo.        ║
     ║                                                                  ║
     ║ ❌ OBJETO SIN ORIGEN (Chekhov's Gun inverso):                   ║
     ║    - Personaje usa objeto no mencionado anteriormente           ║
     ║      (frasco, herramienta, arma que "aparece" de la nada)       ║
-    ║      → LÓGICA - 1 punto por cada objeto sin origen.             ║
+    ║      → LÓGICA = 6 máximo.                                       ║
     ║    → FEEDBACK: identificar el objeto y sugerir establecerlo.    ║
+    ║                                                                  ║
+    ║ ❌ ATRIBUTO FÍSICO INCONSISTENTE:                               ║
+    ║    - Joya/anillo/cicatriz presente/ausente sin explicación      ║
+    ║      (llevaba anillo, ahora no lo tiene sin mencionarlo)        ║
+    ║      → LÓGICA = 6 máximo.                                       ║
+    ║    - Color de ojos/pelo cambia sin justificación                ║
+    ║      → LÓGICA = 5 máximo.                                       ║
+    ║    → FEEDBACK: especificar el atributo inconsistente.           ║
     ║                                                                  ║
     ║ ❌ REPETICIÓN DE PALABRAS TÉCNICAS:                             ║
     ║    - Misma palabra técnica/específica 3+ veces en 2 párrafos    ║
