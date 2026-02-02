@@ -5127,6 +5127,7 @@ Si el error es de inconsistencia física/edad:
         // LitAgents 2.9.1: Detect score regression and rollback if significant
         const scoreDropped = previousCycleScore !== undefined && puntuacion_global < previousCycleScore;
         const significantDrop = previousCycleScore !== undefined && (previousCycleScore - puntuacion_global) >= 2;
+        let skipCorrectionsThisCycle = false;
         
         if (scoreDropped) {
           console.warn(`[OrchestratorV2] ⚠️ SCORE REGRESSION: Score dropped from ${previousCycleScore} to ${puntuacion_global} in cycle ${currentCycle}`);
@@ -5136,11 +5137,11 @@ Si el error es de inconsistencia física/edad:
             console.warn(`[OrchestratorV2] 🔄 ROLLBACK: Restoring ${chapterSnapshots.length} chapters to pre-correction state (score dropped by ${previousCycleScore! - puntuacion_global} points)`);
             this.callbacks.onAgentStatus("orchestrator", "warning", `Regresión detectada. Restaurando ${chapterSnapshots.length} capítulos...`);
             
-            // Restore chapters from snapshot
+            // Restore chapters from snapshot (single DB fetch for efficiency)
+            const allChapters = await storage.getChaptersByProject(project.id);
             let restoredCount = 0;
             for (const snapshot of chapterSnapshots) {
-              const chapters = await storage.getChaptersByProject(project.id);
-              const chapter = chapters.find(c => c.chapterNumber === snapshot.chapterNumber);
+              const chapter = allChapters.find(c => c.chapterNumber === snapshot.chapterNumber);
               if (chapter && chapter.content !== snapshot.content) {
                 await storage.updateChapter(chapter.id, { content: snapshot.content });
                 restoredCount++;
@@ -5154,14 +5155,14 @@ Si el error es de inconsistencia física/edad:
               agentRole: "orchestrator",
             });
             
-            // Reset to previous good score for next iteration
-            puntuacion_global = lastGoodScore || previousCycleScore || puntuacion_global;
-            
             // Clear snapshots - will be recreated on next correction attempt
             chapterSnapshots = [];
             
-            // Skip corrections this cycle - just re-evaluate on next cycle
-            continue;
+            // Skip corrections this cycle - let next cycle re-evaluate the restored content
+            skipCorrectionsThisCycle = true;
+            
+            // Clear chapters to rewrite so we skip correction loop
+            capitulos_para_reescribir = [];
           } else {
             // Minor regression - just log warning
             await storage.createActivityLog({
