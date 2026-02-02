@@ -4604,6 +4604,20 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
       
       // Track filtered FinalReviewer issues at wider scope for use in post-correction
       let previousCycleIssuesFiltered: FinalReviewIssue[] = [];
+      
+      // LitAgents 2.9.3: Track successfully corrected chapters to avoid re-correcting them
+      // Once a chapter passes correction successfully, it should not be touched again
+      // PERSISTED: Load from database to survive restarts
+      const loadedCorrectedChapters = (project.successfullyCorrectedChapters as number[]) || [];
+      const successfullyCorrectedChapters: Set<number> = new Set(loadedCorrectedChapters);
+      console.log(`[OrchestratorV2] Loaded ${successfullyCorrectedChapters.size} successfully corrected chapters from database`);
+      
+      // Helper function to persist corrected chapters to database
+      const persistCorrectedChapters = async () => {
+        await storage.updateProject(project.id, {
+          successfullyCorrectedChapters: Array.from(successfullyCorrectedChapters),
+        });
+      };
 
       while (currentCycle < maxCycles) {
         // === RUN QA AUDIT ONCE BEFORE FIRST REVIEW CYCLE ===
@@ -4940,19 +4954,34 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
               }
             }
             
-            // Filter out chapters that have exceeded correction limit (applies to ALL issues including QA)
+            // Filter out chapters that have exceeded correction limit OR already successfully corrected
             const allChaptersWithIssues = Array.from(qaIssuesByChapter.keys()).sort((a, b) => a - b);
+            let skippedDueToLimit = 0;
+            let skippedAlreadyCorrected = 0;
             const chaptersToFix = allChaptersWithIssues.filter(chapNum => {
+              // LitAgents 2.9.3: Skip chapters already successfully corrected in this session
+              if (successfullyCorrectedChapters.has(chapNum)) {
+                console.log(`[OrchestratorV2] Skipping chapter ${chapNum} in pre-review: already successfully corrected`);
+                skippedAlreadyCorrected++;
+                return false;
+              }
               const correctionCount = chapterCorrectionCounts.get(chapNum) || 0;
               if (correctionCount >= MAX_CORRECTIONS_PER_CHAPTER) {
                 console.log(`[OrchestratorV2] Skipping chapter ${chapNum} in pre-review: already corrected ${correctionCount} times (max: ${MAX_CORRECTIONS_PER_CHAPTER})`);
+                skippedDueToLimit++;
                 return false;
               }
               return true;
             });
             
-            if (chaptersToFix.length < allChaptersWithIssues.length) {
-              console.log(`[OrchestratorV2] ${allChaptersWithIssues.length - chaptersToFix.length} chapters skipped due to correction limits`);
+            if (skippedAlreadyCorrected > 0 || skippedDueToLimit > 0) {
+              console.log(`[OrchestratorV2] Pre-review filtering: ${skippedAlreadyCorrected} already corrected, ${skippedDueToLimit} at limit, ${chaptersToFix.length} remaining`);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "info",
+                message: `[FILTRADO] ${skippedAlreadyCorrected} caps ya corregidos, ${skippedDueToLimit} al limite, ${chaptersToFix.length} pendientes`,
+                agentRole: "orchestrator",
+              });
             }
             console.log(`[OrchestratorV2] Pre-review: ${chaptersToFix.length} chapters to correct: ${chaptersToFix.join(', ')}`);
             
@@ -5265,7 +5294,10 @@ ${issuesDescription}`;
                   });
                   preReviewCorrected++;
                   preReviewFixes.push({ chapter: chapNum, issueCount: chapterQaIssues.length, sources: chapterSources, success: true });
-                  console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} corrected via ${source} (${wordCount} words)`);
+                  // LitAgents 2.9.3: Mark chapter as successfully corrected to skip in future cycles
+                  successfullyCorrectedChapters.add(chapNum);
+                  await persistCorrectedChapters();
+                  console.log(`[OrchestratorV2] Pre-review: Chapter ${chapNum} corrected via ${source} (${wordCount} words) - marked as done & persisted`);
                   
                   await storage.createActivityLog({
                     projectId: project.id,
@@ -5638,6 +5670,28 @@ Si el error es de inconsistencia física/edad:
         // and issues are filtered using resolvedIssueHashes on next cycle (see pre-review correction section)
         console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}, issues: ${issues?.length || 0}`);
         
+        // LitAgents 2.9.3: If FinalReviewer reports issues in previously "corrected" chapters,
+        // remove them from the successfullyCorrectedChapters set so they can be re-corrected
+        if (capitulos_para_reescribir && capitulos_para_reescribir.length > 0) {
+          const reReportedChapters: number[] = [];
+          for (const chapNum of capitulos_para_reescribir) {
+            if (successfullyCorrectedChapters.has(chapNum)) {
+              successfullyCorrectedChapters.delete(chapNum);
+              reReportedChapters.push(chapNum);
+            }
+          }
+          if (reReportedChapters.length > 0) {
+            await persistCorrectedChapters();
+            console.log(`[OrchestratorV2] FinalReviewer re-reported ${reReportedChapters.length} previously "corrected" chapters: ${reReportedChapters.join(', ')} - unmarked for re-correction`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `[RE-REPORTE] ${reReportedChapters.length} caps previamente corregidos tienen nuevos problemas: ${reReportedChapters.join(', ')}`,
+              agentRole: "final-reviewer",
+            });
+          }
+        }
+        
         // LitAgents 2.9.1: Detect score regression and rollback if significant
         const scoreDropped = previousCycleScore !== undefined && puntuacion_global < previousCycleScore;
         const significantDrop = previousCycleScore !== undefined && (previousCycleScore - puntuacion_global) >= 2;
@@ -5935,6 +5989,33 @@ Si el error es de inconsistencia física/edad:
 
         // Auto-correct problematic chapters - ALWAYS try to correct, even in last cycle
         if (capitulos_para_reescribir && capitulos_para_reescribir.length > 0) {
+          // LitAgents 2.9.3: Filter out already successfully corrected chapters
+          const originalCount = capitulos_para_reescribir.length;
+          capitulos_para_reescribir = capitulos_para_reescribir.filter(chapNum => {
+            if (successfullyCorrectedChapters.has(chapNum)) {
+              console.log(`[OrchestratorV2] Skipping chapter ${chapNum} in post-review: already successfully corrected`);
+              return false;
+            }
+            return true;
+          });
+          
+          if (capitulos_para_reescribir.length < originalCount) {
+            const skipped = originalCount - capitulos_para_reescribir.length;
+            console.log(`[OrchestratorV2] Post-review: Filtered ${skipped} already-corrected chapters, ${capitulos_para_reescribir.length} remaining`);
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              message: `[FILTRADO] ${skipped} caps ya corregidos, ${capitulos_para_reescribir.length} pendientes`,
+              agentRole: "orchestrator",
+            });
+          }
+          
+          // Skip if no chapters left to correct
+          if (capitulos_para_reescribir.length === 0) {
+            console.log(`[OrchestratorV2] All chapters already corrected, continuing to next cycle`);
+            continue;
+          }
+          
           console.log(`[OrchestratorV2] Starting auto-correction for ${capitulos_para_reescribir.length} chapters`);
           this.callbacks.onAgentStatus("smart-editor", "active", `Auto-corrigiendo ${capitulos_para_reescribir.length} capítulo(s)...`);
           
@@ -6427,6 +6508,10 @@ ${issuesDescription}`;
                 chapter.title || `Capítulo ${chapter.chapterNumber}`
               );
               correctedCount++;
+              // LitAgents 2.9.3: Mark chapter as successfully corrected to skip in future cycles
+              successfullyCorrectedChapters.add(chapNum);
+              await persistCorrectedChapters();
+              console.log(`[OrchestratorV2] Post-review: Chapter ${chapNum} marked as successfully corrected & persisted`);
               
               // === UPDATE WORLD BIBLE AFTER REWRITE ===
               try {

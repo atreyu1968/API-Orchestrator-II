@@ -101,6 +101,7 @@ export const projects = pgTable("projects", {
   generationToken: text("generation_token"), // Unique token per generation session to prevent parallel executions
   resolvedIssueHashes: jsonb("resolved_issue_hashes").default([]), // Array of hashes for resolved issues (synced with reedit system)
   chapterCorrectionCounts: jsonb("chapter_correction_counts").default({}), // {chapterNumber: correctionCount} - prevents infinite loops
+  successfullyCorrectedChapters: jsonb("successfully_corrected_chapters").default([]), // Array of chapter numbers that passed correction - skip in future cycles
   consecutiveHighScores: integer("consecutive_high_scores").default(0), // Track consecutive 9+/10 scores for approval
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
