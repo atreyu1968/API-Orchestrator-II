@@ -2155,31 +2155,75 @@ ${canonicalItems.join('\n')}
     correctedContent: string,
     worldBible: any,
     chapterNumber: number
-  ): Promise<{ valid: boolean; regressions: string[] }> {
+  ): Promise<{ valid: boolean; regressions: string[]; severity: 'low' | 'medium' | 'high' }> {
     const regressions: string[] = [];
+    let highSeverityCount = 0;
+    
+    // Helper to escape regex special characters in names
+    const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    
+    // Helper to normalize color terms for comparison
+    const normalizeColor = (color: string): string[] => {
+      const colorMap: Record<string, string[]> = {
+        'azul': ['azul', 'azules', 'azulado', 'azulados'],
+        'verde': ['verde', 'verdes', 'verdoso', 'verdosos'],
+        'marrón': ['marrón', 'marrones', 'marron', 'castaño', 'castaños'],
+        'gris': ['gris', 'grises', 'grisáceo', 'grisáceos', 'plomizo'],
+        'negro': ['negro', 'negros', 'oscuro', 'oscuros', 'azabache'],
+        'miel': ['miel', 'ámbar', 'dorado', 'dorados'],
+        'avellana': ['avellana', 'avellanas', 'almendrado'],
+      };
+      const lowerColor = color.toLowerCase();
+      for (const [base, variants] of Object.entries(colorMap)) {
+        if (variants.some(v => lowerColor.includes(v))) {
+          return variants;
+        }
+      }
+      return [lowerColor];
+    };
     
     try {
       // 1. Check character physical traits weren't changed incorrectly
       const characters = worldBible?.characters || worldBible?.personajes || [];
       for (const char of characters.slice(0, 10)) {
         const name = char.name || char.nombre;
-        if (!name) continue;
+        if (!name || name.length < 2) continue;
         
+        const escapedName = escapeRegex(name);
         const eyeColor = char.eyeColor || char.ojos || char.physical_traits?.eyes;
         const hairColor = char.hairColor || char.cabello || char.physical_traits?.hair;
         
-        // Check if character traits were changed in a way that contradicts World Bible
+        // Check eye color consistency
         if (eyeColor) {
-          const eyeRegex = new RegExp(`${name}[^.]*ojos[^.]*(?:azules?|verdes?|marrones?|grises?|negros?|claros?|oscuros?)`, 'gi');
-          const originalEyeMentions = originalContent.match(eyeRegex) || [];
-          const correctedEyeMentions = correctedContent.match(eyeRegex) || [];
+          const validEyeColors = normalizeColor(eyeColor);
+          // Look for any eye color mentions near character name
+          const eyePattern = new RegExp(`${escapedName}[^.]{0,50}ojos\\s+(?:de\\s+color\\s+)?(\\w+)`, 'gi');
+          const correctedMatches = Array.from(correctedContent.matchAll(eyePattern));
           
-          // If correction added new eye color mentions, check they match World Bible
-          if (correctedEyeMentions.length > originalEyeMentions.length) {
-            const eyeColorNorm = eyeColor.toLowerCase();
-            for (const mention of correctedEyeMentions) {
-              if (!mention.toLowerCase().includes(eyeColorNorm.substring(0, 4))) {
-                regressions.push(`Posible cambio de color de ojos de ${name}: "${mention}" (World Bible: ${eyeColor})`);
+          for (const match of correctedMatches) {
+            const mentionedColor = match[1]?.toLowerCase();
+            if (mentionedColor && !validEyeColors.some(v => mentionedColor.includes(v.substring(0, 4)))) {
+              // Check if this is a NEW mention (not in original)
+              if (!originalContent.includes(match[0])) {
+                regressions.push(`Color de ojos de ${name} cambiado a "${mentionedColor}" (debería ser: ${eyeColor})`);
+                highSeverityCount++;
+              }
+            }
+          }
+        }
+        
+        // Check hair color consistency
+        if (hairColor) {
+          const validHairColors = normalizeColor(hairColor);
+          const hairPattern = new RegExp(`${escapedName}[^.]{0,50}(?:cabello|pelo|melena)\\s+(?:de\\s+color\\s+)?(\\w+)`, 'gi');
+          const correctedMatches = Array.from(correctedContent.matchAll(hairPattern));
+          
+          for (const match of correctedMatches) {
+            const mentionedColor = match[1]?.toLowerCase();
+            if (mentionedColor && !validHairColors.some(v => mentionedColor.includes(v.substring(0, 4)))) {
+              if (!originalContent.includes(match[0])) {
+                regressions.push(`Color de cabello de ${name} cambiado a "${mentionedColor}" (debería ser: ${hairColor})`);
+                highSeverityCount++;
               }
             }
           }
@@ -2194,28 +2238,37 @@ ${canonicalItems.join('\n')}
         const name = deadChar.name || deadChar.nombre;
         if (!name) continue;
         
+        const escapedName = escapeRegex(name);
         // Check for new active verbs for dead characters
-        const activeVerbsRegex = new RegExp(`${name}[^.]{0,30}(?:dijo|respondió|caminó|corrió|miró|sonrió|gritó|susurró)`, 'gi');
-        const originalActions = originalContent.match(activeVerbsRegex) || [];
-        const correctedActions = correctedContent.match(activeVerbsRegex) || [];
+        const activeVerbsPattern = new RegExp(`${escapedName}\\s+(?:dijo|respondió|caminó|corrió|miró|sonrió|gritó|susurró|se\\s+levantó)`, 'gi');
+        const originalActions = Array.from(originalContent.matchAll(activeVerbsPattern));
+        const correctedActions = Array.from(correctedContent.matchAll(activeVerbsPattern));
         
         if (correctedActions.length > originalActions.length) {
-          regressions.push(`Personaje muerto ${name} aparece activo en la corrección (posible resurrección)`);
+          regressions.push(`⚠️ CRÍTICO: Personaje muerto ${name} realiza acciones activas (posible resurrección)`);
+          highSeverityCount += 2; // Extra severity for resurrection
         }
       }
       
-      // 3. Check location names weren't changed
+      // 3. Check location names weren't changed or removed
       const locations = worldBible?.locations || worldBible?.ubicaciones || [];
       for (const loc of locations.slice(0, 8)) {
         const name = loc.name || loc.nombre;
         if (!name || name.length < 3) continue;
         
-        const originalMentions = (originalContent.match(new RegExp(name, 'gi')) || []).length;
-        const correctedMentions = (correctedContent.match(new RegExp(name, 'gi')) || []).length;
-        
-        // If a location was removed entirely, that might be a regression
-        if (originalMentions > 0 && correctedMentions === 0) {
-          regressions.push(`Ubicación "${name}" eliminada de la corrección (estaba ${originalMentions} veces)`);
+        try {
+          const escapedName = escapeRegex(name);
+          const locPattern = new RegExp(escapedName, 'gi');
+          const originalMentions = Array.from(originalContent.matchAll(locPattern)).length;
+          const correctedMentions = Array.from(correctedContent.matchAll(locPattern)).length;
+          
+          // If a location was removed entirely, that's concerning
+          if (originalMentions > 0 && correctedMentions === 0) {
+            regressions.push(`Ubicación "${name}" eliminada de la corrección (estaba ${originalMentions} veces)`);
+          }
+        } catch (regexErr) {
+          // Skip invalid regex patterns
+          console.warn(`[Validation] Skipping location "${name}" due to invalid pattern`);
         }
       }
       
@@ -2223,9 +2276,16 @@ ${canonicalItems.join('\n')}
       console.error(`[OrchestratorV2] Error validating correction consistency:`, err);
     }
     
+    // Determine severity based on findings
+    const severity: 'low' | 'medium' | 'high' = 
+      highSeverityCount >= 2 ? 'high' : 
+      highSeverityCount >= 1 || regressions.length >= 3 ? 'medium' : 
+      regressions.length > 0 ? 'low' : 'low';
+    
     return {
       valid: regressions.length === 0,
-      regressions
+      regressions,
+      severity
     };
   }
 
@@ -5922,15 +5982,35 @@ ${issuesDescription}`;
               );
               
               if (!validationResult.valid) {
-                console.warn(`[OrchestratorV2] ⚠️ Correction validation detected ${validationResult.regressions.length} potential regressions for Chapter ${chapNum}:`);
+                console.warn(`[OrchestratorV2] ⚠️ Correction validation detected ${validationResult.regressions.length} potential regressions (${validationResult.severity}) for Chapter ${chapNum}:`);
                 for (const reg of validationResult.regressions) {
                   console.warn(`  - ${reg}`);
                 }
                 
+                // HIGH severity regressions: block save and keep original
+                if (validationResult.severity === 'high') {
+                  await storage.createActivityLog({
+                    projectId: project.id,
+                    level: "error",
+                    message: `🛑 BLOQUEADO: Corrección de Cap ${chapNum} rechazada por regresiones críticas: ${validationResult.regressions.slice(0, 2).join('; ')}. Manteniendo versión original.`,
+                    agentRole: "smart-editor",
+                  });
+                  console.error(`[OrchestratorV2] HIGH SEVERITY: Blocking correction for Chapter ${chapNum}, keeping original`);
+                  failedCount++;
+                  failedChaptersDetails.push({
+                    chapterNumber: chapNum,
+                    title: chapter.title || `Capítulo ${chapNum}`,
+                    error: 'Corrección bloqueada por regresiones críticas',
+                    issues: validationResult.regressions.slice(0, 3),
+                  });
+                  continue; // Skip saving this correction
+                }
+                
+                // MEDIUM/LOW severity: warn but save
                 await storage.createActivityLog({
                   projectId: project.id,
                   level: "warn",
-                  message: `⚠️ Validación detectó posibles regresiones en Cap ${chapNum}: ${validationResult.regressions.slice(0, 3).join('; ')}. Guardando de todas formas pero revisar manualmente.`,
+                  message: `⚠️ Validación detectó posibles regresiones en Cap ${chapNum}: ${validationResult.regressions.slice(0, 3).join('; ')}. Guardado con advertencias.`,
                   agentRole: "smart-editor",
                 });
               }
@@ -5942,7 +6022,7 @@ ${issuesDescription}`;
                 qualityScore: 8, // Assume improvement
               });
               
-              console.log(`[OrchestratorV2] Successfully updated Chapter ${chapNum} (${wordCount} words)${validationResult.valid ? '' : ' [WITH WARNINGS]'}`);
+              console.log(`[OrchestratorV2] Successfully updated Chapter ${chapNum} (${wordCount} words)${validationResult.valid ? '' : ` [${validationResult.severity.toUpperCase()} WARNINGS]`}`);
               this.callbacks.onAgentStatus("smart-editor", "active", `Capitulo ${chapNum} corregido (${wordCount} palabras)${validationResult.valid ? '' : ' ⚠️'}`);
               this.callbacks.onChapterComplete(
                 chapter.chapterNumber,
