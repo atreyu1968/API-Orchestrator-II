@@ -832,6 +832,9 @@ export async function registerRoutes(
   // LitAgents 2.9.4 - Detect All, Then Fix Strategy
   // ============================================
   
+  // Track active detect-and-fix processes to prevent parallel execution
+  const activeDetectAndFix = new Set<number>();
+  
   app.post("/api/projects/:id/detect-and-fix", async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id);
@@ -839,6 +842,23 @@ export async function registerRoutes(
 
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
+      }
+
+      // CRITICAL: Block if project is actively being processed by ANY system
+      const blockedStatuses = ["generating", "processing", "reviewing", "correcting"];
+      if (blockedStatuses.includes(project.status)) {
+        return res.status(409).json({ 
+          error: `El proyecto está siendo procesado (estado: ${project.status}). Espera a que termine o cancela el proceso actual.`,
+          currentStatus: project.status
+        });
+      }
+
+      // CRITICAL: Block if detect-and-fix is already running for this project
+      if (activeDetectAndFix.has(id)) {
+        return res.status(409).json({ 
+          error: "Ya hay un proceso de 'Detect & Fix' en ejecución para este proyecto.",
+          hint: "Espera a que termine el proceso actual."
+        });
       }
 
       // Must have chapters to review
@@ -849,6 +869,9 @@ export async function registerRoutes(
           hint: "Usa el endpoint /api/projects/:id/start-v2 para generar la novela."
         });
       }
+
+      // Mark this project as having an active detect-and-fix process
+      activeDetectAndFix.add(id);
 
       res.json({ 
         message: "Iniciando estrategia 'Detect All, Then Fix'",
