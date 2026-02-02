@@ -207,24 +207,58 @@ export class ChapterArchitectAgent extends BaseAgent {
       console.log(`[ChapterArchitect] Injected KU pacing directive - FAST PACING ENFORCED`);
     }
 
-    const response = await this.generateContent(prompt);
-    
-    if (response.error) {
-      return response;
-    }
+    // LitAgents 2.9: Auto-retry on parse failure (up to 3 attempts)
+    const maxAttempts = 3;
+    let lastResponse: AgentResponse | null = null;
+    let totalTokenUsage = { inputTokens: 0, outputTokens: 0, thinkingTokens: 0 };
 
-    // Parse JSON response
-    try {
-      const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]) as ChapterArchitectOutput;
-        console.log(`[ChapterArchitect] Successfully parsed: ${parsed.scenes?.length || 0} scenes, target: ${parsed.total_word_target} words`);
-        return { ...response, parsed };
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const attemptPrompt = attempt > 1 
+        ? `${prompt}\n\n⚠️ INTENTO ${attempt}/${maxAttempts}: Tu respuesta anterior no contenía JSON válido. DEBES responder con un objeto JSON válido que contenga: { "scenes": [...], "chapter_hook": "...", "total_word_target": ... }`
+        : prompt;
+
+      const response = await this.generateContent(attemptPrompt);
+      lastResponse = response;
+      
+      // Accumulate token usage across retries
+      if (response.tokenUsage) {
+        totalTokenUsage.inputTokens += response.tokenUsage.inputTokens || 0;
+        totalTokenUsage.outputTokens += response.tokenUsage.outputTokens || 0;
+        totalTokenUsage.thinkingTokens += response.tokenUsage.thinkingTokens || 0;
       }
-    } catch (e) {
-      console.error("[ChapterArchitect] Failed to parse JSON response:", e);
+      
+      if (response.error) {
+        console.error(`[ChapterArchitect] Attempt ${attempt}/${maxAttempts} API error:`, response.error);
+        if (attempt === maxAttempts) {
+          return { ...response, tokenUsage: totalTokenUsage };
+        }
+        continue;
+      }
+
+      // Parse JSON response
+      try {
+        const jsonMatch = response.content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]) as ChapterArchitectOutput;
+          if (parsed.scenes && Array.isArray(parsed.scenes) && parsed.scenes.length > 0) {
+            console.log(`[ChapterArchitect] Successfully parsed (attempt ${attempt}): ${parsed.scenes.length} scenes, target: ${parsed.total_word_target} words`);
+            return { ...response, parsed, tokenUsage: totalTokenUsage };
+          } else {
+            console.warn(`[ChapterArchitect] Attempt ${attempt}/${maxAttempts}: JSON parsed but scenes array missing or empty`);
+          }
+        } else {
+          console.warn(`[ChapterArchitect] Attempt ${attempt}/${maxAttempts}: No JSON object found in response`);
+        }
+      } catch (e) {
+        console.error(`[ChapterArchitect] Attempt ${attempt}/${maxAttempts} parse error:`, e);
+      }
+
+      if (attempt < maxAttempts) {
+        console.log(`[ChapterArchitect] Retrying... (${attempt}/${maxAttempts})`);
+      }
     }
 
-    return response;
+    console.error(`[ChapterArchitect] All ${maxAttempts} attempts failed to produce valid JSON`);
+    return { ...lastResponse!, tokenUsage: totalTokenUsage };
   }
 }
