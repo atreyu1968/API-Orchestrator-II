@@ -895,6 +895,9 @@ export async function registerRoutes(
           sendToStreams({ type: "error", message: error });
           await persistActivityLog(id, "error", error, "orchestrator-v2");
         },
+        onDetectAndFixProgress: (progress) => {
+          sendToStreams({ type: "detect_and_fix_progress", ...progress });
+        },
       });
 
       // Run the new strategy

@@ -334,6 +334,24 @@ interface IssueRegistry {
   totalEscalated: number;
 }
 
+interface DetectAndFixPhaseProgress {
+  phase: 'detection' | 'correction';
+  subPhase?: string;
+  current: number;
+  total: number;
+  details?: {
+    reviewNumber?: number;
+    issuesFoundThisReview?: number;
+    totalUniqueIssues?: number;
+    issueIndex?: number;
+    issueType?: string;
+    issueChapter?: number;
+    issueSeverity?: string;
+    resolved?: number;
+    escalated?: number;
+  };
+}
+
 interface OrchestratorV2Callbacks {
   onAgentStatus: (role: string, status: string, message?: string) => void;
   onChapterComplete: (chapterNumber: number, wordCount: number, chapterTitle: string) => void;
@@ -341,6 +359,7 @@ interface OrchestratorV2Callbacks {
   onProjectComplete: () => void;
   onError: (error: string) => void;
   onChaptersBeingCorrected?: (chapterNumbers: number[], revisionCycle: number) => void;
+  onDetectAndFixProgress?: (progress: DetectAndFixPhaseProgress) => void;
 }
 
 interface OrchestratorV2Options {
@@ -7900,6 +7919,15 @@ ${issuesDescription}`;
 
     this.callbacks.onAgentStatus("final-reviewer", "active", "Fase de detección: ejecutando 3 revisiones exhaustivas...");
     
+    // Emit phase progress
+    this.callbacks.onDetectAndFixProgress?.({
+      phase: 'detection',
+      subPhase: 'starting',
+      current: 0,
+      total: 3,
+      details: { reviewNumber: 0, totalUniqueIssues: 0 }
+    });
+    
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
@@ -7910,6 +7938,15 @@ ${issuesDescription}`;
     for (let reviewNum = 1; reviewNum <= 3; reviewNum++) {
       console.log(`[OrchestratorV2] Detection Phase: Review ${reviewNum}/3`);
       this.callbacks.onAgentStatus("final-reviewer", "active", `Revisión ${reviewNum}/3 en progreso...`);
+      
+      // Emit review start
+      this.callbacks.onDetectAndFixProgress?.({
+        phase: 'detection',
+        subPhase: 'reviewing',
+        current: reviewNum,
+        total: 3,
+        details: { reviewNumber: reviewNum, totalUniqueIssues: seenHashes.size }
+      });
 
       try {
         const reviewResult = await this.finalReviewer.execute({
@@ -7972,6 +8009,19 @@ ${issuesDescription}`;
 
         console.log(`[OrchestratorV2] Review ${reviewNum}: Found ${issues.length} issues, ${newIssuesThisReview} new (${seenHashes.size} total unique)`);
         
+        // Emit review complete with results
+        this.callbacks.onDetectAndFixProgress?.({
+          phase: 'detection',
+          subPhase: 'review_complete',
+          current: reviewNum,
+          total: 3,
+          details: { 
+            reviewNumber: reviewNum, 
+            issuesFoundThisReview: newIssuesThisReview,
+            totalUniqueIssues: seenHashes.size 
+          }
+        });
+        
         await storage.createActivityLog({
           projectId: project.id,
           level: "info",
@@ -8016,6 +8066,17 @@ ${issuesDescription}`;
 
     this.callbacks.onAgentStatus("final-reviewer", "completed", 
       `Detección completa: ${bySeverity.critico} críticos, ${bySeverity.mayor} mayores, ${bySeverity.menor} menores`);
+
+    // Emit detection phase complete
+    this.callbacks.onDetectAndFixProgress?.({
+      phase: 'detection',
+      subPhase: 'complete',
+      current: 3,
+      total: 3,
+      details: { 
+        totalUniqueIssues: registry.totalDetected,
+      }
+    });
 
     return registry;
   }
@@ -8112,6 +8173,15 @@ Responde en JSON:
 
     this.callbacks.onAgentStatus("smart-editor", "active", `Corrigiendo ${registry.issues.length} issues verificados...`);
 
+    // Emit correction phase start
+    this.callbacks.onDetectAndFixProgress?.({
+      phase: 'correction',
+      subPhase: 'starting',
+      current: 0,
+      total: registry.issues.length,
+      details: { resolved: 0, escalated: 0 }
+    });
+
     await storage.createActivityLog({
       projectId: project.id,
       level: "info",
@@ -8138,6 +8208,22 @@ Responde en JSON:
 
       issue.status = 'fixing';
       issue.originalContent = chapter.content;
+
+      // Emit issue being fixed
+      this.callbacks.onDetectAndFixProgress?.({
+        phase: 'correction',
+        subPhase: 'fixing',
+        current: i + 1,
+        total: registry.issues.length,
+        details: { 
+          issueIndex: i + 1,
+          issueType: issue.tipo,
+          issueChapter: issue.chapter,
+          issueSeverity: issue.severidad,
+          resolved: resolvedCount,
+          escalated: escalatedCount
+        }
+      });
 
       this.callbacks.onAgentStatus("smart-editor", "active", 
         `Issue ${i + 1}/${registry.issues.length}: Cap ${issue.chapter} - ${issue.tipo}`);
@@ -8206,6 +8292,21 @@ Responde en JSON:
 
             console.log(`[OrchestratorV2] Issue ${issue.id} resolved on attempt ${issue.attempts}`);
             
+            // Emit issue resolved
+            this.callbacks.onDetectAndFixProgress?.({
+              phase: 'correction',
+              subPhase: 'issue_resolved',
+              current: i + 1,
+              total: registry.issues.length,
+              details: { 
+                issueIndex: i + 1,
+                issueType: issue.tipo,
+                issueChapter: issue.chapter,
+                resolved: resolvedCount,
+                escalated: escalatedCount
+              }
+            });
+            
             await storage.createActivityLog({
               projectId: project.id,
               level: "success",
@@ -8232,6 +8333,21 @@ Responde en JSON:
         issue.status = 'escalated';
         escalatedCount++;
         
+        // Emit issue escalated
+        this.callbacks.onDetectAndFixProgress?.({
+          phase: 'correction',
+          subPhase: 'issue_escalated',
+          current: i + 1,
+          total: registry.issues.length,
+          details: { 
+            issueIndex: i + 1,
+            issueType: issue.tipo,
+            issueChapter: issue.chapter,
+            resolved: resolvedCount,
+            escalated: escalatedCount
+          }
+        });
+        
         await storage.createActivityLog({
           projectId: project.id,
           level: "warn",
@@ -8244,6 +8360,15 @@ Responde en JSON:
       registry.totalResolved = resolvedCount;
       registry.totalEscalated = escalatedCount;
     }
+
+    // Emit correction phase complete
+    this.callbacks.onDetectAndFixProgress?.({
+      phase: 'correction',
+      subPhase: 'complete',
+      current: registry.issues.length,
+      total: registry.issues.length,
+      details: { resolved: resolvedCount, escalated: escalatedCount }
+    });
 
     this.callbacks.onAgentStatus("smart-editor", "completed", 
       `Completado: ${resolvedCount} resueltos, ${escalatedCount} escalados de ${registry.issues.length}`);
