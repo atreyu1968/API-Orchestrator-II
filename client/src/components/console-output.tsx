@@ -86,15 +86,46 @@ function getChapterColor(chapterNum: number): string {
 
 export function ConsoleOutput({ logs, projectId }: ConsoleOutputProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const isUserScrollingRef = useRef(false);
+  const prevProjectIdRef = useRef<number | undefined>(projectId);
+  const prevLogsLengthRef = useRef(0);
 
   useEffect(() => {
     if (scrollAreaRef.current) {
       const viewport = scrollAreaRef.current.querySelector("[data-radix-scroll-area-viewport]");
       if (viewport) {
-        viewport.scrollTop = viewport.scrollHeight;
+        const isProjectChange = prevProjectIdRef.current !== projectId;
+        const isInitialLoad = prevLogsLengthRef.current === 0 && logs.length > 0;
+        
+        if (isProjectChange || isInitialLoad) {
+          viewport.scrollTop = viewport.scrollHeight;
+          isUserScrollingRef.current = false;
+        } else if (!isUserScrollingRef.current) {
+          const isNearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100;
+          if (isNearBottom) {
+            viewport.scrollTop = viewport.scrollHeight;
+          }
+        }
+        
+        prevProjectIdRef.current = projectId;
+        prevLogsLengthRef.current = logs.length;
       }
     }
-  }, [logs]);
+  }, [logs, projectId]);
+
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      const viewport = scrollAreaRef.current.querySelector("[data-radix-scroll-area-viewport]");
+      if (viewport) {
+        const handleScroll = () => {
+          const isNearBottom = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight < 100;
+          isUserScrollingRef.current = !isNearBottom;
+        };
+        viewport.addEventListener("scroll", handleScroll);
+        return () => viewport.removeEventListener("scroll", handleScroll);
+      }
+    }
+  }, []);
 
   const handleExportLogs = () => {
     if (projectId) {
