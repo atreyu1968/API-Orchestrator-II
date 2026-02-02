@@ -45,16 +45,6 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       }
     }
   }, [activeProjects, selectedProjectId]);
-  
-  useEffect(() => {
-    const generatingProject = activeProjects.find(p => p.status === "generating");
-    if (generatingProject && selectedProjectId !== generatingProject.id) {
-      const currentSelected = projects.find(p => p.id === selectedProjectId);
-      if (!currentSelected || currentSelected.status !== "generating") {
-        setSelectedProjectId(generatingProject.id);
-      }
-    }
-  }, [activeProjects, selectedProjectId, projects]);
 
   return (
     <ProjectContext.Provider value={{
