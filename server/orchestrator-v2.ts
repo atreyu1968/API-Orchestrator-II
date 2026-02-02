@@ -4127,6 +4127,12 @@ Capítulos a condensar: ${affectedChapters.join(", ")}
       // Track previous cycle score for consistency enforcement
       let previousCycleScore: number | undefined = undefined;
       
+      // LitAgents 2.9.1: Chapter snapshot system for regression rollback
+      // Stores chapter content before corrections to enable rollback if score drops
+      type ChapterSnapshot = { chapterNumber: number; content: string; title: string };
+      let chapterSnapshots: ChapterSnapshot[] = [];
+      let lastGoodScore: number = 0;
+      
       // HASH-BASED ISSUE TRACKING (synced with reedit-orchestrator system)
       // Load resolved issue hashes from database to survive restarts
       let localResolvedHashes: string[] = (project.resolvedIssueHashes as string[]) || [];
@@ -5118,15 +5124,58 @@ Si el error es de inconsistencia física/edad:
         // and issues are filtered using resolvedIssueHashes on next cycle (see pre-review correction section)
         console.log(`[OrchestratorV2] Review result: ${veredicto}, score: ${puntuacion_global}, chapters to rewrite: ${capitulos_para_reescribir?.length || 0}, issues: ${issues?.length || 0}`);
         
-        // Detect score regression - this should not happen normally
-        if (previousCycleScore !== undefined && puntuacion_global < previousCycleScore) {
+        // LitAgents 2.9.1: Detect score regression and rollback if significant
+        const scoreDropped = previousCycleScore !== undefined && puntuacion_global < previousCycleScore;
+        const significantDrop = previousCycleScore !== undefined && (previousCycleScore - puntuacion_global) >= 2;
+        
+        if (scoreDropped) {
           console.warn(`[OrchestratorV2] ⚠️ SCORE REGRESSION: Score dropped from ${previousCycleScore} to ${puntuacion_global} in cycle ${currentCycle}`);
-          await storage.createActivityLog({
-            projectId: project.id,
-            level: "warn",
-            message: `Puntuación bajó de ${previousCycleScore} a ${puntuacion_global} en ciclo ${currentCycle}. Esto puede indicar inconsistencia del revisor o regresiones introducidas por las correcciones.`,
-            agentRole: "final-reviewer",
-          });
+          
+          // Significant regression (2+ points) - rollback to previous snapshot
+          if (significantDrop && chapterSnapshots.length > 0) {
+            console.warn(`[OrchestratorV2] 🔄 ROLLBACK: Restoring ${chapterSnapshots.length} chapters to pre-correction state (score dropped by ${previousCycleScore! - puntuacion_global} points)`);
+            this.callbacks.onAgentStatus("orchestrator", "warning", `Regresión detectada. Restaurando ${chapterSnapshots.length} capítulos...`);
+            
+            // Restore chapters from snapshot
+            let restoredCount = 0;
+            for (const snapshot of chapterSnapshots) {
+              const chapters = await storage.getChaptersByProject(project.id);
+              const chapter = chapters.find(c => c.chapterNumber === snapshot.chapterNumber);
+              if (chapter && chapter.content !== snapshot.content) {
+                await storage.updateChapter(chapter.id, { content: snapshot.content });
+                restoredCount++;
+              }
+            }
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `🔄 ROLLBACK: Puntuación bajó de ${previousCycleScore} a ${puntuacion_global} en ciclo ${currentCycle}. Restaurados ${restoredCount} capítulos a versión anterior. Las correcciones introdujeron nuevos errores.`,
+              agentRole: "orchestrator",
+            });
+            
+            // Reset to previous good score for next iteration
+            puntuacion_global = lastGoodScore || previousCycleScore || puntuacion_global;
+            
+            // Clear snapshots - will be recreated on next correction attempt
+            chapterSnapshots = [];
+            
+            // Skip corrections this cycle - just re-evaluate on next cycle
+            continue;
+          } else {
+            // Minor regression - just log warning
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              message: `Puntuación bajó de ${previousCycleScore} a ${puntuacion_global} en ciclo ${currentCycle}. Esto puede indicar inconsistencia del revisor o regresiones introducidas por las correcciones.`,
+              agentRole: "final-reviewer",
+            });
+          }
+        }
+        
+        // Track good scores for potential rollback
+        if (puntuacion_global >= lastGoodScore) {
+          lastGoodScore = puntuacion_global;
         }
         
         // Save current score for next cycle
@@ -5419,6 +5468,20 @@ Si el error es de inconsistencia física/edad:
           if (this.callbacks.onChaptersBeingCorrected) {
             this.callbacks.onChaptersBeingCorrected(capitulos_para_reescribir, currentCycle);
           }
+
+          // LitAgents 2.9.1: Create snapshots of chapters before corrections for potential rollback
+          chapterSnapshots = [];
+          for (const chapNum of capitulos_para_reescribir) {
+            const chapter = this.findChapterByNumber(currentChapters, chapNum);
+            if (chapter && chapter.content) {
+              chapterSnapshots.push({
+                chapterNumber: chapter.chapterNumber,
+                content: chapter.content,
+                title: chapter.title || `Capítulo ${chapter.chapterNumber}`,
+              });
+            }
+          }
+          console.log(`[OrchestratorV2] Created snapshots for ${chapterSnapshots.length} chapters before correction`);
 
           let correctedCount = 0;
           let failedCount = 0;
