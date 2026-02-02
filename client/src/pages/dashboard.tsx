@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, ExternalLink, Loader2, BookOpen } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, ExternalLink, Loader2, BookOpen, Crosshair } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
@@ -419,6 +419,21 @@ export default function Dashboard() {
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo reiniciar las correcciones", variant: "destructive" });
+    },
+  });
+
+  const detectAndFixMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/detect-and-fix`);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Detectar y Corregir iniciado", description: "Fase 1: 3 revisiones exhaustivas → Fase 2: Corrección verificada" });
+      addLog("thinking", "Iniciando estrategia 'Detect All, Then Fix'...", "final-reviewer");
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo iniciar la detección y corrección", variant: "destructive" });
     },
   });
 
@@ -1242,6 +1257,16 @@ export default function Dashboard() {
                       >
                         <RefreshCw className="h-4 w-4 mr-2" />
                         Reiniciar Correcciones
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => detectAndFixMutation.mutate(currentProject.id)}
+                        disabled={detectAndFixMutation.isPending}
+                        data-testid="button-detect-and-fix"
+                      >
+                        <Crosshair className="h-4 w-4 mr-2" />
+                        Detectar y Corregir
                       </Button>
                     </>
                   )}
