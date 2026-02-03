@@ -1,4 +1,4 @@
-import { BaseAgent } from "./base-agent";
+import { BaseAgent, AgentResponse } from "./base-agent";
 
 const GUIDE_GENERATOR_PROMPT = `Eres un experto en planificación de novelas. Tu trabajo es generar una GUÍA DE ESCRITURA completa y detallada para una novela basándote en:
 1. Un argumento/sinopsis proporcionado
@@ -222,7 +222,7 @@ export class GuideGeneratorAgent extends BaseAgent {
     styleGuideContent?: string;
     seriesContext?: string;
     kindleUnlimited?: boolean;
-  }): Promise<string> {
+  }): Promise<AgentResponse> {
     let prompt = `Genera una guía de escritura completa para la siguiente novela:
 
 ## ARGUMENTO/SINOPSIS:
