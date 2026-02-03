@@ -202,12 +202,13 @@ PREVENCIÓN DE DEUS EX MACHINA - OBLIGATORIO:
 Genera la guía COMPLETA en español. Sé específico y detallado. No uses placeholders genéricos.`;
 
 export class GuideGeneratorAgent extends BaseAgent {
-  constructor() {
+  constructor(useTranslatorApi: boolean = false) {
     super({
       name: "guide-generator",
       role: "Generador de guías de escritura",
       systemPrompt: GUIDE_GENERATOR_PROMPT,
       model: "deepseek-chat",
+      useTranslatorClient: useTranslatorApi,
     });
   }
 
@@ -283,4 +284,4 @@ Las subtramas deben distribuirse en múltiples capítulos (mínimo 3, idealmente
   }
 }
 
-export const guideGeneratorAgent = new GuideGeneratorAgent();
+export const guideGeneratorAgent = new GuideGeneratorAgent(true);

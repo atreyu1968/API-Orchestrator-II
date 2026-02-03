@@ -51,6 +51,30 @@ const updateSeriesSchema = z.object({
 const activeStreams = new Map<number, Set<Response>>();
 const activeManuscriptAnalysis = new Map<number, AbortController>();
 
+// Global semaphore to prevent simultaneous guide/series generation
+let activeGuideGeneration: { type: string; title: string; startedAt: Date } | null = null;
+
+function acquireGenerationLock(type: string, title: string): boolean {
+  if (activeGuideGeneration) {
+    return false;
+  }
+  activeGuideGeneration = { type, title, startedAt: new Date() };
+  console.log(`[GenerationLock] Acquired lock for ${type}: "${title}"`);
+  return true;
+}
+
+function releaseGenerationLock() {
+  if (activeGuideGeneration) {
+    const duration = Date.now() - activeGuideGeneration.startedAt.getTime();
+    console.log(`[GenerationLock] Released lock for ${activeGuideGeneration.type}: "${activeGuideGeneration.title}" (duration: ${Math.round(duration/1000)}s)`);
+    activeGuideGeneration = null;
+  }
+}
+
+function getActiveGeneration(): { type: string; title: string; startedAt: Date } | null {
+  return activeGuideGeneration;
+}
+
 function getSectionLabel(chapterNumber: number, title?: string | null): string {
   if (chapterNumber === 0) return title || "el Prólogo";
   if (chapterNumber === -1) return title || "el Epílogo";
@@ -9523,6 +9547,15 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   
   app.post("/api/generate-writing-guide", async (req: Request, res: Response) => {
     try {
+      // Check for active generation to prevent simultaneous operations
+      const activeGen = getActiveGeneration();
+      if (activeGen) {
+        return res.status(409).json({ 
+          error: `Ya hay una generación en curso: ${activeGen.type} "${activeGen.title}". Por favor espera a que termine.`,
+          activeGeneration: activeGen
+        });
+      }
+
       const { guideGeneratorAgent } = await import("./agents/guide-generator");
       
       const schema = z.object({
@@ -9591,8 +9624,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       
       console.log(`[GuideGenerator] Generating guide for "${params.title}"...`);
       
-      // Generate the writing guide
-      const guideResponse = await guideGeneratorAgent.generateWritingGuide({
+      // Acquire generation lock
+      if (!acquireGenerationLock("writing-guide", params.title)) {
+        const activeGen = getActiveGeneration();
+        return res.status(409).json({ 
+          error: `Ya hay una generación en curso: ${activeGen?.type} "${activeGen?.title}". Por favor espera a que termine.`,
+          activeGeneration: activeGen
+        });
+      }
+      
+      try {
+        // Generate the writing guide
+        const guideResponse = await guideGeneratorAgent.generateWritingGuide({
         argument: params.argument,
         title: params.title,
         genre: params.genre,
@@ -9646,17 +9689,21 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         console.log(`[GuideGenerator] Project created (ID: ${project.id})`);
       }
       
-      res.json({
-        success: true,
-        guideContent,
-        extendedGuideId: extendedGuide?.id,
-        projectId: project?.id,
-        message: project 
-          ? `Guía generada y proyecto "${params.title}" creado exitosamente`
-          : "Guía generada exitosamente",
-      });
+        res.json({
+          success: true,
+          guideContent,
+          extendedGuideId: extendedGuide?.id,
+          projectId: project?.id,
+          message: project 
+            ? `Guía generada y proyecto "${params.title}" creado exitosamente`
+            : "Guía generada exitosamente",
+        });
+      } finally {
+        releaseGenerationLock();
+      }
       
     } catch (error: any) {
+      releaseGenerationLock();
       console.error("[GuideGenerator] Error:", error);
       res.status(500).json({ 
         error: error.message || "Error al generar la guía",
@@ -9671,6 +9718,16 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   
   app.post("/api/generate-series-guide", async (req: Request, res: Response) => {
     console.log("[SeriesGuideGenerator] Endpoint hit, body:", JSON.stringify(req.body).substring(0, 200));
+    
+    // Check for active generation to prevent simultaneous operations
+    const activeGen = getActiveGeneration();
+    if (activeGen) {
+      return res.status(409).json({ 
+        error: `Ya hay una generación en curso: ${activeGen.type} "${activeGen.title}". Por favor espera a que termine.`,
+        activeGeneration: activeGen
+      });
+    }
+    
     try {
       const { seriesGuideGeneratorAgent } = await import("./agents/series-guide-generator");
       
@@ -9709,8 +9766,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       
       console.log(`[SeriesGuideGenerator] Generating guide for series "${params.seriesTitle}"...`);
       
-      // Generate the series guide
-      const guideResponse = await seriesGuideGeneratorAgent.generateSeriesGuide({
+      // Acquire generation lock
+      if (!acquireGenerationLock("series-guide", params.seriesTitle)) {
+        const currentGen = getActiveGeneration();
+        return res.status(409).json({ 
+          error: `Ya hay una generación en curso: ${currentGen?.type} "${currentGen?.title}". Por favor espera a que termine.`,
+          activeGeneration: currentGen
+        });
+      }
+      
+      try {
+        // Generate the series guide
+        const guideResponse = await seriesGuideGeneratorAgent.generateSeriesGuide({
         concept: params.concept,
         seriesTitle: params.seriesTitle,
         genre: params.genre,
@@ -9904,16 +9971,20 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
         }
       }
       
-      res.json({
-        success: true,
-        guideContent,
-        seriesId: series?.id,
-        message: series 
-          ? `Guía generada y serie "${params.seriesTitle}" creada exitosamente`
-          : "Guía de serie generada exitosamente",
-      });
+        res.json({
+          success: true,
+          guideContent,
+          seriesId: series?.id,
+          message: series 
+            ? `Guía generada y serie "${params.seriesTitle}" creada exitosamente`
+            : "Guía de serie generada exitosamente",
+        });
+      } finally {
+        releaseGenerationLock();
+      }
       
     } catch (error: any) {
+      releaseGenerationLock();
       console.error("[SeriesGuideGenerator] Error:", error);
       res.status(500).json({ 
         error: error.message || "Error al generar la guía de serie",
@@ -9927,6 +9998,15 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
   // =============================================
   
   app.post("/api/series/:id/continue-generation", async (req: Request, res: Response) => {
+    // Check for active generation to prevent simultaneous operations
+    const activeGen = getActiveGeneration();
+    if (activeGen) {
+      return res.status(409).json({ 
+        error: `Ya hay una generación en curso: ${activeGen.type} "${activeGen.title}". Por favor espera a que termine.`,
+        activeGeneration: activeGen
+      });
+    }
+    
     try {
       const seriesId = parseInt(req.params.id);
       const series = await storage.getSeries(seriesId);
@@ -9990,7 +10070,17 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
       
       console.log(`[ContinueGeneration] Found ${pendingVolumes.length} pending volumes to generate`);
       
-      // Get pseudonym style guide if available
+      // Acquire generation lock
+      if (!acquireGenerationLock("continue-series", series.title)) {
+        const currentGen = getActiveGeneration();
+        return res.status(409).json({ 
+          error: `Ya hay una generación en curso: ${currentGen?.type} "${currentGen?.title}". Por favor espera a que termine.`,
+          activeGeneration: currentGen
+        });
+      }
+      
+      try {
+        // Get pseudonym style guide if available
       let styleGuideContent: string | undefined;
       if (params.styleGuideId) {
         const styleGuide = await storage.getStyleGuide(params.styleGuideId);
@@ -10092,16 +10182,20 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
         }
       }
       
-      res.json({
-        success: true,
-        seriesId: series.id,
-        generatedBooks,
-        totalVolumes: volumes.length,
-        pendingVolumes: pendingVolumes.length - generatedBooks.length,
-        message: `Se generaron ${generatedBooks.length} libros adicionales para la serie "${series.title}"`,
-      });
+        res.json({
+          success: true,
+          seriesId: series.id,
+          generatedBooks,
+          totalVolumes: volumes.length,
+          pendingVolumes: pendingVolumes.length - generatedBooks.length,
+          message: `Se generaron ${generatedBooks.length} libros adicionales para la serie "${series.title}"`,
+        });
+      } finally {
+        releaseGenerationLock();
+      }
       
     } catch (error: any) {
+      releaseGenerationLock();
       console.error("[ContinueGeneration] Error:", error);
       res.status(500).json({ 
         error: error.message || "Error al continuar la generación de la serie",
