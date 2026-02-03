@@ -775,6 +775,109 @@ export class OrchestratorV2 {
   }
 
   /**
+   * LitAgents 2.9.5: Build plot threads context to inject into Chapter Architect and Ghostwriter
+   * Ensures scenes are written following the established plot threads
+   */
+  private async buildPlotThreadsContext(
+    projectId: number,
+    chapterNumber: number,
+    outline: Array<{ chapter_num: number; title: string; summary: string; key_event: string }> | null
+  ): Promise<string> {
+    try {
+      // Get plot threads from database
+      const plotThreads = await storage.getPlotThreadsByProject(projectId);
+      if (!plotThreads || plotThreads.length === 0) {
+        return '';
+      }
+      
+      // Get current chapter outline for context
+      const currentChapter = outline?.find(ch => ch.chapter_num === chapterNumber);
+      const nextChapter = outline?.find(ch => ch.chapter_num === chapterNumber + 1);
+      
+      // Find which threads should be active in this chapter based on outline
+      const activeThreads: typeof plotThreads = [];
+      const chapterSummary = (currentChapter?.summary || '').toLowerCase();
+      const chapterEvent = (currentChapter?.key_event || '').toLowerCase();
+      const chapterTitle = (currentChapter?.title || '').toLowerCase();
+      const chapterText = chapterTitle + ' ' + chapterSummary + ' ' + chapterEvent;
+      
+      for (const thread of plotThreads) {
+        const threadName = (thread.name || '').toLowerCase();
+        const threadGoal = (thread.goal || '').toLowerCase();
+        
+        // Extract keywords from thread
+        const keywords = (threadName + ' ' + threadGoal).split(/\s+/)
+          .filter(w => w.length >= 4)
+          .slice(0, 5);
+        
+        // Check if any keyword matches chapter content
+        const matchCount = keywords.filter(kw => chapterText.includes(kw)).length;
+        if (matchCount >= 1 || thread.status === 'active') {
+          activeThreads.push(thread);
+        }
+      }
+      
+      if (activeThreads.length === 0) {
+        // Default: include all active threads if none matched
+        activeThreads.push(...plotThreads.filter(t => t.status === 'active').slice(0, 5));
+      }
+      
+      // Build context string
+      let context = `
+
+═══════════════════════════════════════════════════════════════
+📚 TRAMAS Y SUBTRAMAS ACTIVAS - OBLIGATORIO DESARROLLAR
+═══════════════════════════════════════════════════════════════
+
+Las siguientes tramas DEBEN ser avanzadas en este capítulo. Cada escena debe contribuir al desarrollo de al menos una de ellas:
+
+`;
+      
+      for (let i = 0; i < activeThreads.length; i++) {
+        const thread = activeThreads[i];
+        const threadType = i === 0 ? '🔴 TRAMA PRINCIPAL' : `🟡 SUBTRAMA ${i}`;
+        context += `${threadType}: ${thread.name}
+   Objetivo: ${thread.goal || 'No especificado'}
+   Estado: ${thread.status === 'resolved' ? 'RESUELTA' : 'EN DESARROLLO'}
+   
+`;
+      }
+      
+      // Add current chapter expectations
+      if (currentChapter) {
+        context += `
+📍 EXPECTATIVAS PARA CAPÍTULO ${chapterNumber}:
+   Evento clave: ${currentChapter.key_event || 'No especificado'}
+   Resumen esperado: ${currentChapter.summary || 'No especificado'}
+`;
+      }
+      
+      // Add hint for next chapter connection
+      if (nextChapter) {
+        context += `
+🔗 PREPARAR CONEXIÓN CON SIGUIENTE CAPÍTULO:
+   Próximo evento: ${nextChapter.key_event || 'No especificado'}
+`;
+      }
+      
+      context += `
+⚠️ OBLIGACIONES DEL ESCRITOR:
+1. Cada escena DEBE avanzar al menos una trama/subtrama
+2. NO crear tramas nuevas que no estén listadas arriba
+3. Mantener coherencia con el objetivo de cada trama
+4. Las escenas de transición también deben aportar al desarrollo de tramas
+═══════════════════════════════════════════════════════════════
+
+`;
+      
+      return context;
+    } catch (error) {
+      console.error('[OrchestratorV2] Error building plot threads context:', error);
+      return '';
+    }
+  }
+
+  /**
    * LitAgents 2.9.5: Build corrective instructions for Global Architect regeneration
    */
   private buildPlotCorrectionInstructions(
@@ -4111,6 +4214,13 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           if (enrichedContext) {
             consistencyConstraints += enrichedContext;
             console.log(`[OrchestratorV2] Added enriched writing context (${enrichedContext.length} chars)`);
+          }
+          
+          // LitAgents 2.9.5: Inject active plot threads to guide scene writing
+          const plotThreadsContext = await this.buildPlotThreadsContext(project.id, chapterNumber, outline as any[]);
+          if (plotThreadsContext) {
+            consistencyConstraints += plotThreadsContext;
+            console.log(`[OrchestratorV2] Injected plot threads context (${plotThreadsContext.length} chars)`);
           }
         } catch (err) {
           console.error(`[OrchestratorV2] Failed to generate constraints:`, err);
