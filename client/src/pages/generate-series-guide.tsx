@@ -89,8 +89,8 @@ export default function GenerateSeriesGuidePage() {
       const saved = localStorage.getItem(GENERATION_STATUS_KEY);
       if (saved) {
         const status = JSON.parse(saved) as GenerationStatus;
-        // Check if generation is stale (more than 10 minutes old without completion)
-        if (status.isGenerating && Date.now() - status.startedAt > 10 * 60 * 1000) {
+        // Check if generation is stale (more than 60 minutes old without completion)
+        if (status.isGenerating && Date.now() - status.startedAt > 60 * 60 * 1000) {
           localStorage.removeItem(GENERATION_STATUS_KEY);
           return null;
         }
