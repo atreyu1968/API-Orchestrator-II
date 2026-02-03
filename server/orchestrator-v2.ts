@@ -507,8 +507,32 @@ export class OrchestratorV2 {
     for (const thread of safePlotThreads) {
       const threadNameLower = (thread.name || '').toLowerCase();
       const threadGoalLower = (thread.goal || '').toLowerCase();
+      const threadDescLower = (thread.description || '').toLowerCase();
       
       if (!threadNameLower) continue; // Skip threads without names
+      
+      // Extract meaningful keywords from thread name, goal, and description
+      // Filter out common words that don't help identify the thread
+      const stopWords = new Set(['el', 'la', 'los', 'las', 'un', 'una', 'de', 'del', 'al', 'a', 'en', 'con', 'por', 'para', 'que', 'y', 'o', 'su', 'sus', 'se', 'lo', 'es', 'son', 'como', 'más', 'pero', 'sin', 'sobre', 'entre', 'desde', 'hasta', 'the', 'a', 'an', 'of', 'to', 'and', 'or', 'is', 'are', 'be', 'was', 'were', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they', 'me', 'him', 'her', 'us', 'them', 'my', 'your', 'his', 'its', 'our', 'their', 'mine', 'yours', 'hers', 'ours', 'theirs', 'what', 'which', 'who', 'whom', 'whose', 'where', 'when', 'why', 'how', 'all', 'each', 'every', 'both', 'few', 'more', 'most', 'other', 'some', 'such', 'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 'just', 'also']);
+      
+      // Extract keywords (words >= 4 chars that aren't stopwords)
+      const extractKeywords = (text: string): string[] => {
+        return text.split(/[\s\/\(\)\-\.,;:]+/)
+          .filter(w => w.length >= 4 && !stopWords.has(w))
+          .slice(0, 10); // Max 10 keywords per source
+      };
+      
+      const nameKeywords = extractKeywords(threadNameLower);
+      const goalKeywords = extractKeywords(threadGoalLower);
+      const descKeywords = extractKeywords(threadDescLower);
+      
+      // Combine all keywords, prioritizing name and goal (deduplicate)
+      const keywordSet = new Set([...nameKeywords, ...goalKeywords, ...descKeywords]);
+      const allKeywords = Array.from(keywordSet);
+      
+      // Also extract character names from goal (proper nouns - capitalized words in original)
+      const characterNames = (thread.goal || '').match(/[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}/g) || [];
+      const charNamesLower = characterNames.map(n => n.toLowerCase());
       
       // Search for mentions in chapter summaries and key events
       let mentionCount = 0;
@@ -519,24 +543,42 @@ export class OrchestratorV2 {
         const ch = safeOutline[idx];
         const summaryLower = (ch.summary || '').toLowerCase();
         const keyEventLower = (ch.key_event || '').toLowerCase();
-        const combined = summaryLower + ' ' + keyEventLower;
+        const titleLower = (ch.title || '').toLowerCase();
+        const combined = titleLower + ' ' + summaryLower + ' ' + keyEventLower;
         
-        // Check if this thread is mentioned
-        const goalWords = threadGoalLower.split(' ').slice(0, 3).join(' ');
-        if (combined.includes(threadNameLower) || 
-            (goalWords.length > 5 && combined.includes(goalWords))) {
+        // Count how many keywords from this thread appear in this chapter
+        let keywordMatches = 0;
+        for (const kw of allKeywords) {
+          if (combined.includes(kw)) keywordMatches++;
+        }
+        
+        // Also check for character name matches (strong signal)
+        let charMatches = 0;
+        for (const charName of charNamesLower) {
+          if (combined.includes(charName)) charMatches++;
+        }
+        
+        // Consider a match if:
+        // - 2+ keywords match, OR
+        // - 1+ character names match AND 1+ keywords match, OR
+        // - Thread name appears directly
+        const directNameMatch = combined.includes(threadNameLower.replace(/[\/\(\)]/g, ' ').trim());
+        const hasEnoughKeywords = keywordMatches >= 2;
+        const hasCharAndKeyword = charMatches >= 1 && keywordMatches >= 1;
+        
+        if (directNameMatch || hasEnoughKeywords || hasCharAndKeyword) {
           mentionCount++;
           lastMentionIndex = idx; // Track by index
           
           // Check for resolution keywords
-          if (/resuelv|conclu|final|descubr|revel|logra|consigue|cierra|termina|acaba/i.test(combined)) {
+          if (/resuelv|conclu|final|descubr|revel|logra|consigue|cierra|termina|acaba|confes|verdad|prueba|libera|salva|recupera|sana|cura/i.test(combined)) {
             hasResolution = true;
           }
         }
       }
       
       if (mentionCount === 0) {
-        criticalIssues.push(`❌ TRAMA HUÉRFANA: "${thread.name}" (objetivo: ${thread.goal}) nunca aparece en ningún capítulo.`);
+        criticalIssues.push(`❌ TRAMA HUÉRFANA: "${thread.name}" (objetivo: ${thread.goal}) nunca aparece en ningún capítulo. Palabras clave buscadas: ${allKeywords.slice(0, 5).join(', ')}`);
       } else if (mentionCount === 1) {
         warnings.push(`⚠️ TRAMA DÉBIL: "${thread.name}" solo aparece en 1 capítulo. Necesita desarrollo a lo largo de la novela.`);
       } else if (!hasResolution && lastMentionIndex >= 0 && lastMentionIndex < safeOutline.length - 3) {
