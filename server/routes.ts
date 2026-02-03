@@ -2983,6 +2983,32 @@ export async function registerRoutes(
     }
   });
 
+  // Update series guide content
+  app.patch("/api/series/:id/guide", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { content } = req.body;
+
+      if (!content || typeof content !== "string") {
+        return res.status(400).json({ error: "Content is required" });
+      }
+
+      const series = await storage.getSeries(id);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+
+      await storage.updateSeries(id, {
+        seriesGuide: content,
+      });
+
+      res.json({ message: "Guía de serie actualizada" });
+    } catch (error) {
+      console.error("Error updating series guide:", error);
+      res.status(500).json({ error: "Failed to update series guide" });
+    }
+  });
+
   // Extract milestones and plot threads from series guide using AI
   app.post("/api/series/:id/guide/extract", async (req: Request, res: Response) => {
     try {

@@ -1,17 +1,19 @@
 import { useState, useRef, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ConfigPanel, type ConfigFormData } from "@/components/config-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download } from "lucide-react";
+import { Settings, Trash2, BookOpen, Clock, Pencil, FileText, Upload, Search, Download, Eye, Check, Loader2 } from "lucide-react";
 import { BOOK_WRITING_GUIDE_TEMPLATE, downloadTemplate } from "@/lib/writing-templates";
 import { Link } from "wouter";
 import type { Project, ExtendedGuide } from "@shared/schema";
@@ -23,6 +25,10 @@ export default function ConfigPage() {
   const [deleteGuideId, setDeleteGuideId] = useState<number | null>(null);
   const [projectSearch, setProjectSearch] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  const [viewingGuide, setViewingGuide] = useState<ExtendedGuide | null>(null);
+  const [editingBookGuide, setEditingBookGuide] = useState<ExtendedGuide | null>(null);
+  const [editGuideContent, setEditGuideContent] = useState("");
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
@@ -121,6 +127,25 @@ export default function ConfigPage() {
       toast({
         title: "Error",
         description: "No se pudo eliminar la guía",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateGuideMutation = useMutation({
+    mutationFn: async ({ guideId, content }: { guideId: number; content: string }) => {
+      await apiRequest("PATCH", `/api/extended-guides/${guideId}`, { content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/extended-guides"] });
+      setEditingBookGuide(null);
+      setEditGuideContent("");
+      toast({ title: "Guía actualizada" });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar la guía",
         variant: "destructive",
       });
     },
@@ -412,15 +437,36 @@ export default function ConfigPage() {
                         {guide.originalFileName}
                       </p>
                     </div>
-                    <Button 
-                      variant="ghost" 
-                      size="icon"
-                      onClick={() => setDeleteGuideId(guide.id)}
-                      disabled={deleteGuideMutation.isPending}
-                      data-testid={`button-delete-guide-${guide.id}`}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => setViewingGuide(guide)}
+                        data-testid={`button-view-guide-${guide.id}`}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => {
+                          setEditingBookGuide(guide);
+                          setEditGuideContent(guide.content);
+                        }}
+                        data-testid={`button-edit-guide-${guide.id}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="icon"
+                        onClick={() => setDeleteGuideId(guide.id)}
+                        disabled={deleteGuideMutation.isPending}
+                        data-testid={`button-delete-guide-${guide.id}`}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -534,6 +580,86 @@ export default function ConfigPage() {
           setDeleteGuideId(null);
         }}
       />
+
+      {/* View Book Guide Dialog */}
+      <Dialog open={!!viewingGuide} onOpenChange={(open) => !open && setViewingGuide(null)}>
+        <DialogContent className="max-w-4xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              {viewingGuide?.title}
+            </DialogTitle>
+            <DialogDescription>
+              Guía de escritura para la novela
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[65vh] pr-4">
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown>{viewingGuide?.content || ""}</ReactMarkdown>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Book Guide Dialog */}
+      <Dialog open={!!editingBookGuide} onOpenChange={(open) => {
+        if (!open) {
+          setEditingBookGuide(null);
+          setEditGuideContent("");
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5" />
+              Editar: {editingBookGuide?.title}
+            </DialogTitle>
+            <DialogDescription>
+              Modifica el contenido de la guía de escritura
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={editGuideContent}
+              onChange={(e) => setEditGuideContent(e.target.value)}
+              className="min-h-[50vh] font-mono text-sm"
+              placeholder="Contenido de la guía en formato Markdown..."
+              data-testid="textarea-edit-book-guide"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingBookGuide(null);
+                  setEditGuideContent("");
+                }}
+                data-testid="button-cancel-edit-book-guide"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => {
+                  if (editingBookGuide) {
+                    updateGuideMutation.mutate({
+                      guideId: editingBookGuide.id,
+                      content: editGuideContent,
+                    });
+                  }
+                }}
+                disabled={updateGuideMutation.isPending}
+                data-testid="button-save-book-guide"
+              >
+                {updateGuideMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Check className="h-4 w-4 mr-2" />
+                )}
+                Guardar Cambios
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

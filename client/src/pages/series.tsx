@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import ReactMarkdown from "react-markdown";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -395,6 +396,10 @@ export default function SeriesPage() {
   const volumeInputRef = useRef<HTMLInputElement>(null);
   
   const [viewingSnapshotVolume, setViewingSnapshotVolume] = useState<SeriesVolume | null>(null);
+  
+  const [viewingGuide, setViewingGuide] = useState<SeriesWithDetails | null>(null);
+  const [editingGuide, setEditingGuide] = useState<SeriesWithDetails | null>(null);
+  const [editGuideContent, setEditGuideContent] = useState("");
 
   const { data: registry = [], isLoading } = useQuery<SeriesWithDetails[]>({
     queryKey: ["/api/series/registry"],
@@ -511,6 +516,22 @@ export default function SeriesPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "No se pudo eliminar la guia", variant: "destructive" });
+    },
+  });
+
+  const updateSeriesGuideMutation = useMutation({
+    mutationFn: async ({ seriesId, content }: { seriesId: number; content: string }) => {
+      await apiRequest("PATCH", `/api/series/${seriesId}/guide`, { content });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/series"] });
+      setEditingGuide(null);
+      setEditGuideContent("");
+      toast({ title: "Guía actualizada" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "No se pudo actualizar la guía", variant: "destructive" });
     },
   });
 
@@ -1090,6 +1111,27 @@ export default function SeriesPage() {
                         <Button
                           variant="outline"
                           size="sm"
+                          onClick={() => setViewingGuide(s)}
+                          data-testid={`button-view-guide-${s.id}`}
+                        >
+                          <Eye className="h-4 w-4 mr-2" />
+                          Ver
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setEditingGuide(s);
+                            setEditGuideContent(s.seriesGuide || "");
+                          }}
+                          data-testid={`button-edit-guide-${s.id}`}
+                        >
+                          <Pencil className="h-4 w-4 mr-2" />
+                          Editar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
                           onClick={() => extractMilestonesMutation.mutate(s.id)}
                           disabled={extractMilestonesMutation.isPending && extractingSeriesId === s.id}
                           data-testid={`button-extract-milestones-${s.id}`}
@@ -1494,6 +1536,86 @@ export default function SeriesPage() {
               </p>
             )}
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Series Guide Dialog */}
+      <Dialog open={!!viewingGuide} onOpenChange={(open) => !open && setViewingGuide(null)}>
+        <DialogContent className="max-w-4xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Guía de Serie: {viewingGuide?.title}
+            </DialogTitle>
+            <DialogDescription>
+              Contenido de la guía de serie
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[65vh] pr-4">
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown>{viewingGuide?.seriesGuide || ""}</ReactMarkdown>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Series Guide Dialog */}
+      <Dialog open={!!editingGuide} onOpenChange={(open) => {
+        if (!open) {
+          setEditingGuide(null);
+          setEditGuideContent("");
+        }
+      }}>
+        <DialogContent className="max-w-4xl max-h-[85vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5" />
+              Editar Guía: {editingGuide?.title}
+            </DialogTitle>
+            <DialogDescription>
+              Modifica el contenido de la guía de serie
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              value={editGuideContent}
+              onChange={(e) => setEditGuideContent(e.target.value)}
+              className="min-h-[50vh] font-mono text-sm"
+              placeholder="Contenido de la guía en formato Markdown..."
+              data-testid="textarea-edit-series-guide"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setEditingGuide(null);
+                  setEditGuideContent("");
+                }}
+                data-testid="button-cancel-edit-guide"
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => {
+                  if (editingGuide) {
+                    updateSeriesGuideMutation.mutate({
+                      seriesId: editingGuide.id,
+                      content: editGuideContent,
+                    });
+                  }
+                }}
+                disabled={updateSeriesGuideMutation.isPending}
+                data-testid="button-save-series-guide"
+              >
+                {updateSeriesGuideMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                ) : (
+                  <Check className="h-4 w-4 mr-2" />
+                )}
+                Guardar Cambios
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
