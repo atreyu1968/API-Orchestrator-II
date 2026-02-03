@@ -19,7 +19,8 @@ function findCharacterInWorldBible(charName: string, worldBible: any): any | nul
  * This prevents the Ghostwriter from inventing incorrect eye colors, hair, etc.
  */
 function extractCharacterAttributesForScene(sceneCharacters: string[], worldBible: any): string | null {
-  if (!worldBible || !worldBible.characters || !sceneCharacters || sceneCharacters.length === 0) {
+  const characters = worldBible?.characters || worldBible?.personajes || [];
+  if (!worldBible || characters.length === 0 || !sceneCharacters || sceneCharacters.length === 0) {
     return null;
   }
   
@@ -27,13 +28,7 @@ function extractCharacterAttributesForScene(sceneCharacters: string[], worldBibl
   
   for (const charName of sceneCharacters) {
     // Find matching character in World Bible (fuzzy match on name)
-    const charNameLower = charName.toLowerCase().trim();
-    const wbChar = worldBible.characters.find((c: any) => {
-      const wbName = (c.name || '').toLowerCase().trim();
-      // Match if name contains or is contained
-      return wbName.includes(charNameLower) || charNameLower.includes(wbName) || 
-             wbName.split(' ')[0] === charNameLower.split(' ')[0];
-    });
+    const wbChar = findCharacterInWorldBible(charName, worldBible);
     
     if (wbChar) {
       const attrs: string[] = [];
@@ -1145,7 +1140,7 @@ ${prohibitedVocab ? `    7. VOCABULARIO PROHIBIDO (NO USAR): ${prohibitedVocab}`
     ${JSON.stringify(sceneBreakdown, null, 2)}
 
     PERSONAJES CANÓNICOS (verificar continuidad):
-    ${JSON.stringify(worldBible.characters?.map((c: any) => ({ name: c.name, appearance: c.appearance })) || [])}
+    ${JSON.stringify((worldBible.characters || worldBible.personajes || []).map((c: any) => ({ name: c.name || c.nombre, appearance: c.appearance || c.descripcion })))}
 
     CRITERIOS DE EVALUACIÓN (Doble 10):
     1. LÓGICA (1-10): ¿Tiene sentido la trama? ¿Hay errores de continuidad? ¿Los personajes actúan coherentemente?
