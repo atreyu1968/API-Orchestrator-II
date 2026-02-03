@@ -1804,6 +1804,101 @@ Capítulos a condensar: ${affectedChapters.join(", ")}
   }
 
   /**
+   * Build complete World Bible context for focused rewrite - includes all canonical elements
+   * that MUST NOT be modified during correction
+   */
+  private buildFullWorldBibleForRewrite(worldBible: any): string {
+    if (!worldBible) return "No hay World Bible disponible.";
+    
+    const sections: string[] = [];
+    
+    // 1. PERSONAJES Y ATRIBUTOS FÍSICOS (INMUTABLES)
+    if (worldBible.personajes?.length > 0) {
+      const chars = worldBible.personajes.map((p: any) => {
+        const physicalAttrs: string[] = [];
+        
+        // Extract from nested appearance object
+        if (p.appearance) {
+          const app = p.appearance;
+          if (app.eyes || app.eye_color) physicalAttrs.push(`ojos: ${app.eyes || app.eye_color}`);
+          if (app.hair || app.hair_color) physicalAttrs.push(`cabello: ${app.hair || app.hair_color}`);
+          if (app.height) physicalAttrs.push(`altura: ${app.height}`);
+          if (app.build) physicalAttrs.push(`complexión: ${app.build}`);
+          if (app.skin) physicalAttrs.push(`piel: ${app.skin}`);
+          if (app.age) physicalAttrs.push(`edad: ${app.age}`);
+        }
+        // Also check top-level attributes
+        if (p.eyes || p.eye_color) physicalAttrs.push(`ojos: ${p.eyes || p.eye_color}`);
+        if (p.hair || p.hair_color) physicalAttrs.push(`cabello: ${p.hair || p.hair_color}`);
+        if (p.edad || p.age) physicalAttrs.push(`edad: ${p.edad || p.age}`);
+        
+        const physicalStr = physicalAttrs.length > 0 ? `\n   [FISICO INMUTABLE]: ${physicalAttrs.join(', ')}` : '';
+        const deadStatus = p.muerto || p.dead ? '\n   [MUERTO] - NO PUEDE APARECER VIVO' : '';
+        
+        return `- ${p.nombre} (${p.rol || 'secundario'})${physicalStr}${deadStatus}`;
+      }).join("\n");
+      sections.push(`[PERSONAJES] Atributos físicos INMUTABLES:\n${chars}`);
+    }
+    
+    // 2. PERSONAJES MUERTOS (PROHIBIDO RESUCITAR)
+    const deadCharacters = worldBible.personajes?.filter((p: any) => p.muerto || p.dead) || [];
+    if (deadCharacters.length > 0) {
+      const deadList = deadCharacters.map((p: any) => `[MUERTO] ${p.nombre} - no puede aparecer vivo`).join("\n");
+      sections.push(`[PERSONAJES FALLECIDOS] PROHIBIDO MENCIONAR COMO VIVOS:\n${deadList}`);
+    }
+    
+    // 3. RELACIONES ENTRE PERSONAJES
+    if (worldBible.relaciones?.length > 0) {
+      const rels = worldBible.relaciones.slice(0, 15).map((r: any) => 
+        `- ${r.personaje1} <-> ${r.personaje2}: ${r.tipo || r.relacion || 'relacionados'}`
+      ).join("\n");
+      sections.push(`[RELACIONES ESTABLECIDAS]:\n${rels}`);
+    }
+    
+    // 4. UBICACIONES CANÓNICAS
+    if (worldBible.ubicaciones?.length > 0) {
+      const locs = worldBible.ubicaciones.slice(0, 15).map((u: any) => 
+        `- ${u.nombre}: ${u.descripcion?.substring(0, 80) || 'ubicacion establecida'}`
+      ).join("\n");
+      sections.push(`[UBICACIONES] No cambiar nombres ni descripciones:\n${locs}`);
+    }
+    
+    // 5. TIMELINE Y EVENTOS
+    if (worldBible.timeline?.length > 0) {
+      const events = worldBible.timeline.slice(0, 15).map((t: any) => 
+        `- ${t.evento || t.event}: ${t.descripcion?.substring(0, 60) || ''}`
+      ).join("\n");
+      sections.push(`[LINEA TEMPORAL] No alterar orden ni fechas:\n${events}`);
+    }
+    
+    // 6. REGLAS DEL MUNDO
+    if (worldBible.reglas?.length > 0) {
+      const rules = worldBible.reglas.slice(0, 10).map((r: any) => 
+        `- ${typeof r === 'string' ? r : r.regla || JSON.stringify(r)}`
+      ).join("\n");
+      sections.push(`[REGLAS DEL MUNDO] Deben respetarse:\n${rules}`);
+    }
+    
+    // 7. OBJETOS ESTABLECIDOS (Chekhov's Gun)
+    if (worldBible.objetos?.length > 0) {
+      const objs = worldBible.objetos.slice(0, 15).map((o: any) => 
+        `- ${o.nombre}: ${o.descripcion?.substring(0, 60) || 'objeto establecido'}`
+      ).join("\n");
+      sections.push(`[OBJETOS ESTABLECIDOS] No inventar nuevos:\n${objs}`);
+    }
+    
+    // 8. LESIONES ACTIVAS
+    if (worldBible.lesiones_activas?.length > 0) {
+      const injuries = worldBible.lesiones_activas.map((i: any) => 
+        `- ${i.personaje}: ${i.tipo_lesion} (desde cap ${i.capitulo_ocurre}${i.capitulo_cura ? `, cura cap ${i.capitulo_cura}` : ', aun activa'})`
+      ).join("\n");
+      sections.push(`[LESIONES ACTIVAS] Limitan acciones del personaje:\n${injuries}`);
+    }
+    
+    return sections.join("\n\n") || "World Bible vacío.";
+  }
+
+  /**
    * Merge new plot decisions with existing ones (avoid duplicates by decision text)
    */
   private mergeDecisions(existing: any[], newDecisions: any[]): any[] {
@@ -8830,6 +8925,38 @@ Responde SOLO en JSON válido (sin markdown):
       issue.status = 'fixing';
       issue.originalContent = chapter.content;
 
+      // CHECK FOR RELATED ISSUES IN OTHER CHAPTERS - require coordinated planning
+      // Find other issues of the same type that might need coordinated fixes
+      const relatedIssues = registry.issues.filter(
+        (other) => other.id !== issue.id && 
+                   other.tipo === issue.tipo && 
+                   other.status !== 'resolved'
+      );
+      const relatedChapters = Array.from(new Set(relatedIssues.map(i => i.chapter))).filter(c => c !== issue.chapter);
+      const isMultiChapter = relatedChapters.length > 0;
+      
+      let multiChapterPlan: string | null = null;
+      if (isMultiChapter) {
+        console.log(`[OrchestratorV2] Related issues detected: ${issue.tipo} also affects chapters ${relatedChapters.join(', ')}`);
+        
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "info",
+          message: `[MULTI-CAPÍTULO] ${issue.tipo} también afecta capítulos ${relatedChapters.join(', ')} - corrección coordinada`,
+          agentRole: "smart-editor",
+        });
+        
+        // Build plan for coordinated correction
+        multiChapterPlan = `[ADVERTENCIA: PROBLEMA EN MULTIPLES CAPITULOS]
+Este tipo de problema (${issue.tipo}) tambien existe en capitulos: ${relatedChapters.join(', ')}
+
+INSTRUCCIONES DE CONSISTENCIA:
+1. Corrige el capitulo ${issue.chapter} (actual) de forma CONSISTENTE
+2. Los cambios NO deben contradecir lo que esta en capitulos ${relatedChapters.join(', ')}
+3. Si corriges un atributo o hecho, debe ser coherente con toda la novela
+4. Manten la coherencia narrativa global`;
+      }
+
       // Emit issue being fixed
       this.callbacks.onDetectAndFixProgress?.({
         phase: 'correction',
@@ -8858,30 +8985,137 @@ Responde SOLO en JSON válido (sin markdown):
 
         try {
           // Build error description from issue
-          const errorDescription = `[${issue.severidad.toUpperCase()}] ${issue.tipo}: ${issue.descripcion}${issue.contexto ? `\nContexto: "${issue.contexto}"` : ''}${issue.instrucciones ? `\nInstrucciones: ${issue.instrucciones}` : ''}${issue.correccion ? `\nCorrección sugerida: ${issue.correccion}` : ''}`;
+          let errorDescription = `[${issue.severidad.toUpperCase()}] ${issue.tipo}: ${issue.descripcion}${issue.contexto ? `\nContexto: "${issue.contexto}"` : ''}${issue.instrucciones ? `\nInstrucciones: ${issue.instrucciones}` : ''}${issue.correccion ? `\nCorrección sugerida: ${issue.correccion}` : ''}`;
           
-          // Apply surgical fix
-          const fixResult = await this.smartEditor.surgicalFix({
-            chapterContent: chapter.content,
-            errorDescription,
-            worldBible,
-            chapterNumber: issue.chapter,
-          });
-
-          this.addTokenUsage(fixResult.tokenUsage);
-          await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, issue.chapter);
-
+          // Add multi-chapter coordination plan if applicable
+          if (multiChapterPlan) {
+            errorDescription = `${multiChapterPlan}\n\n${errorDescription}`;
+          }
+          
           let correctedContent: string | null = null;
 
-          if (fixResult.patches && fixResult.patches.length > 0) {
-            const patchResult = applyPatches(chapter.content, fixResult.patches);
-            if (patchResult.appliedPatches > 0) {
-              correctedContent = patchResult.patchedText;
+          // PROGRESSIVE ESCALATION (LitAgents 2.9.5+)
+          // Attempt 1: surgicalFix (small patch)
+          // Attempt 2: surgicalFix with expanded context
+          // Attempt 3: fullRewrite (paragraph-level rewrite)
+          
+          if (issue.attempts <= 2) {
+            // Attempts 1-2: Use surgicalFix
+            const escalatedDescription = issue.attempts === 2 
+              ? `${errorDescription}\n\n[SEGUNDO INTENTO - USA PARCHE MÁS AMPLIO]\nEl parche anterior falló. Amplía el alcance del parche para incluir el párrafo completo si es necesario. Asegúrate de que el snippet original exista EXACTAMENTE en el texto.`
+              : errorDescription;
+            
+            const fixResult = await this.smartEditor.surgicalFix({
+              chapterContent: chapter.content,
+              errorDescription: escalatedDescription,
+              worldBible,
+              chapterNumber: issue.chapter,
+            });
+
+            this.addTokenUsage(fixResult.tokenUsage);
+            await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", fixResult.tokenUsage, issue.chapter);
+
+            if (fixResult.patches && fixResult.patches.length > 0) {
+              const patchResult = applyPatches(chapter.content, fixResult.patches);
+              if (patchResult.appliedPatches > 0) {
+                correctedContent = patchResult.patchedText;
+              }
+            }
+            
+          } else {
+            // Attempt 3: Use FOCUSED rewrite (last resort) - only modify the specific paragraph
+            console.log(`[OrchestratorV2] ESCALATION: Using focused rewrite for issue ${issue.id} after 2 failed surgicalFix attempts`);
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              message: `[ESCALADO A REESCRITURA FOCALIZADA] Cap ${issue.chapter}: ${issue.tipo} - parches fallaron, reescribiendo SOLO el párrafo afectado`,
+              agentRole: "smart-editor",
+            });
+            
+            // BUILD COMPLETE WORLD BIBLE CONTEXT FOR STRICT PRESERVATION
+            const wbContext = this.buildFullWorldBibleForRewrite(worldBible);
+            
+            // STRICT REWRITE PROMPT with FULL World Bible injection
+            const rewriteDescription = `CORRECCION FOCALIZADA DE UN PROBLEMA ESPECIFICO:
+${errorDescription}
+
+===============================================================================
+                    WORLD BIBLE - ELEMENTOS CANONICOS
+         PROHIBIDO MODIFICAR CUALQUIER ELEMENTO LISTADO ABAJO
+===============================================================================
+
+${wbContext}
+
+===============================================================================
+                         REGLAS DE REESCRITURA
+===============================================================================
+
+[PERMITIDO]:
+- Corregir UNICAMENTE el problema especifico descrito arriba
+- Modificar maximo 1-2 parrafos donde ocurre el error
+- Ajustar frases para resolver el issue sin cambiar el significado global
+
+[PROHIBIDO] (causara RECHAZO automatico):
+- Cambiar CUALQUIER atributo fisico de personajes (ojos, pelo, edad, altura)
+- Resucitar personajes muertos o mencionar muertos como vivos
+- Cambiar relaciones establecidas entre personajes
+- Modificar la linea temporal o epoca
+- Anadir objetos que no existian antes
+- Cambiar nombres de lugares o personajes
+- Inventar informacion nueva no implicita en el texto
+- Modificar mas del 15% del capitulo
+
+[RESTRICCIONES DE ALCANCE]:
+- Localiza el parrafo EXACTO con el problema
+- Reescribe SOLO ese parrafo (maximo 2)
+- El resto del capitulo debe permanecer IDENTICO
+- Longitud del parrafo corregido: +-20% del original`;
+            
+            const rewriteResult = await this.smartEditor.fullRewrite({
+              chapterContent: chapter.content,
+              errorDescription: rewriteDescription,
+              worldBible,
+              chapterNumber: issue.chapter,
+            });
+
+            this.addTokenUsage(rewriteResult.tokenUsage);
+            await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", rewriteResult.tokenUsage, issue.chapter);
+
+            // STRICT VALIDATION: Reject if too much content changed
+            if (rewriteResult.rewrittenContent && 
+                rewriteResult.rewrittenContent !== chapter.content) {
+              
+              // Calculate how much changed (character-level diff estimate)
+              const originalLen = chapter.content.length;
+              const newLen = rewriteResult.rewrittenContent.length;
+              const lengthDiff = Math.abs(newLen - originalLen) / originalLen;
+              
+              // Count how many lines changed (rough estimate)
+              const originalLines = chapter.content.split('\n');
+              const newLines = rewriteResult.rewrittenContent.split('\n');
+              let changedLines = 0;
+              const minLines = Math.min(originalLines.length, newLines.length);
+              for (let li = 0; li < minLines; li++) {
+                if (originalLines[li] !== newLines[li]) changedLines++;
+              }
+              changedLines += Math.abs(originalLines.length - newLines.length);
+              const changeRatio = changedLines / originalLines.length;
+              
+              // REJECT if more than 15% of lines changed or length differs by more than 10%
+              if (changeRatio > 0.15 || lengthDiff > 0.10) {
+                console.warn(`[OrchestratorV2] REJECTED fullRewrite: too many changes (${(changeRatio * 100).toFixed(1)}% lines, ${(lengthDiff * 100).toFixed(1)}% length)`);
+                issue.lastAttemptError = `Intento ${issue.attempts}: reescritura rechazada - cambió demasiado contenido (${(changeRatio * 100).toFixed(0)}% del capítulo)`;
+                // Don't set correctedContent - this will trigger the "continue" below
+              } else {
+                correctedContent = rewriteResult.rewrittenContent;
+                console.log(`[OrchestratorV2] Focused rewrite accepted: ${(changeRatio * 100).toFixed(1)}% lines changed`);
+              }
             }
           }
 
           if (!correctedContent || correctedContent === chapter.content) {
-            issue.lastAttemptError = `Intento ${issue.attempts}: parche no aplicado`;
+            issue.lastAttemptError = `Intento ${issue.attempts}: ${issue.attempts <= 2 ? 'parche no aplicado' : 'reescritura fallida'}`;
             continue;
           }
 
@@ -8965,10 +9199,11 @@ Responde SOLO en JSON válido (sin markdown):
               }
             });
             
+            const correctionMethod = issue.attempts <= 2 ? 'parche' : 'reescritura';
             await storage.createActivityLog({
               projectId: project.id,
               level: "success",
-              message: `[CORREGIDO] Cap ${issue.chapter}: ${issue.tipo} - "${issue.descripcion.substring(0, 50)}..." (intento ${issue.attempts})`,
+              message: `[CORREGIDO] Cap ${issue.chapter}: ${issue.tipo} - "${issue.descripcion.substring(0, 50)}..." (${correctionMethod}, intento ${issue.attempts})`,
               agentRole: "smart-editor",
             });
 

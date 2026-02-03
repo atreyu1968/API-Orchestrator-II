@@ -61,6 +61,17 @@ Preferred communication style: Simple, everyday language.
   - **Focused Verification**: Uses a dedicated verification prompt that ONLY checks if the specific issue was fixed, not full chapter evaluation. This prevents pre-existing problems from being counted as "new issues caused by the correction".
   - **Grave-Only Detection**: Only GRAVE problems are reported as new issues: contradictions, resurrections, canonical attribute changes. Minor style issues are ignored.
   - **Simple Logic**: If original issue is fixed AND no grave new problems → ACCEPT. Otherwise → REJECT.
+  - **Progressive Escalation (NEW)**: When surgical patches fail repeatedly, the system escalates:
+    - Attempt 1: surgicalFix (small patch)
+    - Attempt 2: surgicalFix with expanded context prompt
+    - Attempt 3: Focused fullRewrite (paragraph-level) with STRICT validation:
+      - Injects FULL World Bible (physical attributes, dead characters, relationships, locations, timeline, rules, objects, injuries)
+      - Clear ALLOWED vs PROHIBITED actions in prompt
+      - Rejects if >15% of lines changed
+      - Rejects if length differs by >10%
+      - Full verification still applies to detect grave new issues
+    This allows fixing issues that patches can't handle while preventing fullRewrite from damaging the chapter.
+  - **Multi-Chapter Coordination**: When fixing an issue, the system detects related issues of the same type in other chapters and injects a coordination plan (warning-based heuristic) to ensure changes are consistent across the entire novel.
   - **Specialized Prompts by Error Type**: Each error type now uses a tailored correction prompt:
     - `physical_attribute`: Ultra-simple search/replace for eye color, hair, etc. (max 5 words)
     - `lexical_repetition`: Synonym substitution preserving meaning (one word at a time)
