@@ -9554,7 +9554,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       console.log(`[GuideGenerator] Generating guide for "${params.title}"...`);
       
       // Generate the writing guide
-      const guideContent = await guideGeneratorAgent.generateWritingGuide({
+      const guideResponse = await guideGeneratorAgent.generateWritingGuide({
         argument: params.argument,
         title: params.title,
         genre: params.genre,
@@ -9567,6 +9567,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         kindleUnlimited: params.kindleUnlimited,
       });
       
+      const guideContent = guideResponse.content;
       console.log(`[GuideGenerator] Guide generated (${guideContent.length} chars)`);
       
       let project = null;
@@ -9666,7 +9667,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       console.log(`[SeriesGuideGenerator] Generating guide for series "${params.seriesTitle}"...`);
       
       // Generate the series guide
-      const guideContent = await seriesGuideGeneratorAgent.generateSeriesGuide({
+      const guideResponse = await seriesGuideGeneratorAgent.generateSeriesGuide({
         concept: params.concept,
         seriesTitle: params.seriesTitle,
         genre: params.genre,
@@ -9677,6 +9678,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         pseudonymStyleGuide,
       });
       
+      const guideContent = guideResponse.content;
       console.log(`[SeriesGuideGenerator] Guide generated (${guideContent.length} chars)`);
       
       let series = null;
