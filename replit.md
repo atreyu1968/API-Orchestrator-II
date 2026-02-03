@@ -67,6 +67,7 @@ Preferred communication style: Simple, everyday language.
     - `timeline`: Minimal temporal reference adjustment (max 10 words)
     - `narrative`: Slightly larger scope for plot coherence (max 30 words per patch)
     - `generic`: Conservative fallback for unknown types
+  - **Plot Coherence Validation**: Global Architect output is now validated before proceeding. Checks for: (1) Orphaned plot threads that never appear in chapters, (2) Weak threads with only 1 chapter mention, (3) Unresolved threads that disappear mid-novel, (4) Missing main characters, (5) Characters that vanish without explanation, (6) Vague or filler chapters, (7) Missing turning points at 25%/50%/75%. If critical issues found, regenerates up to 3 times with corrective instructions. If still failing after 3 attempts, pauses project for manual review.
 - **Enhanced Error Recovery**: All orchestrator errors result in a "paused" status for easy resume, preserving state and providing activity logs with context.
 - **Death Tracking & Loop Prevention**: UniversalConsistency tracks character deaths to prevent resurrections. Loop detection system escalates recurring issues, with automatic scope expansion for persistent resurrection errors.
 - **Structural Issue Detection**: Identifies and auto-resolves structural issues (e.g., chapter reordering, renaming) to prevent infinite rewrite loops, notifying the user for manual intervention.

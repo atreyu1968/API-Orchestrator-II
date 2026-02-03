@@ -476,6 +476,238 @@ export class OrchestratorV2 {
     });
   }
 
+  /**
+   * LitAgents 2.9.5: Validate plot coherence to prevent orphaned/weak storylines
+   * Returns validation result with issues that need fixing
+   */
+  private validatePlotCoherence(
+    outline: Array<{ chapter_num: number; title: string; summary: string; key_event: string; emotional_arc?: string }> | undefined | null,
+    plotThreads: Array<{ name: string; description?: string; goal: string }> | undefined | null,
+    worldBible: any
+  ): { isValid: boolean; criticalIssues: string[]; warnings: string[] } {
+    const criticalIssues: string[] = [];
+    const warnings: string[] = [];
+    
+    // Guard: If outline or plotThreads are missing/empty, skip validation (assume valid)
+    const safeOutline = outline || [];
+    const safePlotThreads = plotThreads || [];
+    
+    if (safeOutline.length === 0) {
+      console.warn('[OrchestratorV2] validatePlotCoherence: Empty outline, skipping validation');
+      return { isValid: true, criticalIssues: [], warnings: ['Outline vacío - validación omitida'] };
+    }
+    
+    if (safePlotThreads.length === 0) {
+      console.warn('[OrchestratorV2] validatePlotCoherence: No plot threads defined');
+      warnings.push('⚠️ No se definieron tramas principales (plot_threads vacío)');
+    }
+    
+    // 1. Check that each plot thread is resolved somewhere in the outline
+    // Use INDEX instead of chapter_num to avoid confusion with special numbers (0, 998, 999)
+    for (const thread of safePlotThreads) {
+      const threadNameLower = (thread.name || '').toLowerCase();
+      const threadGoalLower = (thread.goal || '').toLowerCase();
+      
+      if (!threadNameLower) continue; // Skip threads without names
+      
+      // Search for mentions in chapter summaries and key events
+      let mentionCount = 0;
+      let hasResolution = false;
+      let lastMentionIndex = -1; // Use INDEX, not chapter_num
+      
+      for (let idx = 0; idx < safeOutline.length; idx++) {
+        const ch = safeOutline[idx];
+        const summaryLower = (ch.summary || '').toLowerCase();
+        const keyEventLower = (ch.key_event || '').toLowerCase();
+        const combined = summaryLower + ' ' + keyEventLower;
+        
+        // Check if this thread is mentioned
+        const goalWords = threadGoalLower.split(' ').slice(0, 3).join(' ');
+        if (combined.includes(threadNameLower) || 
+            (goalWords.length > 5 && combined.includes(goalWords))) {
+          mentionCount++;
+          lastMentionIndex = idx; // Track by index
+          
+          // Check for resolution keywords
+          if (/resuelv|conclu|final|descubr|revel|logra|consigue|cierra|termina|acaba/i.test(combined)) {
+            hasResolution = true;
+          }
+        }
+      }
+      
+      if (mentionCount === 0) {
+        criticalIssues.push(`❌ TRAMA HUÉRFANA: "${thread.name}" (objetivo: ${thread.goal}) nunca aparece en ningún capítulo.`);
+      } else if (mentionCount === 1) {
+        warnings.push(`⚠️ TRAMA DÉBIL: "${thread.name}" solo aparece en 1 capítulo. Necesita desarrollo a lo largo de la novela.`);
+      } else if (!hasResolution && lastMentionIndex >= 0 && lastMentionIndex < safeOutline.length - 3) {
+        // Thread disappears before the last 3 chapters without resolution
+        const lastChapter = safeOutline[lastMentionIndex];
+        criticalIssues.push(`❌ TRAMA SIN RESOLVER: "${thread.name}" desaparece en "${lastChapter.title}" sin resolución clara.`);
+      }
+    }
+    
+    // 2. Check character arcs have completion
+    const characters = worldBible?.characters || worldBible?.personajes || [];
+    const safeCharacters = Array.isArray(characters) ? characters : [];
+    
+    for (const char of safeCharacters.slice(0, 5)) { // Check top 5 characters
+      if (!char) continue;
+      
+      const charName = (char.name || char.nombre || '').toLowerCase();
+      const charArc = (char.arc || char.arco || '').toLowerCase();
+      
+      if (!charName || charName.length < 2) continue;
+      
+      let firstAppearance = -1;
+      let lastAppearance = -1;
+      let appearanceCount = 0;
+      
+      for (let i = 0; i < safeOutline.length; i++) {
+        const ch = safeOutline[i];
+        const combined = ((ch.summary || '') + ' ' + (ch.key_event || '')).toLowerCase();
+        
+        // Check full name or first name (if multi-word)
+        const firstName = charName.split(' ')[0];
+        if (combined.includes(charName) || (firstName.length >= 3 && combined.includes(firstName))) {
+          if (firstAppearance === -1) firstAppearance = i;
+          lastAppearance = i;
+          appearanceCount++;
+        }
+      }
+      
+      // Main characters should appear in at least 30% of chapters
+      // Check multiple ways to identify main characters
+      const role = (char.role || char.rol || char.tipo || '').toLowerCase();
+      const isMainCharacter = role.includes('protagonista') || 
+                              role.includes('principal') || 
+                              role.includes('main') ||
+                              role.includes('pov') ||
+                              (char.importance === 1 || char.importancia === 1);
+      
+      if (isMainCharacter && appearanceCount < safeOutline.length * 0.3) {
+        warnings.push(`⚠️ PERSONAJE PRINCIPAL AUSENTE: ${char.name || char.nombre} solo aparece en ${appearanceCount}/${safeOutline.length} capítulos.`);
+      }
+      
+      // Characters shouldn't disappear mid-story without explanation
+      // Only check if we have enough chapters (at least 8) and character appears multiple times
+      if (safeOutline.length >= 8 && appearanceCount >= 3 && lastAppearance < safeOutline.length - 5 && 
+          !(char.status || char.estado || '').toLowerCase().includes('muert')) {
+        warnings.push(`⚠️ PERSONAJE DESAPARECE: ${char.name || char.nombre} deja de aparecer después del capítulo ${lastAppearance + 1}.`);
+      }
+    }
+    
+    // 3. Check for chapters without clear purpose
+    for (const ch of safeOutline) {
+      const summary = (ch.summary || '').toLowerCase();
+      const keyEvent = (ch.key_event || '').toLowerCase();
+      
+      // Check for vague summaries
+      if (summary.length < 50) {
+        warnings.push(`⚠️ CAPÍTULO VAGO: "${ch.title || `Cap ${ch.chapter_num}`}" tiene un resumen muy corto (${summary.length} caracteres).`);
+      }
+      
+      // Check for filler chapters
+      if (/transición|preparación|reflexiona|piensa en|recuerda|flashback/i.test(summary) &&
+          !/descubre|revela|enfrent|conflict|crisis|giro/i.test(summary)) {
+        warnings.push(`⚠️ POSIBLE RELLENO: "${ch.title || `Cap ${ch.chapter_num}`}" parece no avanzar la trama principal.`);
+      }
+    }
+    
+    // 4. Check three-act structure balance (only for novels with 6+ chapters)
+    const totalChapters = safeOutline.length;
+    
+    // Skip structure checks for very short outlines
+    if (totalChapters >= 6) {
+      const act1End = Math.max(1, Math.floor(totalChapters * 0.25));
+      const act2End = Math.min(totalChapters - 1, Math.floor(totalChapters * 0.75));
+      
+      // Check for turning points at 25%, 50%, 75%
+      // Use safe slice bounds: Math.max(0, start) and Math.min(length, end)
+      const turningPointKeywords = /giro|revelación|descubre|confronta|crisis|punto de no retorno|clímax|todo cambia/i;
+      
+      const act1Start = Math.max(0, act1End - 2);
+      const act1EndBound = Math.min(totalChapters, act1End + 2);
+      const act1Turning = safeOutline.slice(act1Start, act1EndBound).some(ch => 
+        turningPointKeywords.test((ch.summary || '') + ' ' + (ch.key_event || ''))
+      );
+      
+      const midStart = Math.max(0, Math.floor(totalChapters * 0.45));
+      const midEnd = Math.min(totalChapters, Math.floor(totalChapters * 0.55));
+      const midpointTurning = safeOutline.slice(midStart, midEnd).some(ch =>
+        turningPointKeywords.test((ch.summary || '') + ' ' + (ch.key_event || ''))
+      );
+      
+      const act2Start = Math.max(0, act2End - 2);
+      const act2EndBound = Math.min(totalChapters, act2End + 2);
+      const act2Turning = safeOutline.slice(act2Start, act2EndBound).some(ch =>
+        turningPointKeywords.test((ch.summary || '') + ' ' + (ch.key_event || ''))
+      );
+      
+      if (!act1Turning) {
+        warnings.push(`⚠️ FALTA PUNTO DE GIRO: No hay giro claro al final del Acto 1 (alrededor del índice ${act1End}).`);
+      }
+      if (!midpointTurning) {
+        warnings.push(`⚠️ FALTA PUNTO MEDIO: No hay giro claro en el punto medio (alrededor del índice ${Math.floor(totalChapters * 0.5)}).`);
+      }
+      if (!act2Turning) {
+        warnings.push(`⚠️ FALTA CRISIS: No hay crisis clara al final del Acto 2 (alrededor del índice ${act2End}).`);
+      }
+    }
+    
+    const isValid = criticalIssues.length === 0;
+    
+    return { isValid, criticalIssues, warnings };
+  }
+
+  /**
+   * LitAgents 2.9.5: Build corrective instructions for Global Architect regeneration
+   */
+  private buildPlotCorrectionInstructions(
+    criticalIssues: string[],
+    warnings: string[],
+    attemptNumber: number
+  ): string {
+    const severity = attemptNumber >= 2 ? '🔴 CRÍTICO' : '⚠️ IMPORTANTE';
+    
+    let instructions = `
+╔══════════════════════════════════════════════════════════════════╗
+║ ${severity}: CORRECCIONES OBLIGATORIAS (Intento ${attemptNumber}/3)              ║
+╚══════════════════════════════════════════════════════════════════╝
+
+La estructura anterior fue RECHAZADA por problemas graves. DEBES corregir:
+
+`;
+    
+    if (criticalIssues.length > 0) {
+      instructions += `=== PROBLEMAS CRÍTICOS (OBLIGATORIO RESOLVER) ===\n`;
+      for (const issue of criticalIssues) {
+        instructions += `${issue}\n`;
+      }
+      instructions += `\n`;
+    }
+    
+    if (warnings.length > 0 && attemptNumber >= 2) {
+      instructions += `=== ADVERTENCIAS (TAMBIÉN RESOLVER EN ESTE INTENTO) ===\n`;
+      for (const warning of warnings.slice(0, 5)) { // Top 5 warnings
+        instructions += `${warning}\n`;
+      }
+      instructions += `\n`;
+    }
+    
+    instructions += `
+REQUISITOS PARA APROBAR:
+1. CADA trama/subtrama DEBE aparecer en múltiples capítulos y tener resolución clara
+2. Los personajes principales NO pueden desaparecer sin explicación
+3. Cada capítulo DEBE avanzar algún hilo narrativo (no relleno)
+4. DEBE haber puntos de giro en 25%, 50% y 75% de la novela
+5. El clímax DEBE resolver TODAS las tramas principales
+
+Si no cumples estos requisitos, el proyecto será PAUSADO para revisión manual.
+`;
+    
+    return instructions;
+  }
+
   private async extractSeriesWorldBibleOnComplete(projectId: number): Promise<void> {
     try {
       const project = await storage.getProject(projectId);
@@ -3356,37 +3588,123 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         await this.initializeConsistencyDatabase(project.id, worldBible, project.genre);
       } else {
         // Phase 1: Global Architecture - create new World Bible
-        this.callbacks.onAgentStatus("global-architect", "active", "Designing master structure...");
+        // LitAgents 2.9.5: Loop with validation to prevent orphaned/weak storylines
+        const MAX_ARCHITECTURE_ATTEMPTS = 3;
+        let architectureAttempt = 0;
+        let plotValidation: { isValid: boolean; criticalIssues: string[]; warnings: string[] } = { isValid: false, criticalIssues: [], warnings: [] };
+        let globalResult: any = null;
+        let correctionInstructions = '';
         
-        const globalResult = await this.globalArchitect.execute({
-          title: project.title,
-          premise: project.premise || "",
-          genre: project.genre,
-          tone: project.tone,
-          chapterCount: project.chapterCount,
-          architectInstructions: project.architectInstructions || undefined,
-          extendedGuide: extendedGuideContent,
-          styleGuide: styleGuideContent,
-          hasPrologue: project.hasPrologue,
-          hasEpilogue: project.hasEpilogue,
-          hasAuthorNote: project.hasAuthorNote,
-          workType: project.workType || undefined,
-          seriesName,
-          seriesOrder: project.seriesOrder || undefined,
-          previousBooksContext,
-          minWordsPerChapter: project.minWordsPerChapter || undefined,
-          maxWordsPerChapter: project.maxWordsPerChapter || undefined,
-          isKindleUnlimited: project.kindleUnlimitedOptimized || false,
-        });
+        while (architectureAttempt < MAX_ARCHITECTURE_ATTEMPTS && !plotValidation.isValid) {
+          architectureAttempt++;
+          
+          this.callbacks.onAgentStatus(
+            "global-architect", 
+            "active", 
+            architectureAttempt === 1 
+              ? "Designing master structure..." 
+              : `Regenerando estructura (intento ${architectureAttempt}/${MAX_ARCHITECTURE_ATTEMPTS})...`
+          );
+          
+          // Build architecture instructions with corrections if this is a retry
+          let fullArchitectInstructions = project.architectInstructions || '';
+          if (correctionInstructions) {
+            fullArchitectInstructions = correctionInstructions + '\n\n' + fullArchitectInstructions;
+          }
+          
+          globalResult = await this.globalArchitect.execute({
+            title: project.title,
+            premise: project.premise || "",
+            genre: project.genre,
+            tone: project.tone,
+            chapterCount: project.chapterCount,
+            architectInstructions: fullArchitectInstructions || undefined,
+            extendedGuide: extendedGuideContent,
+            styleGuide: styleGuideContent,
+            hasPrologue: project.hasPrologue,
+            hasEpilogue: project.hasEpilogue,
+            hasAuthorNote: project.hasAuthorNote,
+            workType: project.workType || undefined,
+            seriesName,
+            seriesOrder: project.seriesOrder || undefined,
+            previousBooksContext,
+            minWordsPerChapter: project.minWordsPerChapter || undefined,
+            maxWordsPerChapter: project.maxWordsPerChapter || undefined,
+            isKindleUnlimited: project.kindleUnlimitedOptimized || false,
+          });
 
-        if (globalResult.error || !globalResult.parsed) {
-          throw new Error(`Global Architect failed: ${globalResult.error || "No parsed output"}`);
+          if (globalResult.error || !globalResult.parsed) {
+            throw new Error(`Global Architect failed: ${globalResult.error || "No parsed output"}`);
+          }
+
+          this.addTokenUsage(globalResult.tokenUsage);
+          await this.logAiUsage(project.id, "global-architect", "deepseek-reasoner", globalResult.tokenUsage);
+          
+          // LitAgents 2.9.5: Validate plot coherence
+          plotValidation = this.validatePlotCoherence(
+            globalResult.parsed.outline,
+            globalResult.parsed.plot_threads,
+            globalResult.parsed.world_bible
+          );
+          
+          if (!plotValidation.isValid) {
+            console.warn(`[OrchestratorV2] Plot coherence validation FAILED (attempt ${architectureAttempt}):`, plotValidation.criticalIssues);
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              agentRole: "global-architect",
+              message: `⚠️ VALIDACIÓN FALLIDA (intento ${architectureAttempt}/${MAX_ARCHITECTURE_ATTEMPTS}): Se detectaron ${plotValidation.criticalIssues.length} problemas críticos y ${plotValidation.warnings.length} advertencias.`,
+              metadata: { criticalIssues: plotValidation.criticalIssues, warnings: plotValidation.warnings },
+            });
+            
+            for (const issue of plotValidation.criticalIssues) {
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "error",
+                agentRole: "global-architect",
+                message: issue,
+              });
+            }
+            
+            // Build correction instructions for next attempt
+            if (architectureAttempt < MAX_ARCHITECTURE_ATTEMPTS) {
+              correctionInstructions = this.buildPlotCorrectionInstructions(
+                plotValidation.criticalIssues,
+                plotValidation.warnings,
+                architectureAttempt + 1
+              );
+            }
+          } else {
+            console.log(`[OrchestratorV2] Plot coherence validation PASSED on attempt ${architectureAttempt}`);
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "global-architect",
+              message: `✅ Estructura narrativa APROBADA${architectureAttempt > 1 ? ` después de ${architectureAttempt} intentos` : ''}. ${plotValidation.warnings.length} advertencias menores registradas.`,
+            });
+          }
         }
-
-        this.addTokenUsage(globalResult.tokenUsage);
-        await this.logAiUsage(project.id, "global-architect", "deepseek-reasoner", globalResult.tokenUsage);
         
-        // LitAgents 2.8: Log subplot coherence warnings if detected
+        // LitAgents 2.9.5: If validation still fails after MAX attempts, pause the project
+        if (!plotValidation.isValid) {
+          console.error(`[OrchestratorV2] Plot coherence validation FAILED after ${MAX_ARCHITECTURE_ATTEMPTS} attempts. Pausing project.`);
+          
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "error",
+            agentRole: "system",
+            message: `🛑 PROYECTO PAUSADO: La estructura narrativa no cumple los estándares de calidad después de ${MAX_ARCHITECTURE_ATTEMPTS} intentos. Problemas pendientes: ${plotValidation.criticalIssues.join(' | ')}`,
+            metadata: { criticalIssues: plotValidation.criticalIssues, warnings: plotValidation.warnings },
+          });
+          
+          await storage.updateProject(project.id, { status: "paused" });
+          this.callbacks.onAgentStatus("global-architect", "error", "Estructura narrativa débil - proyecto pausado");
+          throw new Error(`Plot coherence validation failed after ${MAX_ARCHITECTURE_ATTEMPTS} attempts. Project paused for manual review. Issues: ${plotValidation.criticalIssues.join('; ')}`);
+        }
+        
+        // LitAgents 2.8: Log subplot coherence warnings if detected (from GlobalArchitect's own checks)
         const subplotWarnings = (globalResult as any).subplotWarnings as string[] | undefined;
         if (subplotWarnings && subplotWarnings.length > 0) {
           console.warn(`[OrchestratorV2] GlobalArchitect detected ${subplotWarnings.length} subplot coherence issue(s)`);
@@ -3394,13 +3712,15 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           await storage.createActivityLog({
             projectId: project.id,
             level: "warn",
-            message: `⚠️ ADVERTENCIA DE SUBTRAMAS - Se detectaron ${subplotWarnings.length} problema(s) de coherencia en el diseño inicial. La escritura continuará, pero estos problemas pueden requerir corrección posterior.`,
+            message: `⚠️ ADVERTENCIA DE SUBTRAMAS - Se detectaron ${subplotWarnings.length} problema(s) adicionales de coherencia.`,
             agentRole: "global-architect",
             metadata: { subplotWarnings },
           });
-          
-          // Log each warning individually for visibility
-          for (const warning of subplotWarnings) {
+        }
+        
+        // Log warnings from our validation
+        if (plotValidation.warnings.length > 0) {
+          for (const warning of plotValidation.warnings) {
             await storage.createActivityLog({
               projectId: project.id,
               level: "warn",
@@ -3428,7 +3748,7 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
 
         // Remap chapter numbers to match system convention:
         // Prologue: 0, Normal chapters: 1-N, Epilogue: 998, Author Note: 999
-        outline = rawOutline.map((ch, idx) => {
+        outline = rawOutline.map((ch: any, idx: number) => {
           let actualNumber = ch.chapter_num;
           const totalChapters = rawOutline.length;
           let actualTitle = ch.title;
@@ -3483,7 +3803,7 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
               character_states_entering: ch.character_states_entering || {},
             })),
             threeActStructure: globalResult.parsed.three_act_structure || null,
-            plotThreads: plotThreads.map(t => ({
+            plotThreads: plotThreads.map((t: any) => ({
               name: t.name,
               description: t.description,
               goal: t.goal,
