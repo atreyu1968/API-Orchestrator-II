@@ -18,6 +18,7 @@ export interface GhostwriterV2Input {
   currentChapterText?: string;
   seriesWorldBible?: any; // Accumulated knowledge from previous volumes in the series
   errorHistory?: string; // LitAgents 2.9: Past errors to avoid in this project
+  lastSceneEndState?: string; // LitAgents 2.9.5: Physical state at end of previous scene
 }
 
 const SYSTEM_PROMPT = `
@@ -93,6 +94,31 @@ export class GhostwriterV2Agent extends BaseAgent {
     if (input.errorHistory) {
       prompt = `${input.errorHistory}\n\n${prompt}`;
       console.log(`[GhostwriterV2] Injected error history (${input.errorHistory.length} chars)`);
+    }
+
+    // LitAgents 2.9.5: Inject proactive pacing guidance based on scene type
+    const pacingGuidance = this.generatePacingGuidance(input.scenePlan);
+    if (pacingGuidance) {
+      prompt = `${pacingGuidance}\n\n${prompt}`;
+      console.log(`[GhostwriterV2] Injected proactive pacing guidance`);
+    }
+
+    // LitAgents 2.9.5: Inject physical continuity guidance
+    const physicalContinuityGuidance = this.generatePhysicalContinuityGuidance(
+      input.scenePlan,
+      input.prevSceneContext,
+      input.lastSceneEndState
+    );
+    if (physicalContinuityGuidance) {
+      prompt = `${physicalContinuityGuidance}\n\n${prompt}`;
+      console.log(`[GhostwriterV2] Injected physical continuity guidance`);
+    }
+
+    // LitAgents 2.9.5: Inject narrative credibility guidance
+    const narrativeCredibilityGuidance = this.generateNarrativeCredibilityGuidance(input.scenePlan);
+    if (narrativeCredibilityGuidance) {
+      prompt = `${narrativeCredibilityGuidance}\n\n${prompt}`;
+      console.log(`[GhostwriterV2] Injected narrative credibility guidance`);
     }
 
     const response = await this.generateContent(prompt, undefined, { temperature: 1.1 });
@@ -227,5 +253,284 @@ export class GhostwriterV2Agent extends BaseAgent {
 
     sections.push("\n=== FIN CONTINUIDAD DE LA SERIE ===");
     return sections.join("\n");
+  }
+
+  /**
+   * LitAgents 2.9.5: Generate proactive pacing guidance based on scene emotional beat
+   * Prevents rhythm issues by providing specific instructions for the scene type
+   */
+  private generatePacingGuidance(scenePlan: ScenePlan): string {
+    const emotionalBeat = (scenePlan.emotional_beat || '').toLowerCase();
+    const plotBeat = (scenePlan.plot_beat || '').toLowerCase();
+    
+    // Detect scene type from emotional and plot beats
+    const isActionScene = /acción|pelea|persecución|huida|combate|enfrentamiento|escape|lucha|batalla|chase|fight|action/.test(emotionalBeat + plotBeat);
+    const isTenseScene = /tensión|suspense|amenaza|peligro|miedo|terror|ansiedad|nervios|alerta/.test(emotionalBeat + plotBeat);
+    const isEmotionalScene = /emoción|tristeza|dolor|pérdida|duelo|llanto|despedida|reencuentro|amor|romance|pasión/.test(emotionalBeat + plotBeat);
+    const isReflectiveScene = /reflexión|introspección|recuerdo|memoria|pensamiento|meditación|calma|paz|contemplación/.test(emotionalBeat + plotBeat);
+    const isDialogueScene = /diálogo|conversación|discusión|debate|negociación|revelación|confesión/.test(emotionalBeat + plotBeat);
+    const isClimaxScene = /clímax|punto álgido|confrontación final|revelación mayor|giro dramático/.test(emotionalBeat + plotBeat);
+
+    const guidance: string[] = [];
+    guidance.push("╔══════════════════════════════════════════════════════════════════╗");
+    guidance.push("║ 🎵 GUÍA DE RITMO PROACTIVA - PREVENCIÓN DE PACING ISSUES        ║");
+    guidance.push("╚══════════════════════════════════════════════════════════════════╝");
+
+    if (isActionScene) {
+      guidance.push(`
+TIPO DE ESCENA DETECTADO: ACCIÓN/MOVIMIENTO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Usa frases CORTAS y PUNZANTES (5-12 palabras por oración)
+✓ Verbos de acción en presente o pretérito simple
+✓ Párrafos breves (2-4 líneas máximo)
+✓ Elimina adjetivos innecesarios - prioriza MOVIMIENTO
+✓ Diálogos entrecortados, respiración agitada
+✓ Descripciones sensoriales rápidas: dolor, impacto, velocidad
+
+✗ EVITAR: Párrafos largos descriptivos
+✗ EVITAR: Reflexiones internas extensas durante la acción
+✗ EVITAR: Frases subordinadas complejas
+✗ EVITAR: Descripciones detalladas del entorno durante combate`);
+    } else if (isTenseScene) {
+      guidance.push(`
+TIPO DE ESCENA DETECTADO: TENSIÓN/SUSPENSE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Alterna frases cortas con pausas descriptivas
+✓ Enfatiza los SILENCIOS y lo que NO se dice
+✓ Usa los sentidos: sonidos ominosos, sombras, olores
+✓ Tiempo lento: cada segundo se siente eterno
+✓ Personajes hiperconscientes del entorno
+
+✗ EVITAR: Resolver la tensión demasiado rápido
+✗ EVITAR: Diálogos casuales o humor fuera de lugar
+✗ EVITAR: Descripciones rutinarias que rompan la atmósfera`);
+    } else if (isEmotionalScene) {
+      guidance.push(`
+TIPO DE ESCENA DETECTADO: EMOCIONAL/INTIMIDAD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Ritmo pausado con respiraciones narrativas
+✓ Enfócate en gestos pequeños pero significativos
+✓ Las emociones son FÍSICAS: nudo en la garganta, peso en el pecho
+✓ Permite silencios cargados de significado
+✓ Los diálogos pueden ser entrecortados por la emoción
+
+✗ EVITAR: Explicar las emociones - MUÉSTRALAS
+✗ EVITAR: Transiciones abruptas a otros temas
+✗ EVITAR: Interrumpir momentos emotivos con acción`);
+    } else if (isReflectiveScene) {
+      guidance.push(`
+TIPO DE ESCENA DETECTADO: REFLEXIÓN/INTROSPECCIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Frases más largas, cadencia contemplativa
+✓ Permite divagaciones controladas del pensamiento
+✓ Ancla las reflexiones en sensaciones físicas del presente
+✓ Usa el entorno como espejo del estado interno
+
+✗ EVITAR: Exceso de "pensó", "reflexionó", "se preguntó"
+✗ EVITAR: Monólogos internos sin ancla sensorial
+✗ EVITAR: Que la reflexión se extienda más de 2-3 párrafos sin interrupción`);
+    } else if (isDialogueScene) {
+      guidance.push(`
+TIPO DE ESCENA DETECTADO: DIÁLOGO INTENSO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Intercambios rápidos cuando hay tensión
+✓ Beats de acción entre réplicas (gestos, miradas, movimientos)
+✓ Subtexto: lo que NO dicen es tan importante como lo que dicen
+✓ Cada personaje tiene su ritmo vocal único
+
+✗ EVITAR: Párrafos de diálogo sin acción intercalada
+✗ EVITAR: Que todos los personajes hablen igual
+✗ EVITAR: Exposición larga disfrazada de diálogo`);
+    } else if (isClimaxScene) {
+      guidance.push(`
+TIPO DE ESCENA DETECTADO: CLÍMAX/PUNTO ÁLGIDO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Máxima intensidad - cada palabra cuenta
+✓ Alterna entre acción frenética y momentos de suspensión
+✓ Las stakes deben sentirse en cada línea
+✓ Permite que el lector SIENTA el peso del momento
+
+✗ EVITAR: Detalles irrelevantes que distraigan
+✗ EVITAR: Resoluciones demasiado fáciles
+✗ EVITAR: Romper la tensión con humor inapropiado`);
+    } else {
+      // General guidance
+      guidance.push(`
+GUÍA GENERAL DE RITMO
+━━━━━━━━━━━━━━━━━━━━━━
+✓ Varía la longitud de las frases para crear dinamismo
+✓ Alterna entre acción, diálogo y descripción
+✓ Cada párrafo debe impulsar la narrativa hacia adelante
+✓ Los cambios de ritmo deben ser GRADUALES, no abruptos
+
+✗ EVITAR: Párrafos uniformemente largos o cortos
+✗ EVITAR: Secuencias repetitivas de estructura`);
+    }
+
+    guidance.push(`
+REGLA DE ORO DEL RITMO: El tempo narrativo debe COINCIDIR con la emoción de la escena.
+                        Acción rápida = prosa rápida. Momento íntimo = prosa pausada.`);
+
+    return guidance.join("\n");
+  }
+
+  /**
+   * LitAgents 2.9.5: Generate proactive physical continuity guidance
+   * Prevents physical continuity errors by tracking positions, states, and movements
+   */
+  private generatePhysicalContinuityGuidance(
+    scenePlan: ScenePlan,
+    prevSceneContext: string,
+    lastSceneEndState?: string
+  ): string {
+    const guidance: string[] = [];
+    guidance.push("╔══════════════════════════════════════════════════════════════════╗");
+    guidance.push("║ 🎯 CONTINUIDAD FÍSICA - PREVENCIÓN DE ERRORES ESPACIALES        ║");
+    guidance.push("╚══════════════════════════════════════════════════════════════════╝");
+
+    // Extract setting info
+    const setting = scenePlan.setting || '';
+    const characters = scenePlan.characters || [];
+
+    guidance.push(`
+UBICACIÓN DE ESTA ESCENA: ${setting}
+PERSONAJES EN ESCENA: ${characters.join(', ')}
+
+REGLAS DE CONTINUIDAD FÍSICA OBLIGATORIAS:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. POSICIONES Y MOVIMIENTOS:
+   ✓ Si un personaje está sentado, debe LEVANTARSE antes de caminar
+   ✓ Si tiene algo en las manos, debe SOLTARLO o GUARDARLO antes de usar las manos
+   ✓ Si está en un lugar, debe DESPLAZARSE para llegar a otro
+   ✓ Las distancias deben ser coherentes (no puede susurrar desde el otro lado de la sala)
+
+2. OBJETOS Y PERTENENCIAS:
+   ✓ Si un personaje sostiene un objeto, sigue sosteniéndolo hasta que lo suelte explícitamente
+   ✓ Los objetos no aparecen mágicamente - deben tomarse de algún lugar
+   ✓ La ropa y accesorios se mantienen consistentes durante la escena
+   ✓ Si algo se rompe o pierde, permanece roto o perdido
+
+3. ESTADO FÍSICO:
+   ✓ Las heridas persisten y afectan movimientos
+   ✓ El cansancio acumulado se nota en acciones posteriores
+   ✓ El clima/temperatura afecta a todos los personajes
+   ✓ La iluminación determina qué pueden ver los personajes
+
+4. ENTRADAS Y SALIDAS:
+   ✓ Los personajes deben ENTRAR antes de participar
+   ✓ Si alguien sale, no puede hablar en la siguiente línea
+   ✓ Puertas: si están cerradas, deben abrirse; si abiertas, queda establecido`);
+
+    if (lastSceneEndState) {
+      guidance.push(`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTADO AL FINAL DE LA ESCENA ANTERIOR:
+${lastSceneEndState}
+→ DEBES continuar desde este estado exacto.`);
+    }
+
+    if (prevSceneContext && prevSceneContext.length > 100) {
+      // Extract last physical states from context
+      guidance.push(`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️ VERIFICA antes de escribir:
+   - ¿Dónde terminó cada personaje en la escena anterior?
+   - ¿Qué tenían en las manos?
+   - ¿En qué postura estaban (sentados, de pie, acostados)?
+   - ¿Había puertas/ventanas abiertas o cerradas?`);
+    }
+
+    guidance.push(`
+ERRORES COMUNES A EVITAR:
+✗ "Cruzó los brazos" → cuando ya tiene algo en las manos
+✗ "Se levantó" → cuando ya estaba de pie
+✗ "Entró en la habitación" → cuando ya estaba dentro
+✗ "Tomó su café" → cuando no se estableció que había café
+✗ "Miró por la ventana" → en una habitación sin ventanas establecidas`);
+
+    return guidance.join("\n");
+  }
+
+  /**
+   * LitAgents 2.9.5: Generate proactive narrative credibility guidance
+   * Prevents narrative logic issues and implausible plot developments
+   */
+  private generateNarrativeCredibilityGuidance(scenePlan: ScenePlan): string {
+    const guidance: string[] = [];
+    guidance.push("╔══════════════════════════════════════════════════════════════════╗");
+    guidance.push("║ 🧠 CREDIBILIDAD NARRATIVA - PREVENCIÓN DE FALLOS LÓGICOS        ║");
+    guidance.push("╚══════════════════════════════════════════════════════════════════╝");
+
+    guidance.push(`
+REGLAS DE CREDIBILIDAD NARRATIVA:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. CONOCIMIENTO DE PERSONAJES:
+   ✓ Un personaje solo puede saber lo que ha visto/oído/le han contado
+   ✓ No puede reaccionar a información que desconoce
+   ✓ Los secretos permanecen secretos hasta que se revelan EN ESCENA
+   ✓ Las deducciones deben basarse en evidencia disponible
+
+2. CAUSALIDAD Y CONSECUENCIAS:
+   ✓ Toda acción tiene consecuencias coherentes
+   ✓ Las decisiones pasadas afectan el presente
+   ✓ No hay coincidencias excesivas ni convenientes
+   ✓ Los problemas requieren soluciones proporcionales
+
+3. COMPORTAMIENTO COHERENTE:
+   ✓ Los personajes actúan según su personalidad establecida
+   ✓ Los cambios de actitud requieren motivación clara
+   ✓ Las habilidades deben haberse establecido previamente
+   ✓ Las limitaciones (miedos, debilidades) persisten
+
+4. LÓGICA TEMPORAL:
+   ✓ El tiempo transcurrido debe ser realista para las acciones
+   ✓ Los viajes requieren tiempo proporcional a la distancia
+   ✓ Los procesos (curación, aprendizaje) llevan tiempo realista
+   ✓ La hora del día afecta la iluminación y actividad
+
+5. VEROSIMILITUD DEL MUNDO:
+   ✓ Las reglas del mundo (magia, tecnología) se aplican consistentemente
+   ✓ La sociedad/cultura se comporta de forma coherente
+   ✓ Las excepciones a las reglas tienen explicación`);
+
+    // Add scene-specific credibility checks
+    const plotBeat = scenePlan.plot_beat || '';
+    
+    if (/revela|descubre|averigua|se entera/.test(plotBeat.toLowerCase())) {
+      guidance.push(`
+⚠️ ESCENA DE REVELACIÓN DETECTADA:
+   → ¿CÓMO se entera el personaje? Debe haber una fuente clara.
+   → ¿Es PLAUSIBLE que esta información llegue ahora?
+   → ¿Tenía el informante MOTIVO para revelar esto?`);
+    }
+
+    if (/llega|aparece|encuentra/.test(plotBeat.toLowerCase())) {
+      guidance.push(`
+⚠️ ESCENA DE LLEGADA/ENCUENTRO DETECTADA:
+   → ¿Es REALISTA que se encuentren en este lugar/momento?
+   → ¿Cuánto tiempo de viaje implica? ¿Es coherente con la línea temporal?
+   → ¿Hay una razón NARRATIVA para este encuentro o es coincidencia?`);
+    }
+
+    if (/resuelve|soluciona|escapa|vence/.test(plotBeat.toLowerCase())) {
+      guidance.push(`
+⚠️ ESCENA DE RESOLUCIÓN DETECTADA:
+   → ¿La solución usa habilidades/recursos ESTABLECIDOS previamente?
+   → ¿El esfuerzo es PROPORCIONAL a la dificultad del problema?
+   → ¿Se evita el "deus ex machina" (solución mágica conveniente)?`);
+    }
+
+    guidance.push(`
+ERRORES COMUNES DE CREDIBILIDAD A EVITAR:
+✗ Personaje sabe algo que no podría saber
+✗ Habilidad aparece sin establecimiento previo
+✗ Problema grave se resuelve demasiado fácil
+✗ Viaje de horas completado en minutos narrativos
+✗ Personaje actúa contra su naturaleza sin motivo
+✗ Coincidencia demasiado conveniente para el plot`);
+
+    return guidance.join("\n");
   }
 }
