@@ -66,6 +66,56 @@ interface StructureAnalysis {
   recommendations: string[];
 }
 
+/**
+ * LitAgents 2.9.5: Quality Report for user review after review cycles
+ * Contains all issues with chapter/paragraph location, severity, and publishability assessment
+ */
+export interface QualityReportIssue {
+  id: string;
+  capitulosAfectados: number[]; // All affected chapters
+  titulosCapitulos: string[]; // Titles of all affected chapters
+  extractoTexto?: string; // Text excerpt showing the problem (from elementos_a_preservar or descripcion)
+  categoria: string;
+  descripcion: string;
+  severidad: "critica" | "mayor" | "menor";
+  instruccionCorreccion: string;
+  elementosAPreservar?: string; // What NOT to change
+  estado: "pendiente" | "corregido" | "ignorado";
+}
+
+export interface QualityReport {
+  projectId: number;
+  projectTitle: string;
+  fechaGeneracion: string;
+  ciclosCompletados: number;
+  
+  // Scores
+  puntuacionGlobal: number;
+  puntuacionesDesglosadas: {
+    enganche: number;
+    personajes: number;
+    trama: number;
+    atmosfera: number;
+    ritmo: number;
+  };
+  
+  // Issues by severity
+  issuesCriticos: QualityReportIssue[];
+  issuesMayores: QualityReportIssue[];
+  issuesMenores: QualityReportIssue[];
+  totalIssues: number;
+  
+  // Publishability
+  esPublicable: boolean;
+  razonPublicabilidad: string;
+  recomendacionesFinales: string[];
+  
+  // Statistics
+  totalCapitulos: number;
+  totalPalabras: number;
+  capitulosConProblemas: number[];
+}
+
 interface ReeditProgress {
   projectId: number;
   stage: string;
@@ -6025,6 +6075,173 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
     });
 
     console.log(`[ReeditOrchestrator] Applied corrections to ${chaptersToFix.length} chapters for project ${projectId}`);
+  }
+
+  /**
+   * LitAgents 2.9.5: Generate a quality report for user review
+   * This report contains all issues with chapter/paragraph location, severity, and publishability
+   */
+  async generateQualityReport(projectId: number): Promise<QualityReport> {
+    const project = await storage.getReeditProject(projectId);
+    if (!project) {
+      throw new Error(`Project ${projectId} not found`);
+    }
+
+    const chapters = await storage.getReeditChaptersByProject(projectId);
+    const sortedChapters = sortChaptersByNarrativeOrder(chapters);
+    
+    // Get chapter titles map
+    const chapterTitlesMap: Record<number, string> = {};
+    for (const ch of sortedChapters) {
+      chapterTitlesMap[ch.chapterNumber] = ch.title || `Capítulo ${ch.chapterNumber}`;
+    }
+
+    // Extract final review result
+    const finalReviewResult = project.finalReviewResult as FinalReviewerResult | null;
+    const issues = finalReviewResult?.issues || [];
+    
+    // Convert FinalReviewIssue to QualityReportIssue
+    const convertIssue = (issue: FinalReviewIssue, index: number): QualityReportIssue => {
+      const affectedChapters = issue.capitulos_afectados || [];
+      const chapterTitles = affectedChapters.map(ch => chapterTitlesMap[ch] || `Capítulo ${ch}`);
+      
+      // Extract text excerpt from elementos_a_preservar (shows what's there) or from descripcion
+      let extractoTexto = "";
+      if (issue.elementos_a_preservar && issue.elementos_a_preservar.length > 10) {
+        extractoTexto = issue.elementos_a_preservar.substring(0, 200);
+      } else if (issue.descripcion && issue.descripcion.includes('"')) {
+        // Try to extract quoted text from description
+        const quoteMatch = issue.descripcion.match(/"([^"]+)"/);
+        if (quoteMatch) {
+          extractoTexto = quoteMatch[1].substring(0, 200);
+        }
+      }
+      
+      return {
+        id: `issue-${index + 1}`,
+        capitulosAfectados: affectedChapters,
+        titulosCapitulos: chapterTitles,
+        extractoTexto: extractoTexto || undefined,
+        categoria: issue.categoria || "otro",
+        descripcion: issue.descripcion,
+        severidad: issue.severidad,
+        instruccionCorreccion: issue.instrucciones_correccion,
+        elementosAPreservar: issue.elementos_a_preservar,
+        estado: "pendiente",
+      };
+    };
+
+    // Separate by severity
+    const issuesCriticos = issues
+      .filter(i => i.severidad === "critica")
+      .map((i, idx) => convertIssue(i, idx));
+    const issuesMayores = issues
+      .filter(i => i.severidad === "mayor")
+      .map((i, idx) => convertIssue(i, idx + issuesCriticos.length));
+    const issuesMenores = issues
+      .filter(i => i.severidad === "menor")
+      .map((i, idx) => convertIssue(i, idx + issuesCriticos.length + issuesMayores.length));
+
+    // Calculate scores
+    const puntuacionGlobal = finalReviewResult?.puntuacion_global || 0;
+    const desglosadas = finalReviewResult?.justificacion_puntuacion?.puntuacion_desglosada || {
+      enganche: puntuacionGlobal,
+      personajes: puntuacionGlobal,
+      trama: puntuacionGlobal,
+      atmosfera: puntuacionGlobal,
+      ritmo: puntuacionGlobal,
+    };
+
+    // Determine publishability
+    const hasCriticalIssues = issuesCriticos.length > 0;
+    const hasManyMajorIssues = issuesMayores.length >= 3;
+    const lowScore = puntuacionGlobal < 7;
+    
+    let esPublicable = false;
+    let razonPublicabilidad = "";
+    
+    if (puntuacionGlobal >= 9 && issuesCriticos.length === 0 && issuesMayores.length === 0) {
+      esPublicable = true;
+      razonPublicabilidad = "El manuscrito cumple con los estándares de calidad para publicación. Puntuación excelente y sin errores graves.";
+    } else if (puntuacionGlobal >= 8 && issuesCriticos.length === 0 && issuesMayores.length <= 2) {
+      esPublicable = true;
+      razonPublicabilidad = "El manuscrito es publicable con reservas menores. Se recomienda revisar los issues mayores antes de publicar.";
+    } else if (hasCriticalIssues) {
+      esPublicable = false;
+      razonPublicabilidad = `No publicable: ${issuesCriticos.length} error(es) crítico(s) detectados que requieren corrección inmediata.`;
+    } else if (hasManyMajorIssues) {
+      esPublicable = false;
+      razonPublicabilidad = `No publicable: ${issuesMayores.length} errores mayores detectados. Se requiere revisión exhaustiva.`;
+    } else if (lowScore) {
+      esPublicable = false;
+      razonPublicabilidad = `No publicable: Puntuación global (${puntuacionGlobal}/10) por debajo del mínimo aceptable (7/10).`;
+    } else {
+      esPublicable = false;
+      razonPublicabilidad = "Requiere revisión adicional antes de publicar.";
+    }
+
+    // Recommendations
+    const recomendaciones: string[] = [];
+    if (issuesCriticos.length > 0) {
+      recomendaciones.push(`Priorizar la corrección de ${issuesCriticos.length} error(es) crítico(s).`);
+    }
+    if (issuesMayores.length > 0) {
+      recomendaciones.push(`Revisar y corregir ${issuesMayores.length} error(es) mayor(es).`);
+    }
+    if (issuesMenores.length > 5) {
+      recomendaciones.push(`Considerar una pasada de pulido para los ${issuesMenores.length} errores menores.`);
+    }
+    if (desglosadas.ritmo < 7) {
+      recomendaciones.push("Mejorar el ritmo narrativo: revisar la longitud de escenas y variación de tempo.");
+    }
+    if (desglosadas.personajes < 7) {
+      recomendaciones.push("Desarrollar más profundidad en los personajes principales.");
+    }
+    if (desglosadas.trama < 7) {
+      recomendaciones.push("Reforzar la estructura de la trama y resolver hilos argumentales pendientes.");
+    }
+    if (esPublicable && issuesMenores.length > 0) {
+      recomendaciones.push("Aunque es publicable, corregir los errores menores mejorará la experiencia del lector.");
+    }
+
+    // Calculate stats
+    const totalWords = sortedChapters.reduce((sum, ch) => sum + (ch.wordCount || 0), 0);
+    const capitulosConProblemas = Array.from(new Set(
+      issues.flatMap(i => i.capitulos_afectados || [])
+    )).sort((a, b) => a - b);
+
+    const report: QualityReport = {
+      projectId,
+      projectTitle: project.title,
+      fechaGeneracion: new Date().toISOString(),
+      ciclosCompletados: project.revisionCycle || 0,
+      
+      puntuacionGlobal,
+      puntuacionesDesglosadas: {
+        enganche: desglosadas.enganche || puntuacionGlobal,
+        personajes: desglosadas.personajes || puntuacionGlobal,
+        trama: desglosadas.trama || puntuacionGlobal,
+        atmosfera: desglosadas.atmosfera || puntuacionGlobal,
+        ritmo: desglosadas.ritmo || puntuacionGlobal,
+      },
+      
+      issuesCriticos,
+      issuesMayores,
+      issuesMenores,
+      totalIssues: issues.length,
+      
+      esPublicable,
+      razonPublicabilidad,
+      recomendacionesFinales: recomendaciones,
+      
+      totalCapitulos: sortedChapters.length,
+      totalPalabras: totalWords,
+      capitulosConProblemas,
+    };
+
+    console.log(`[ReeditOrchestrator] Generated quality report for project ${projectId}: ${report.totalIssues} issues, score ${report.puntuacionGlobal}/10, publishable: ${report.esPublicable}`);
+    
+    return report;
   }
 }
 

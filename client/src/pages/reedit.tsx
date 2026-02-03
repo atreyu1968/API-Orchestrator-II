@@ -1018,6 +1018,291 @@ function ProgressReportDisplay({
   );
 }
 
+interface QualityReportIssue {
+  id: string;
+  capitulosAfectados: number[];
+  titulosCapitulos: string[];
+  extractoTexto?: string;
+  categoria: string;
+  descripcion: string;
+  severidad: "critica" | "mayor" | "menor";
+  instruccionCorreccion: string;
+  elementosAPreservar?: string;
+  estado: "pendiente" | "corregido" | "ignorado";
+}
+
+interface QualityReport {
+  projectId: number;
+  projectTitle: string;
+  fechaGeneracion: string;
+  ciclosCompletados: number;
+  puntuacionGlobal: number;
+  puntuacionesDesglosadas: {
+    enganche: number;
+    personajes: number;
+    trama: number;
+    atmosfera: number;
+    ritmo: number;
+  };
+  issuesCriticos: QualityReportIssue[];
+  issuesMayores: QualityReportIssue[];
+  issuesMenores: QualityReportIssue[];
+  totalIssues: number;
+  esPublicable: boolean;
+  razonPublicabilidad: string;
+  recomendacionesFinales: string[];
+  totalCapitulos: number;
+  totalPalabras: number;
+  capitulosConProblemas: number[];
+}
+
+function QualityReportDisplay({ projectId }: { projectId: number }) {
+  const { data: report, isLoading, error } = useQuery<QualityReport>({
+    queryKey: ["/api/reedit-projects", projectId, "quality-report"],
+    queryFn: async () => {
+      const res = await fetch(`/api/reedit-projects/${projectId}/quality-report`);
+      if (!res.ok) throw new Error("Failed to fetch quality report");
+      return res.json();
+    },
+    enabled: !!projectId,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">Generando informe de calidad...</span>
+      </div>
+    );
+  }
+
+  if (error || !report) {
+    return (
+      <div className="text-center text-muted-foreground py-12">
+        <AlertCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
+        <p>No hay informe de calidad disponible.</p>
+        <p className="text-sm">Complete al menos un ciclo de revisión para generar el informe.</p>
+      </div>
+    );
+  }
+
+  const getCategoriaLabel = (cat: string) => {
+    const labels: Record<string, string> = {
+      enganche: "Enganche",
+      personajes: "Personajes",
+      trama: "Trama",
+      atmosfera: "Atmósfera",
+      ritmo: "Ritmo",
+      continuidad_fisica: "Continuidad Física",
+      timeline: "Línea Temporal",
+      ubicacion: "Ubicación",
+      repeticion_lexica: "Repetición Léxica",
+      arco_incompleto: "Arco Incompleto",
+      tension_insuficiente: "Tensión Insuficiente",
+      giro_predecible: "Giro Predecible",
+      hook_debil: "Hook Débil",
+      credibilidad_narrativa: "Credibilidad Narrativa",
+      otro: "Otro",
+    };
+    return labels[cat] || cat;
+  };
+
+  const getSeveridadBadge = (sev: string) => {
+    if (sev === "critica") return <Badge variant="destructive">Crítico</Badge>;
+    if (sev === "mayor") return <Badge className="bg-orange-500 hover:bg-orange-600">Mayor</Badge>;
+    return <Badge variant="secondary">Menor</Badge>;
+  };
+
+  const renderIssueList = (issues: QualityReportIssue[], title: string, icon: JSX.Element) => {
+    if (issues.length === 0) return null;
+    
+    const getBorderColor = (sev: string) => {
+      if (sev === "critica") return "border-l-red-500";
+      if (sev === "mayor") return "border-l-orange-500";
+      return "border-l-yellow-500";
+    };
+    
+    return (
+      <div className="mb-6">
+        <h4 className="font-medium flex items-center gap-2 mb-3">
+          {icon}
+          {title} ({issues.length})
+        </h4>
+        <div className="space-y-3">
+          {issues.map((issue) => (
+            <Card key={issue.id} className={`border-l-4 ${getBorderColor(issue.severidad)}`}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {issue.titulosCapitulos.map((titulo, idx) => (
+                      <Badge key={idx} variant="outline">{titulo}</Badge>
+                    ))}
+                    <Badge variant="outline" className="text-xs">{getCategoriaLabel(issue.categoria)}</Badge>
+                    {getSeveridadBadge(issue.severidad)}
+                  </div>
+                </div>
+                
+                {/* Location info */}
+                {issue.capitulosAfectados.length > 0 && (
+                  <div className="text-xs text-muted-foreground mb-2">
+                    <strong>Ubicación:</strong> {issue.capitulosAfectados.length === 1 
+                      ? `Capítulo ${issue.capitulosAfectados[0]}` 
+                      : `Capítulos ${issue.capitulosAfectados.join(", ")}`}
+                  </div>
+                )}
+                
+                {/* Text excerpt if available */}
+                {issue.extractoTexto && (
+                  <div className="text-xs bg-muted/50 border-l-2 border-primary/30 pl-2 py-1 mb-2 italic">
+                    "{issue.extractoTexto}"
+                  </div>
+                )}
+                
+                <p className="text-sm mb-2">{issue.descripcion}</p>
+                
+                {issue.instruccionCorreccion && (
+                  <div className="text-xs text-muted-foreground bg-muted p-2 rounded mb-2">
+                    <strong>Corrección sugerida:</strong> {issue.instruccionCorreccion.substring(0, 300)}
+                    {issue.instruccionCorreccion.length > 300 && "..."}
+                  </div>
+                )}
+                
+                {issue.elementosAPreservar && (
+                  <div className="text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 p-2 rounded">
+                    <strong>No modificar:</strong> {issue.elementosAPreservar.substring(0, 150)}
+                    {issue.elementosAPreservar.length > 150 && "..."}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <ScrollArea className="h-[600px] mt-4 pr-4">
+      <div className="space-y-6">
+        {/* Header with score and publishability */}
+        <Card className={report.esPublicable ? "border-green-500" : "border-orange-500"}>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Star className="h-5 w-5 text-yellow-500" />
+                Informe de Calidad
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-3xl font-bold">{report.puntuacionGlobal}/10</span>
+                {report.esPublicable ? (
+                  <Badge className="bg-green-500 hover:bg-green-600">Publicable</Badge>
+                ) : (
+                  <Badge variant="destructive">No Publicable</Badge>
+                )}
+              </div>
+            </CardTitle>
+            <CardDescription>{report.razonPublicabilidad}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4">
+              <div className="text-center p-2 bg-muted rounded">
+                <div className="text-2xl font-bold">{report.puntuacionesDesglosadas.enganche}</div>
+                <div className="text-xs text-muted-foreground">Enganche</div>
+              </div>
+              <div className="text-center p-2 bg-muted rounded">
+                <div className="text-2xl font-bold">{report.puntuacionesDesglosadas.personajes}</div>
+                <div className="text-xs text-muted-foreground">Personajes</div>
+              </div>
+              <div className="text-center p-2 bg-muted rounded">
+                <div className="text-2xl font-bold">{report.puntuacionesDesglosadas.trama}</div>
+                <div className="text-xs text-muted-foreground">Trama</div>
+              </div>
+              <div className="text-center p-2 bg-muted rounded">
+                <div className="text-2xl font-bold">{report.puntuacionesDesglosadas.atmosfera}</div>
+                <div className="text-xs text-muted-foreground">Atmósfera</div>
+              </div>
+              <div className="text-center p-2 bg-muted rounded">
+                <div className="text-2xl font-bold">{report.puntuacionesDesglosadas.ritmo}</div>
+                <div className="text-xs text-muted-foreground">Ritmo</div>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-4 text-center text-sm">
+              <div>
+                <div className="font-medium">{report.totalCapitulos}</div>
+                <div className="text-muted-foreground">Capítulos</div>
+              </div>
+              <div>
+                <div className="font-medium">{report.totalPalabras.toLocaleString()}</div>
+                <div className="text-muted-foreground">Palabras</div>
+              </div>
+              <div>
+                <div className="font-medium">{report.ciclosCompletados}</div>
+                <div className="text-muted-foreground">Ciclos</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Issues Summary */}
+        {report.totalIssues > 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-orange-500" />
+                Problemas Detectados ({report.totalIssues})
+              </CardTitle>
+              <CardDescription>
+                Capítulos afectados: {report.capitulosConProblemas.length > 0 
+                  ? report.capitulosConProblemas.join(", ") 
+                  : "Ninguno"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {renderIssueList(report.issuesCriticos, "Errores Críticos", <XCircle className="h-4 w-4 text-red-500" />)}
+              {renderIssueList(report.issuesMayores, "Errores Mayores", <AlertTriangle className="h-4 w-4 text-orange-500" />)}
+              {renderIssueList(report.issuesMenores, "Errores Menores", <AlertCircle className="h-4 w-4 text-yellow-500" />)}
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-green-500">
+            <CardContent className="py-8 text-center">
+              <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-500" />
+              <h3 className="text-lg font-medium text-green-700">Sin Problemas Detectados</h3>
+              <p className="text-muted-foreground">El manuscrito está listo para publicación.</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Recommendations */}
+        {report.recomendacionesFinales.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-blue-500" />
+                Recomendaciones
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ul className="space-y-2">
+                {report.recomendacionesFinales.map((rec, idx) => (
+                  <li key={idx} className="flex items-start gap-2">
+                    <ChevronRight className="h-4 w-4 mt-0.5 text-muted-foreground" />
+                    <span className="text-sm">{rec}</span>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        )}
+
+        <p className="text-xs text-muted-foreground text-center">
+          Informe generado: {new Date(report.fechaGeneracion).toLocaleString()}
+        </p>
+      </div>
+    </ScrollArea>
+  );
+}
+
 function AuditReportsDisplay({ reports }: { reports: any[] }) {
   if (!reports || reports.length === 0) {
     return <p className="text-muted-foreground text-center py-4">No hay informes de auditoría disponibles</p>;
@@ -1860,6 +2145,7 @@ export default function ReeditPage() {
                     <TabsTrigger value="structural" data-testid="tab-trigger-structural">Análisis Estructural</TabsTrigger>
                     <TabsTrigger value="audits" data-testid="tab-trigger-audits">Auditorías QA</TabsTrigger>
                     <TabsTrigger value="report" data-testid="tab-trigger-report">Informe Final</TabsTrigger>
+                    <TabsTrigger value="quality-report" data-testid="tab-trigger-quality-report">Informe Calidad</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="live-report">
@@ -2535,6 +2821,10 @@ export default function ReeditPage() {
                         <p>El informe final estará disponible cuando se complete el procesamiento</p>
                       </div>
                     )}
+                  </TabsContent>
+
+                  <TabsContent value="quality-report">
+                    <QualityReportDisplay projectId={selectedProjectData.id} />
                   </TabsContent>
                 </Tabs>
               </CardContent>

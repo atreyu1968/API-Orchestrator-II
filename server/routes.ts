@@ -12,7 +12,7 @@ import { generateManuscriptDocx } from "./services/docx-exporter";
 import { z } from "zod";
 import { CopyEditorAgent, cancelProject, ItalianReviewerAgent } from "./agents";
 import { getAIProvider, type AIProvider } from "./agents/base-agent";
-import { ReeditOrchestrator } from "./orchestrators/reedit-orchestrator";
+import { ReeditOrchestrator, reeditOrchestrator } from "./orchestrators/reedit-orchestrator";
 import { developmentalEditor } from "./orchestrators/developmental-editor";
 import { chatService } from "./services/chatService";
 import { TranslationOrchestrator } from "./translation-orchestrator";
@@ -7253,6 +7253,18 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     } catch (error) {
       console.error("Error fetching audit reports:", error);
       res.status(500).json({ error: "Failed to fetch audit reports" });
+    }
+  });
+
+  // LitAgents 2.9.5: Quality report endpoint
+  app.get("/api/reedit-projects/:id/quality-report", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.id);
+      const report = await reeditOrchestrator.generateQualityReport(projectId);
+      res.json(report);
+    } catch (error) {
+      console.error("Error generating quality report:", error);
+      res.status(500).json({ error: "Failed to generate quality report" });
     }
   });
 
