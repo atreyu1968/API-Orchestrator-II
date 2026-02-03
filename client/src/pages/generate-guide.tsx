@@ -84,8 +84,8 @@ export default function GenerateGuidePage() {
     mutationFn: async (data: FormData) => {
       const response = await apiRequest("POST", "/api/generate-writing-guide", {
         ...data,
-        pseudonymId: data.pseudonymId ? parseInt(data.pseudonymId) : undefined,
-        seriesId: data.seriesId ? parseInt(data.seriesId) : undefined,
+        pseudonymId: data.pseudonymId && data.pseudonymId !== "none" ? parseInt(data.pseudonymId) : undefined,
+        seriesId: data.seriesId && data.seriesId !== "none" ? parseInt(data.seriesId) : undefined,
       });
       return response.json();
     },
@@ -131,7 +131,8 @@ export default function GenerateGuidePage() {
   };
 
   const argumentLength = form.watch("argument")?.length || 0;
-  const seriesId = form.watch("seriesId");
+  const seriesIdValue = form.watch("seriesId");
+  const hasSeriesSelected = seriesIdValue && seriesIdValue !== "none";
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
@@ -371,7 +372,7 @@ export default function GenerateGuidePage() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="" data-testid="option-pseudonym-none">Sin seudónimo</SelectItem>
+                          <SelectItem value="none" data-testid="option-pseudonym-none">Sin seudónimo</SelectItem>
                           {pseudonyms.map((p) => (
                             <SelectItem 
                               key={p.id} 
@@ -402,7 +403,7 @@ export default function GenerateGuidePage() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="" data-testid="option-series-none">Obra independiente</SelectItem>
+                            <SelectItem value="none" data-testid="option-series-none">Obra independiente</SelectItem>
                             {seriesList.map((s) => (
                               <SelectItem 
                                 key={s.id} 
@@ -419,7 +420,7 @@ export default function GenerateGuidePage() {
                     )}
                   />
 
-                  {seriesId && (
+                  {hasSeriesSelected && (
                     <FormField
                       control={form.control}
                       name="seriesOrder"
