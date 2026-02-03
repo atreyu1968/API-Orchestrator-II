@@ -8315,9 +8315,30 @@ Responde en JSON:
             worldBible
           );
 
-          // NEW LOGIC: Check if ORIGINAL issue was fixed (even if there are new issues)
+          // v2.9.5: STRICT LOGIC - Reject corrections that introduce ANY new issues
+          // If correction introduces new problems, it's NOT a valid fix
+          const hasAnyNewIssues = verification.newIssues && verification.newIssues.length > 0;
+          
+          if (hasAnyNewIssues) {
+            // REJECT: The correction introduced new problems - this is not acceptable
+            issue.lastAttemptError = `Intento ${issue.attempts}: corrección rechazada por introducir ${verification.newIssues!.length} problema(s) nuevo(s)`;
+            console.warn(`[OrchestratorV2] REJECTED correction for ${issue.id}: introduced ${verification.newIssues!.length} new issues`);
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warning",
+              message: `[RECHAZADO] Cap ${issue.chapter}: corrección de "${issue.tipo}" rechazada - introdujo ${verification.newIssues!.length} problema(s) nuevo(s)`,
+              agentRole: "smart-editor",
+            });
+            
+            // DO NOT save the correction, DO NOT add cascade issues
+            // Just continue to next attempt
+            continue;
+          }
+          
+          // Only save if BOTH: original fixed AND no new issues
           if (verification.originalIssueFixed || verification.valid) {
-            // Save the corrected content - the ORIGINAL issue was fixed
+            // Save the corrected content - clean fix with no side effects
             await storage.updateChapter(chapter.id, {
               content: correctedContent,
               wordCount: correctedContent.split(/\s+/).length,
@@ -8331,45 +8352,10 @@ Responde en JSON:
             resolvedCount++;
             corrected = true;
 
-            console.log(`[OrchestratorV2] Issue ${issue.id} resolved on attempt ${issue.attempts}`);
+            console.log(`[OrchestratorV2] Issue ${issue.id} resolved CLEANLY on attempt ${issue.attempts} (no new issues)`);
             
-            // NEW: If there are NEW different issues, add them to the registry for later processing
-            if (verification.newIssues && verification.newIssues.length > 0) {
-              const newIssuesAdded: string[] = [];
-              for (const newProblem of verification.newIssues) {
-                // Check if this is truly a NEW issue (not a duplicate)
-                const isDuplicate = registry.issues.some(
-                  existing => existing.chapter === issue.chapter && 
-                              existing.descripcion.toLowerCase().includes(newProblem.toLowerCase().substring(0, 30))
-                );
-                
-                if (!isDuplicate) {
-                  const newIssue: RegisteredIssue = {
-                    id: `cascade_${issue.chapter}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                    source: 'cascade-detection', // Mark as cascade-detected
-                    tipo: 'style', // Default to style for auto-detected issues
-                    severidad: 'menor',
-                    descripcion: newProblem,
-                    chapter: issue.chapter,
-                    status: 'pending',
-                    attempts: 0,
-                    contexto: `Detectado como efecto secundario al corregir: ${issue.tipo}`,
-                  };
-                  registry.issues.push(newIssue);
-                  newIssuesAdded.push(newProblem.substring(0, 40));
-                }
-              }
-              
-              if (newIssuesAdded.length > 0) {
-                console.log(`[OrchestratorV2] Added ${newIssuesAdded.length} cascade issues for Cap ${issue.chapter}`);
-                await storage.createActivityLog({
-                  projectId: project.id,
-                  level: "info",
-                  message: `[CASCADE] Cap ${issue.chapter}: ${newIssuesAdded.length} nuevos issues detectados tras corregir ${issue.tipo}: ${newIssuesAdded.join(', ')}`,
-                  agentRole: "smart-editor",
-                });
-              }
-            }
+            // v2.9.5: NO CASCADE - We no longer add new issues to the registry
+            // If a correction would create new issues, we reject it above
             
             // Emit issue resolved
             this.callbacks.onDetectAndFixProgress?.({
