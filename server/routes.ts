@@ -9724,6 +9724,15 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       const guideContent = guideResponse.content;
       console.log(`[SeriesGuideGenerator] Guide generated (${guideContent.length} chars)`);
       
+      // Validate guide content - must have meaningful content
+      if (!guideContent || guideContent.length < 500) {
+        console.error(`[SeriesGuideGenerator] Guide content is empty or too short (${guideContent?.length || 0} chars)`);
+        return res.status(500).json({ 
+          error: "La generación de la guía falló. El contenido está vacío o es demasiado corto. Intenta de nuevo.",
+          details: `Contenido generado: ${guideContent?.length || 0} caracteres (mínimo: 500)`
+        });
+      }
+      
       let series = null;
       
       if (params.createSeries) {
