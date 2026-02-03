@@ -704,7 +704,42 @@ export const PROMPTS_V2 = {
     worldBible: any,
     previousChapterSummary: string,
     storyState: string
-  ) => `
+  ) => {
+    // Extract all World Bible information for scene planning
+    const deadCharacters = extractDeadCharacters(worldBible);
+    const worldRules = extractWorldRules(worldBible);
+    const establishedObjects = extractEstablishedObjects(worldBible);
+    const watchpoints = extractWatchpoints(worldBible);
+    const centralThemes = extractCentralThemes(worldBible);
+    const timelineConstraints = extractTimelineConstraints(worldBible);
+    const premise = extractPremise(worldBible);
+    
+    // Extract all characters with their key info
+    const characters = worldBible?.characters || worldBible?.personajes || [];
+    const characterSummaries = characters.slice(0, 15).map((c: any) => {
+      const name = c.name || c.nombre || '';
+      const role = c.role || c.rol || '';
+      const status = c.status || c.estado || 'vivo';
+      const injuries = c.injuries || c.lesiones || [];
+      const injuryStr = Array.isArray(injuries) && injuries.length > 0 ? ` [HERIDAS: ${injuries.slice(0, 2).join(', ')}]` : '';
+      return `${name}${role ? ` (${role})` : ''}${status.toLowerCase().includes('muert') ? ' ☠️MUERTO' : ''}${injuryStr}`;
+    }).join(', ');
+    
+    // Extract locations
+    const locations = worldBible?.locations || worldBible?.lugares || [];
+    const locationNames = locations.slice(0, 10).map((l: any) => l.name || l.nombre || '').filter(Boolean).join(', ');
+    
+    // Build World Bible context section
+    let worldBibleContext = '';
+    if (deadCharacters || worldRules || establishedObjects || watchpoints || centralThemes || timelineConstraints) {
+      worldBibleContext = `
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║ 📖 CONTEXTO DEL WORLD BIBLE - RESPETAR EN LA PLANIFICACIÓN      ║
+    ╚══════════════════════════════════════════════════════════════════╝
+${premise ? `    PREMISA: ${premise}\n` : ''}${timelineConstraints ? `${timelineConstraints}\n` : ''}${deadCharacters ? `    ☠️ PERSONAJES MUERTOS (NO incluir en escenas): ${deadCharacters}\n` : ''}${worldRules ? `    REGLAS DEL MUNDO:\n${worldRules}\n` : ''}${establishedObjects ? `    OBJETOS ESTABLECIDOS:\n${establishedObjects}\n` : ''}${centralThemes ? `    TEMAS CENTRALES: ${centralThemes}\n` : ''}${watchpoints ? `    PUNTOS DE CONTINUIDAD:\n${watchpoints}\n` : ''}`;
+    }
+    
+    return `
     Eres el Director de Escena, especialista en desglosar capítulos en escenas cinematográficas.
     
     CAPÍTULO ${chapterOutline.chapter_num}: "${chapterOutline.title}"
@@ -714,8 +749,9 @@ export const PROMPTS_V2 = {
     
     CONTEXTO ANTERIOR: ${previousChapterSummary || 'Inicio de la novela'}
     ESTADO ACTUAL DE LA HISTORIA: ${storyState}
-    
-    PERSONAJES DISPONIBLES: ${JSON.stringify(worldBible.characters?.map((c: any) => c.name) || [])}
+${worldBibleContext}
+    PERSONAJES DISPONIBLES: ${characterSummaries || 'No especificados'}
+    UBICACIONES DISPONIBLES: ${locationNames || 'No especificadas'}
 
     OBJETIVO: Desglosar este capítulo en 3-4 escenas escribibles que:
     - Mantengan el ritmo narrativo
@@ -801,7 +837,8 @@ export const PROMPTS_V2 = {
     - La primera escena conecta con el capítulo anterior
     - La última escena tiene el hook más fuerte
     - Varía los tipos de escenas: acción, diálogo, reflexión, tensión
-  `,
+  `;
+  },
 
   // 3. GHOSTWRITER (V3) - Escribe escena por escena
   GHOSTWRITER_SCENE: (
