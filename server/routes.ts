@@ -9737,13 +9737,14 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       console.log(`[StyleGuideGenerator] Generating guide based on "${params.referenceAuthor}" for "${params.pseudonymName}"...`);
       
       // Generate the style guide
-      const guideContent = await styleGuideGeneratorAgent.generateStyleGuide({
+      const guideResponse = await styleGuideGeneratorAgent.generateStyleGuide({
         referenceAuthor: params.referenceAuthor,
         pseudonymName: params.pseudonymName,
         genre: params.genre,
         additionalNotes: params.additionalNotes,
       });
       
+      const guideContent = guideResponse.content;
       console.log(`[StyleGuideGenerator] Guide generated (${guideContent.length} chars)`);
       
       let pseudonymId = params.pseudonymId;
