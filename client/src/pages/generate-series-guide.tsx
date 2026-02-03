@@ -74,6 +74,8 @@ export default function GenerateSeriesGuidePage() {
     mutationFn: async (data: FormData) => {
       const response = await apiRequest("POST", "/api/generate-series-guide", {
         ...data,
+        bookCount: Number(data.bookCount),
+        chapterCountPerBook: Number(data.chapterCountPerBook),
         pseudonymId: data.pseudonymId && data.pseudonymId !== "none" ? parseInt(data.pseudonymId) : undefined,
         styleGuideId: data.styleGuideId && data.styleGuideId !== "none" ? parseInt(data.styleGuideId) : undefined,
       });

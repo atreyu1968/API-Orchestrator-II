@@ -1,4 +1,4 @@
-import { BaseAgent } from "./base-agent";
+import { BaseAgent, AgentResponse } from "./base-agent";
 
 const SERIES_GUIDE_PROMPT = `Eres un experto en planificación editorial de series literarias. Tu trabajo es generar una GUÍA DE SERIE completa y detallada para una saga de novelas.
 
@@ -182,7 +182,7 @@ export class SeriesGuideGeneratorAgent extends BaseAgent {
     workType: "series" | "trilogy";
     pseudonymName?: string;
     pseudonymStyleGuide?: string;
-  }): Promise<string> {
+  }): Promise<AgentResponse> {
     let prompt = `Genera una guía de serie completa para la siguiente saga:
 
 ## CONCEPTO DE LA SERIE:
