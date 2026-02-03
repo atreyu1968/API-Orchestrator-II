@@ -216,6 +216,25 @@ Final del capítulo Y: [gancho que deja en suspenso]
 ...
 ```
 
+### 16. PREVENCIÓN DE DEUS EX MACHINA (OBLIGATORIO)
+```
+Para cada RESOLUCIÓN IMPORTANTE de la novela, especifica:
+
+Resolución 1: [Qué conflicto se resuelve]
+- Capítulo donde ocurre: [X]
+- Recurso usado para resolverlo: [habilidad/objeto/aliado/información]
+- Capítulos donde se PREPARA este recurso: [lista de capítulos anteriores]
+- Pistas sembradas:
+  1. Capítulo [A]: [descripción de la pista]
+  2. Capítulo [B]: [descripción de la pista]
+  3. Capítulo [C]: [descripción de la pista]
+
+Resolución 2: [Qué conflicto se resuelve]
+...
+
+REGLA: La primera pista debe aparecer al menos 5 capítulos antes de la resolución.
+```
+
 ---
 
 ## ⚠️ ERRORES COMUNES A EVITAR
@@ -224,8 +243,16 @@ Final del capítulo Y: [gancho que deja en suspenso]
 2. **Personajes fantasma**: No introducir personajes que desaparecen sin explicación
 3. **Inconsistencias físicas**: Cambiar color de ojos, edad, etc.
 4. **Anacronismos**: Elementos fuera de época en novelas históricas
-5. **Deus ex machina**: Soluciones que no fueron preparadas previamente
+5. **Deus ex machina**: Soluciones que aparecen sin preparación previa
 6. **Arcos incompletos**: Personajes que no cambian o cuyo arco queda sin resolver
+
+### DEUS EX MACHINA - PROHIBICIONES ESPECÍFICAS:
+- Personajes nuevos que salvan la situación en el último momento
+- Habilidades ocultas del protagonista nunca mencionadas que resuelven todo
+- Coincidencias convenientes que solucionan conflictos principales
+- Objetos que aparecen justo cuando se necesitan sin haberse establecido antes
+- Revelaciones de última hora sin pistas previas
+- Aliados que llegan "justo a tiempo" sin motivación establecida
 
 ---
 

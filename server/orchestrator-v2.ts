@@ -866,6 +866,13 @@ Las siguientes tramas DEBEN ser avanzadas en este capítulo. Cada escena debe co
 2. NO crear tramas nuevas que no estén listadas arriba
 3. Mantener coherencia con el objetivo de cada trama
 4. Las escenas de transición también deben aportar al desarrollo de tramas
+
+🚫 PREVENCIÓN DE DEUS EX MACHINA:
+- NO introducir personajes nuevos que resuelvan conflictos
+- NO usar habilidades/objetos no establecidos previamente
+- NO resolver problemas con coincidencias convenientes
+- Si un recurso se usa para resolver algo, DEBE haberse mencionado antes
+- Los aliados que ayudan DEBEN tener motivación ya establecida
 ═══════════════════════════════════════════════════════════════
 
 `;

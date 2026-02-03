@@ -9463,6 +9463,154 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  // =============================================
+  // GUIDE GENERATOR - Auto-create writing guides
+  // =============================================
+  
+  app.post("/api/generate-writing-guide", async (req: Request, res: Response) => {
+    try {
+      const { guideGeneratorAgent } = await import("./agents/guide-generator");
+      
+      const schema = z.object({
+        argument: z.string().min(50, "El argumento debe tener al menos 50 caracteres"),
+        title: z.string().min(1, "El título es requerido"),
+        genre: z.string().default("thriller"),
+        tone: z.string().default("tenso"),
+        chapterCount: z.number().min(5).max(50).default(25),
+        hasPrologue: z.boolean().default(true),
+        hasEpilogue: z.boolean().default(true),
+        hasAuthorNote: z.boolean().default(false),
+        pseudonymId: z.number().optional(),
+        seriesId: z.number().optional(),
+        seriesOrder: z.number().optional(),
+        kindleUnlimited: z.boolean().default(true),
+        createProject: z.boolean().default(true),
+      });
+      
+      const params = schema.parse(req.body);
+      
+      // Get style guide if pseudonym is provided
+      let styleGuideContent: string | undefined;
+      let styleGuideId: number | undefined;
+      if (params.pseudonymId) {
+        const guides = await storage.getStyleGuidesByPseudonym(params.pseudonymId);
+        const activeGuide = guides.find(g => g.isActive);
+        if (activeGuide) {
+          styleGuideContent = activeGuide.content;
+          styleGuideId = activeGuide.id;
+        }
+      }
+      
+      // Get series context if series is provided
+      let seriesContext: string | undefined;
+      if (params.seriesId) {
+        const seriesData = await storage.getSeries(params.seriesId);
+        if (seriesData) {
+          seriesContext = `Serie: ${seriesData.title}\n`;
+          seriesContext += `Tipo: ${seriesData.workType}\n`;
+          if (seriesData.description) {
+            seriesContext += `Descripción: ${seriesData.description}\n`;
+          }
+          if (seriesData.seriesGuide) {
+            seriesContext += `\nGuía de la serie:\n${seriesData.seriesGuide}\n`;
+          }
+          
+          // Get previous books in series for continuity
+          const seriesProjects = await storage.getProjectsBySeries(params.seriesId);
+          if (seriesProjects.length > 0) {
+            seriesContext += `\nLibros anteriores en la serie:\n`;
+            for (const proj of seriesProjects.sort((a, b) => (a.seriesOrder || 0) - (b.seriesOrder || 0))) {
+              seriesContext += `- Libro ${proj.seriesOrder}: ${proj.title}\n`;
+              if (proj.premise) {
+                seriesContext += `  Premisa: ${proj.premise}\n`;
+              }
+            }
+          }
+          
+          // Get series world bible if exists
+          const seriesWB = await storage.getSeriesWorldBible(params.seriesId);
+          if (seriesWB) {
+            seriesContext += `\nWorld Bible de la serie disponible para continuidad.\n`;
+          }
+        }
+      }
+      
+      console.log(`[GuideGenerator] Generating guide for "${params.title}"...`);
+      
+      // Generate the writing guide
+      const guideContent = await guideGeneratorAgent.generateWritingGuide({
+        argument: params.argument,
+        title: params.title,
+        genre: params.genre,
+        tone: params.tone,
+        chapterCount: params.chapterCount,
+        hasPrologue: params.hasPrologue,
+        hasEpilogue: params.hasEpilogue,
+        styleGuideContent,
+        seriesContext,
+        kindleUnlimited: params.kindleUnlimited,
+      });
+      
+      console.log(`[GuideGenerator] Guide generated (${guideContent.length} chars)`);
+      
+      let project = null;
+      let extendedGuide = null;
+      
+      if (params.createProject) {
+        // Create extended guide
+        extendedGuide = await storage.createExtendedGuide({
+          title: `Guía de Escritura: ${params.title}`,
+          description: `Guía generada automáticamente para "${params.title}"`,
+          originalFileName: `guia_${params.title.toLowerCase().replace(/\s+/g, '_')}.md`,
+          content: guideContent,
+          wordCount: guideContent.split(/\s+/).length,
+        });
+        
+        console.log(`[GuideGenerator] Extended guide created (ID: ${extendedGuide.id})`);
+        
+        // Create project
+        project = await storage.createProject({
+          title: params.title,
+          premise: params.argument.substring(0, 500),
+          genre: params.genre,
+          tone: params.tone,
+          chapterCount: params.chapterCount,
+          hasPrologue: params.hasPrologue,
+          hasEpilogue: params.hasEpilogue,
+          hasAuthorNote: params.hasAuthorNote,
+          pseudonymId: params.pseudonymId || null,
+          styleGuideId: styleGuideId || null,
+          extendedGuideId: extendedGuide.id,
+          workType: params.seriesId ? "series" : "standalone",
+          seriesId: params.seriesId || null,
+          seriesOrder: params.seriesOrder || null,
+          status: "idle",
+          kindleUnlimitedOptimized: params.kindleUnlimited,
+          pipelineVersion: "v2",
+        });
+        
+        console.log(`[GuideGenerator] Project created (ID: ${project.id})`);
+      }
+      
+      res.json({
+        success: true,
+        guideContent,
+        extendedGuideId: extendedGuide?.id,
+        projectId: project?.id,
+        message: project 
+          ? `Guía generada y proyecto "${params.title}" creado exitosamente`
+          : "Guía generada exitosamente",
+      });
+      
+    } catch (error: any) {
+      console.error("[GuideGenerator] Error:", error);
+      res.status(500).json({ 
+        error: error.message || "Error al generar la guía",
+        details: error.errors || undefined
+      });
+    }
+  });
+
   return httpServer;
 }
 

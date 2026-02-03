@@ -42,6 +42,7 @@ import { useToast } from "@/hooks/use-toast";
 
 const mainNavItems = [
   { title: "Panel Principal", url: "/", icon: LayoutDashboard },
+  { title: "Generar Guía", url: "/generate-guide", icon: Sparkles },
   { title: "Manuscrito", url: "/manuscript", icon: BookOpen },
   { title: "Biblia del Mundo", url: "/world-bible", icon: Globe },
   { title: "Logs de Pensamiento", url: "/thought-logs", icon: Brain },
