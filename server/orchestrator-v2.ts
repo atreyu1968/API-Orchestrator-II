@@ -580,7 +580,11 @@ export class OrchestratorV2 {
       if (mentionCount === 0) {
         criticalIssues.push(`❌ TRAMA HUÉRFANA: "${thread.name}" (objetivo: ${thread.goal}) nunca aparece en ningún capítulo. Palabras clave buscadas: ${allKeywords.slice(0, 5).join(', ')}`);
       } else if (mentionCount === 1) {
-        warnings.push(`⚠️ TRAMA DÉBIL: "${thread.name}" solo aparece en 1 capítulo. Necesita desarrollo a lo largo de la novela.`);
+        // LitAgents 2.9.5: Tramas débiles ahora son CRÍTICAS - no se pueden arreglar después
+        criticalIssues.push(`❌ TRAMA DÉBIL: "${thread.name}" solo aparece en 1 capítulo. DEBE desarrollarse en al menos 3 capítulos.`);
+      } else if (mentionCount === 2) {
+        // Tramas con solo 2 menciones también son problemáticas
+        warnings.push(`⚠️ TRAMA INSUFICIENTE: "${thread.name}" solo aparece en 2 capítulos. Recomendado: 3+ capítulos.`);
       } else if (!hasResolution && lastMentionIndex >= 0 && lastMentionIndex < safeOutline.length - 3) {
         // Thread disappears before the last 3 chapters without resolution
         const lastChapter = safeOutline[lastMentionIndex];
@@ -627,7 +631,8 @@ export class OrchestratorV2 {
                               (char.importance === 1 || char.importancia === 1);
       
       if (isMainCharacter && appearanceCount < safeOutline.length * 0.3) {
-        warnings.push(`⚠️ PERSONAJE PRINCIPAL AUSENTE: ${char.name || char.nombre} solo aparece en ${appearanceCount}/${safeOutline.length} capítulos.`);
+        // LitAgents 2.9.5: Personajes principales ausentes ahora son CRÍTICOS
+        criticalIssues.push(`❌ PROTAGONISTA AUSENTE: ${char.name || char.nombre} solo aparece en ${appearanceCount}/${safeOutline.length} capítulos. DEBE aparecer en al menos ${Math.ceil(safeOutline.length * 0.3)} capítulos.`);
       }
       
       // Characters shouldn't disappear mid-story without explanation
@@ -685,14 +690,15 @@ export class OrchestratorV2 {
         turningPointKeywords.test((ch.summary || '') + ' ' + (ch.key_event || ''))
       );
       
+      // LitAgents 2.9.5: Puntos estructurales son CRÍTICOS - la estructura de 3 actos es fundamental
       if (!act1Turning) {
-        warnings.push(`⚠️ FALTA PUNTO DE GIRO: No hay giro claro al final del Acto 1 (alrededor del índice ${act1End}).`);
+        criticalIssues.push(`❌ FALTA PUNTO DE GIRO ACTO 1: No hay giro/revelación al ~25% (capítulo ${act1End}). La trama no tendrá impulso.`);
       }
       if (!midpointTurning) {
-        warnings.push(`⚠️ FALTA PUNTO MEDIO: No hay giro claro en el punto medio (alrededor del índice ${Math.floor(totalChapters * 0.5)}).`);
+        criticalIssues.push(`❌ FALTA PUNTO MEDIO: No hay giro/crisis al ~50% (capítulo ${Math.floor(totalChapters * 0.5)}). La historia perderá tensión.`);
       }
       if (!act2Turning) {
-        warnings.push(`⚠️ FALTA CRISIS: No hay crisis clara al final del Acto 2 (alrededor del índice ${act2End}).`);
+        criticalIssues.push(`❌ FALTA CRISIS ACTO 2: No hay crisis/confrontación al ~75% (capítulo ${act2End}). El clímax no tendrá peso.`);
       }
     }
     

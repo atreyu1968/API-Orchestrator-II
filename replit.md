@@ -67,7 +67,15 @@ Preferred communication style: Simple, everyday language.
     - `timeline`: Minimal temporal reference adjustment (max 10 words)
     - `narrative`: Slightly larger scope for plot coherence (max 30 words per patch)
     - `generic`: Conservative fallback for unknown types
-  - **Plot Coherence Validation**: Global Architect output is now validated before proceeding. Checks for: (1) Orphaned plot threads that never appear in chapters, (2) Weak threads with only 1 chapter mention, (3) Unresolved threads that disappear mid-novel, (4) Missing main characters, (5) Characters that vanish without explanation, (6) Vague or filler chapters, (7) Missing turning points at 25%/50%/75%. If critical issues found, regenerates up to 3 times with corrective instructions. If still failing after 3 attempts, pauses project for manual review.
+  - **Plot Coherence Validation (STRICT MODE)**: Global Architect output is validated BEFORE chapter generation begins. ALL of the following are now CRITICAL issues that BLOCK generation and force regeneration (up to 3 attempts):
+    - ❌ TRAMA HUÉRFANA: Plot thread never appears in any chapter
+    - ❌ TRAMA DÉBIL: Plot thread only appears in 1 chapter (MUST appear in 3+)
+    - ❌ TRAMA SIN RESOLVER: Thread disappears before last 3 chapters without resolution
+    - ❌ PROTAGONISTA AUSENTE: Main character appears in <30% of chapters
+    - ❌ FALTA PUNTO DE GIRO ACTO 1: No turning point at ~25%
+    - ❌ FALTA PUNTO MEDIO: No crisis/revelation at ~50%
+    - ❌ FALTA CRISIS ACTO 2: No confrontation at ~75%
+    If still failing after 3 attempts, pauses project for manual review. This prevents structural issues that cannot be fixed during correction phase.
 - **Enhanced Error Recovery**: All orchestrator errors result in a "paused" status for easy resume, preserving state and providing activity logs with context.
 - **Death Tracking & Loop Prevention**: UniversalConsistency tracks character deaths to prevent resurrections. Loop detection system escalates recurring issues, with automatic scope expansion for persistent resurrection errors.
 - **Structural Issue Detection**: Identifies and auto-resolves structural issues (e.g., chapter reordering, renaming) to prevent infinite rewrite loops, notifying the user for manual intervention.
