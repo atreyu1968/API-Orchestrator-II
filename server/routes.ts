@@ -9851,6 +9851,12 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
               const bookGuideContent = bookGuideResponse.content;
               console.log(`[SeriesGuideGenerator] Book guide generated for "${volume.title}" (${bookGuideContent.length} chars)`);
               
+              // Validate book guide content - skip if empty or too short
+              if (!bookGuideContent || bookGuideContent.length < 500) {
+                console.error(`[SeriesGuideGenerator] Book guide content too short for volume ${volume.number} (${bookGuideContent?.length || 0} chars) - skipping`);
+                continue;
+              }
+              
               // Create extended guide
               const extendedGuide = await storage.createExtendedGuide({
                 title: `Guía de Escritura: ${volume.title}`,
@@ -9911,6 +9917,194 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
       console.error("[SeriesGuideGenerator] Error:", error);
       res.status(500).json({ 
         error: error.message || "Error al generar la guía de serie",
+        details: error.errors || undefined
+      });
+    }
+  });
+
+  // =============================================
+  // CONTINUE SERIES GENERATION - Generate remaining books for an existing series
+  // =============================================
+  
+  app.post("/api/series/:id/continue-generation", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const series = await storage.getSeries(seriesId);
+      
+      if (!series) {
+        return res.status(404).json({ error: "Serie no encontrada" });
+      }
+      
+      if (!series.seriesGuide || series.seriesGuide.length < 500) {
+        return res.status(400).json({ error: "La serie no tiene una guía válida. Regenera la guía de serie primero." });
+      }
+      
+      const { guideGeneratorAgent } = await import("./agents/guide-generator");
+      
+      const schema = z.object({
+        chapterCountPerBook: z.number().default(30),
+        hasPrologue: z.boolean().default(true),
+        hasEpilogue: z.boolean().default(true),
+        styleGuideId: z.number().optional(),
+        startFromVolume: z.number().optional(),
+      });
+      
+      const params = schema.parse(req.body);
+      
+      // Get existing projects for this series
+      const existingProjects = await storage.getProjectsBySeries(seriesId);
+      const existingVolumeNumbers = new Set(existingProjects.map(p => p.seriesOrder).filter(Boolean));
+      
+      console.log(`[ContinueGeneration] Series ${seriesId} has ${existingProjects.length} existing projects`);
+      console.log(`[ContinueGeneration] Existing volumes: ${Array.from(existingVolumeNumbers).join(', ')}`);
+      
+      // Parse volumes from the series guide
+      const guideContent = series.seriesGuide;
+      const volumes: Array<{number: number, title: string, argument: string}> = [];
+      
+      // Pattern for parsing volumes
+      const volumeRegex = /###\s*Volumen\s*(\d+):\s*(.+?)(?:\n|\r\n)[\s\S]*?-\s*\*\*Argumento:\*\*\s*(.+?)(?=\n-\s*\*\*|\n###|\n##|$)/gi;
+      
+      let match;
+      while ((match = volumeRegex.exec(guideContent)) !== null) {
+        volumes.push({
+          number: parseInt(match[1]),
+          title: match[2].trim(),
+          argument: match[3].trim().replace(/\n/g, ' ').substring(0, 1000)
+        });
+      }
+      
+      // Filter out volumes that already have projects
+      const pendingVolumes = volumes.filter(v => {
+        if (params.startFromVolume && v.number < params.startFromVolume) return false;
+        return !existingVolumeNumbers.has(v.number);
+      });
+      
+      if (pendingVolumes.length === 0) {
+        return res.json({
+          success: true,
+          message: "Todos los volúmenes ya tienen proyectos generados",
+          generatedBooks: [],
+        });
+      }
+      
+      console.log(`[ContinueGeneration] Found ${pendingVolumes.length} pending volumes to generate`);
+      
+      // Get pseudonym style guide if available
+      let styleGuideContent: string | undefined;
+      if (params.styleGuideId) {
+        const styleGuide = await storage.getStyleGuide(params.styleGuideId);
+        if (styleGuide) {
+          styleGuideContent = styleGuide.content;
+        }
+      } else if (series.pseudonymId) {
+        const guides = await storage.getStyleGuidesByPseudonym(series.pseudonymId);
+        const activeGuide = guides.find(g => g.isActive);
+        if (activeGuide) {
+          styleGuideContent = activeGuide.content;
+        }
+      }
+      
+      // Determine genre and tone from existing projects or default
+      let genre = "thriller";
+      let tone = "suspenseful";
+      if (existingProjects.length > 0) {
+        genre = existingProjects[0].genre || genre;
+        tone = existingProjects[0].tone || tone;
+      }
+      
+      const generatedBooks: Array<{title: string, projectId: number, volumeNumber: number}> = [];
+      
+      for (const volume of pendingVolumes) {
+        try {
+          console.log(`[ContinueGeneration] Generating guide for Volume ${volume.number}: "${volume.title}"...`);
+          
+          const seriesContext = `
+## Contexto de la Serie: ${series.title}
+
+Este es el **Volumen ${volume.number}** de ${series.totalPlannedBooks || volumes.length} en la serie.
+
+### Información de la Serie:
+${guideContent.substring(0, 3000)}
+
+### Hitos específicos de este volumen:
+Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.number}.
+          `.trim();
+          
+          const bookGuideResponse = await guideGeneratorAgent.generateWritingGuide({
+            argument: volume.argument,
+            title: volume.title,
+            genre,
+            tone,
+            chapterCount: params.chapterCountPerBook,
+            hasPrologue: params.hasPrologue,
+            hasEpilogue: params.hasEpilogue,
+            styleGuideContent,
+            seriesContext,
+            kindleUnlimited: false,
+          });
+          
+          const bookGuideContent = bookGuideResponse.content;
+          console.log(`[ContinueGeneration] Book guide generated for "${volume.title}" (${bookGuideContent.length} chars)`);
+          
+          // Validate book guide content
+          if (!bookGuideContent || bookGuideContent.length < 500) {
+            console.error(`[ContinueGeneration] Book guide content too short for volume ${volume.number} (${bookGuideContent?.length || 0} chars)`);
+            continue;
+          }
+          
+          // Create extended guide
+          const extendedGuide = await storage.createExtendedGuide({
+            title: `Guía de Escritura: ${volume.title}`,
+            originalFileName: `guia_${volume.title.toLowerCase().replace(/\s+/g, '_')}.md`,
+            description: `Guía para Volumen ${volume.number} de la serie "${series.title}"`,
+            content: bookGuideContent,
+          });
+          
+          // Create the project
+          const project = await storage.createProject({
+            title: volume.title,
+            premise: volume.argument,
+            genre,
+            tone,
+            chapterCount: params.chapterCountPerBook,
+            hasPrologue: params.hasPrologue,
+            hasEpilogue: params.hasEpilogue,
+            hasAuthorNote: false,
+            pseudonymId: series.pseudonymId,
+            extendedGuideId: extendedGuide.id,
+            workType: "series",
+            seriesId: series.id,
+            seriesOrder: volume.number,
+          });
+          
+          generatedBooks.push({
+            title: volume.title,
+            projectId: project.id,
+            volumeNumber: volume.number,
+          });
+          
+          console.log(`[ContinueGeneration] Project created for "${volume.title}" (ID: ${project.id})`);
+          
+        } catch (volumeError: any) {
+          console.error(`[ContinueGeneration] Error generating volume ${volume.number}:`, volumeError);
+          // Continue with next volume instead of failing completely
+        }
+      }
+      
+      res.json({
+        success: true,
+        seriesId: series.id,
+        generatedBooks,
+        totalVolumes: volumes.length,
+        pendingVolumes: pendingVolumes.length - generatedBooks.length,
+        message: `Se generaron ${generatedBooks.length} libros adicionales para la serie "${series.title}"`,
+      });
+      
+    } catch (error: any) {
+      console.error("[ContinueGeneration] Error:", error);
+      res.status(500).json({ 
+        error: error.message || "Error al continuar la generación de la serie",
         details: error.errors || undefined
       });
     }
