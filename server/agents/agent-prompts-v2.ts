@@ -1,6 +1,20 @@
 // LitAgents 2.0 - Prompts optimizados para DeepSeek (V3 y R1)
 
 /**
+ * Find a character in the World Bible by name (fuzzy match)
+ */
+function findCharacterInWorldBible(charName: string, worldBible: any): any | null {
+  const characters = worldBible?.characters || worldBible?.personajes || [];
+  const charNameLower = charName.toLowerCase().trim();
+  
+  return characters.find((c: any) => {
+    const wbName = (c.name || c.nombre || '').toLowerCase().trim();
+    return wbName.includes(charNameLower) || charNameLower.includes(wbName) || 
+           wbName.split(' ')[0] === charNameLower.split(' ')[0];
+  }) || null;
+}
+
+/**
  * Extract physical attributes for characters appearing in a scene
  * This prevents the Ghostwriter from inventing incorrect eye colors, hair, etc.
  */
@@ -64,6 +78,118 @@ function extractCharacterAttributesForScene(sceneCharacters: string[], worldBibl
   }
   
   return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Extract character relationships relevant to characters in the scene
+ */
+function extractCharacterRelationshipsForScene(sceneCharacters: string[], worldBible: any): string | null {
+  if (!sceneCharacters || sceneCharacters.length < 2) return null;
+  
+  const lines: string[] = [];
+  const characters = worldBible?.characters || worldBible?.personajes || [];
+  
+  for (const charName of sceneCharacters) {
+    const wbChar = findCharacterInWorldBible(charName, worldBible);
+    if (!wbChar) continue;
+    
+    // Check for relationships field
+    const relationships = wbChar.relationships || wbChar.relaciones || [];
+    if (Array.isArray(relationships) && relationships.length > 0) {
+      // Filter to only show relationships with other characters in this scene
+      const relevantRels = relationships.filter((rel: any) => {
+        const targetName = (rel.character || rel.personaje || rel.with || '').toLowerCase();
+        return sceneCharacters.some(sc => targetName.includes(sc.toLowerCase()) || sc.toLowerCase().includes(targetName));
+      });
+      
+      if (relevantRels.length > 0) {
+        lines.push(`    📌 ${wbChar.name || wbChar.nombre}:`);
+        for (const rel of relevantRels) {
+          const target = rel.character || rel.personaje || rel.with || '';
+          const type = rel.type || rel.tipo || rel.relation || '';
+          const desc = rel.description || rel.descripcion || '';
+          lines.push(`       → ${target}: ${type}${desc ? ` - ${desc}` : ''}`);
+        }
+      }
+    }
+    
+    // Also check description for relationship mentions
+    if (wbChar.description || wbChar.descripcion) {
+      const desc = wbChar.description || wbChar.descripcion;
+      for (const otherChar of sceneCharacters) {
+        if (otherChar.toLowerCase() === charName.toLowerCase()) continue;
+        if (desc.toLowerCase().includes(otherChar.toLowerCase())) {
+          // There's a mention - could extract but would need more context
+        }
+      }
+    }
+  }
+  
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Extract location description if the scene setting matches a World Bible location
+ */
+function extractLocationForScene(sceneSetting: string, worldBible: any): string | null {
+  const locations = worldBible?.locations || worldBible?.lugares || worldBible?.settings || [];
+  if (!locations || locations.length === 0 || !sceneSetting) return null;
+  
+  const settingLower = sceneSetting.toLowerCase();
+  
+  for (const loc of locations) {
+    const locName = (loc.name || loc.nombre || '').toLowerCase();
+    if (locName && (settingLower.includes(locName) || locName.includes(settingLower.split(' ')[0]))) {
+      const lines: string[] = [];
+      lines.push(`    📍 ${loc.name || loc.nombre}:`);
+      if (loc.description || loc.descripcion) {
+        lines.push(`       ${loc.description || loc.descripcion}`);
+      }
+      if (loc.sensoryDetails || loc.detalles_sensoriales) {
+        const details = loc.sensoryDetails || loc.detalles_sensoriales;
+        if (typeof details === 'string') {
+          lines.push(`       Ambiente: ${details}`);
+        } else if (Array.isArray(details)) {
+          lines.push(`       Ambiente: ${details.join(', ')}`);
+        }
+      }
+      if (loc.atmosphere || loc.atmosfera) {
+        lines.push(`       Atmósfera: ${loc.atmosphere || loc.atmosfera}`);
+      }
+      return lines.join('\n');
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Extract world rules that might be relevant (always include if present)
+ */
+function extractWorldRules(worldBible: any): string | null {
+  const rules = worldBible?.rules || worldBible?.reglas_lore || worldBible?.worldRules || worldBible?.reglas || [];
+  if (!rules || rules.length === 0) return null;
+  
+  const lines: string[] = [];
+  for (const rule of rules.slice(0, 5)) { // Limit to top 5 rules to save tokens
+    if (typeof rule === 'string') {
+      lines.push(`    • ${rule}`);
+    } else if (rule.rule || rule.regla) {
+      lines.push(`    • ${rule.rule || rule.regla}`);
+    }
+  }
+  
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Extract prohibited vocabulary
+ */
+function extractProhibitedVocabulary(worldBible: any): string | null {
+  const vocab = worldBible?.vocabulario_prohibido || worldBible?.prohibitedWords || [];
+  if (!vocab || vocab.length === 0) return null;
+  
+  return vocab.slice(0, 20).join(', '); // Limit to 20 words
 }
 
 export const AGENT_MODELS_V2 = {
@@ -435,21 +561,42 @@ export const PROMPTS_V2 = {
     worldBible: any,
     guiaEstilo: string
   ) => {
-    // Extract physical attributes for characters in this scene
+    // Extract all World Bible information relevant to this scene
     const characterAttributes = extractCharacterAttributesForScene(scenePlan.characters, worldBible);
+    const characterRelationships = extractCharacterRelationshipsForScene(scenePlan.characters, worldBible);
+    const locationInfo = extractLocationForScene(scenePlan.setting, worldBible);
+    const worldRules = extractWorldRules(worldBible);
+    const prohibitedVocab = extractProhibitedVocabulary(worldBible);
+    
+    // Build the World Bible injection section
+    let worldBibleSection = '';
+    
+    if (characterAttributes || characterRelationships || locationInfo || worldRules) {
+      worldBibleSection = `
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║ 📖 INFORMACIÓN CANÓNICA DEL WORLD BIBLE - OBLIGATORIO RESPETAR  ║
+    ╚══════════════════════════════════════════════════════════════════╝
+${characterAttributes ? `
+    ▓▓▓ ATRIBUTOS FÍSICOS (NO INVENTAR OTROS) ▓▓▓
+${characterAttributes}
+` : ''}${characterRelationships ? `
+    ▓▓▓ RELACIONES ENTRE PERSONAJES ▓▓▓
+${characterRelationships}
+` : ''}${locationInfo ? `
+    ▓▓▓ UBICACIÓN CANÓNICA ▓▓▓
+${locationInfo}
+` : ''}${worldRules ? `
+    ▓▓▓ REGLAS DEL MUNDO ▓▓▓
+${worldRules}
+` : ''}
+    ⚠️ USA esta información EXACTAMENTE. NO inventes detalles que contradigan lo anterior.
+
+`;
+    }
     
     return `
     Eres un Novelista Fantasma de élite. Estás escribiendo UNA ESCENA de una novela mayor.
-    
-${characterAttributes ? `
-    ╔══════════════════════════════════════════════════════════════════╗
-    ║ ⚠️  ATRIBUTOS FÍSICOS CANÓNICOS - OBLIGATORIO RESPETAR           ║
-    ╚══════════════════════════════════════════════════════════════════╝
-${characterAttributes}
-    ⚠️ Si describes físicamente a estos personajes, USA EXACTAMENTE estos atributos.
-    ⚠️ NO inventes colores de ojos, cabello u otros rasgos físicos.
-
-` : ''}
+${worldBibleSection}
     ═══════════════════════════════════════════════════════════════════
     CONTEXTO MEMORIA (Lo que pasó antes en la novela):
     ═══════════════════════════════════════════════════════════════════
@@ -486,6 +633,7 @@ ${characterAttributes}
     4. NO termines el capítulo, solo termina la escena según el plan.
     5. Usa guion largo (—) para diálogos en español.
     6. PROHIBIDO: usar clichés de IA como "crucial", "fascinante", "torbellino de emociones".
+${prohibitedVocab ? `    7. VOCABULARIO PROHIBIDO (NO USAR): ${prohibitedVocab}` : ''}
 
     ╔══════════════════════════════════════════════════════════════════╗
     ║ ERRORES FATALES - TOLERANCIA CERO (REESCRITURA AUTOMÁTICA)      ║
