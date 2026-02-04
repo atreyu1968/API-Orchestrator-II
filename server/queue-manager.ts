@@ -72,6 +72,15 @@ export class QueueManager {
     const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeat.getTime();
     
     if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT_MS) {
+      // CRITICAL: Check if there's an active detect-and-fix correction running
+      // The detect-and-fix process runs independently and doesn't update QueueManager heartbeats
+      const isAnyCorrectionActive = (global as any).isAnyCorrectionActive;
+      if (isAnyCorrectionActive && isAnyCorrectionActive(this.currentProjectId)) {
+        console.log(`[QueueManager] Project ${this.currentProjectId} has active detect-and-fix correction. Skipping auto-recovery and updating heartbeat.`);
+        this.updateHeartbeat(); // Reset heartbeat timer since correction is active
+        return;
+      }
+      
       console.log(`[QueueManager] FROZEN DETECTED: No activity for ${Math.round(timeSinceLastHeartbeat / 60000)} minutes. Auto-recovering...`);
       await this.autoRecover();
     }
@@ -80,8 +89,17 @@ export class QueueManager {
   private async autoRecover(): Promise<void> {
     if (!this.currentProjectId) return;
     
-    this.autoRecoveryCount++;
     const projectId = this.currentProjectId;
+    
+    // DOUBLE CHECK: Don't auto-recover if detect-and-fix is actively running
+    const isAnyCorrectionActive = (global as any).isAnyCorrectionActive;
+    if (isAnyCorrectionActive && isAnyCorrectionActive(projectId)) {
+      console.log(`[QueueManager] BLOCKED auto-recovery for project ${projectId}: detect-and-fix correction is active`);
+      this.updateHeartbeat();
+      return;
+    }
+    
+    this.autoRecoveryCount++;
     
     console.log(`[QueueManager] Auto-recovery attempt #${this.autoRecoveryCount} for project ${projectId}`);
     
@@ -340,6 +358,14 @@ export class QueueManager {
         }
         
         if (timeSinceActivity > effectiveTimeout) {
+            // CRITICAL: Check if there's an active detect-and-fix correction running for this project
+            // The detect-and-fix process runs independently and doesn't update activity logs frequently
+            const isAnyCorrectionActive = (global as any).isAnyCorrectionActive;
+            if (isAnyCorrectionActive && isAnyCorrectionActive(project.id)) {
+              console.log(`[QueueManager] Skipping frozen project recovery for ${project.id} - detect-and-fix correction is active`);
+              continue;
+            }
+            
             console.log(`[QueueManager] FROZEN PROJECT DETECTED: "${project.title}" (ID: ${project.id}) - no activity for ${Math.round(timeSinceActivity / 60000)} minutes`);
             
             // CRITICAL: Cancel any pending API connections FIRST
