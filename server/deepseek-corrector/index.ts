@@ -59,6 +59,64 @@ function extractCharacterBibleInfo(description: string): CharacterBibleExtractio
     }
   }
 
+  const colorVsBibleMatch = description.match(/color de (?:cabello|ojos|pelo) de (\w+(?:\s+\w+)?)\s+es inconsistente/i);
+  const bibleSpecMatch = description.match(/(?:BIBLIA|Character Bible).*?(?:especifica|indica|dice).*?['"]([^'"]+)['"]/i) ||
+                        description.match(/(?:BIBLIA|Character Bible).*?(?:hair|eyes|cabello|ojos)['"]?:\s*['"]([^'"]+)['"]/i);
+  const manuscriptValueMatch = description.match(/(?:Prólogo|narrativa).*?(?:describe|se describe).*?como\s*['"]([^'"]+)['"]/i) ||
+                               description.match(/se describen.*?como\s*['"]([^'"]+)['"]/i);
+  const locationVsMatch = description.match(/(Prólogo|Cap[íi]tulo\s*\d+)\s*vs/i);
+  
+  if (colorVsBibleMatch && bibleSpecMatch) {
+    const characterName = colorVsBibleMatch[1];
+    const correctValue = bibleSpecMatch[1];
+    const incorrectValue = manuscriptValueMatch ? manuscriptValueMatch[1] : '';
+    const location = locationVsMatch ? locationVsMatch[1] : 'Prólogo';
+    const attribute = description.toLowerCase().includes('cabello') || description.toLowerCase().includes('hair') ? 'cabello' : 'ojos';
+    
+    console.log('[CharacterBible] Color inconsistente detectado:', {
+      characterName,
+      attribute,
+      correctValue,
+      incorrectValue,
+      location
+    });
+    
+    return {
+      characterName,
+      attribute,
+      correctValue,
+      incorrectValue,
+      chapterName: location
+    };
+  }
+
+  const multiChapterBibleMatch = description.match(/Character Bible vs múltiples cap[íi]tulos/i) ||
+                                  description.match(/BIBLIA.*?indica.*?son ['"]([^'"]+)['"]/i);
+  const eyesMatch = description.match(/ojos son ['"]([^'"]+)['"]/i);
+  const narrativeMatch = description.match(/narrativa se describen.*?como ['"]([^'"]+)['"]/i);
+  const chaptersListMatch = description.match(/Cap[íi]tulos?\s*([\d,\s]+)/i);
+  
+  if (multiChapterBibleMatch || (eyesMatch && narrativeMatch)) {
+    const correctValue = eyesMatch ? eyesMatch[1] : '';
+    const incorrectValue = narrativeMatch ? narrativeMatch[1] : '';
+    const personNameMatch = description.match(/de\s+(\w+\s+\w+)\s+es\s+inconsistente/i) ||
+                           description.match(/ojos de\s+(\w+\s+\w+)/i);
+    
+    console.log('[CharacterBible] Multi-capítulo detectado:', {
+      correctValue,
+      incorrectValue,
+      chapters: chaptersListMatch ? chaptersListMatch[1] : 'múltiples'
+    });
+    
+    return {
+      characterName: personNameMatch ? personNameMatch[1] : 'Personaje',
+      attribute: 'ojos',
+      correctValue,
+      incorrectValue,
+      chapterName: chaptersListMatch ? `Capítulos ${chaptersListMatch[1]}` : 'múltiples capítulos'
+    };
+  }
+
   const nameInconsistentMatch = description.match(/se (?:le )?presenta como ['"]([^'"]+)['"].*?(?:Biblia|Bible).*?(?:su nombre es|nombre es|es) ['"]([^'"]+)['"]/i);
   const chapterForNameMatch = description.match(/(?:en el\s+)?(Cap[íi]tulo\s*\d+|Prólogo)/i);
   
