@@ -1110,6 +1110,59 @@ export async function startCorrectionProcess(
       const characterBibleInfo = extractCharacterBibleInfo(issue.description);
       
       if (characterBibleInfo) {
+        const isVsPrologo = issue.location?.toLowerCase().includes('vs prólogo') ||
+                            issue.location?.toLowerCase().includes('vs prologo') ||
+                            (issue.location?.toLowerCase().includes('bible') && issue.location?.toLowerCase().includes('prólogo'));
+        
+        if (isVsPrologo) {
+          console.log('[CharacterBible] Detectado caso vs Prólogo');
+          
+          onProgress?.({
+            phase: 'analyzing',
+            current: i + 1,
+            total: allIssues.length,
+            message: `Character Bible vs Prólogo: buscando "${characterBibleInfo.incorrectValue}" en Prólogo...`
+          });
+          
+          const prologueData = extractChapterContent2(correctedContent, 'prólogo');
+          if (prologueData) {
+            const foundInPrologue = findAttributeInChapterContent(
+              prologueData.content,
+              characterBibleInfo.incorrectValue,
+              characterBibleInfo.attribute
+            );
+            
+            if (foundInPrologue) {
+              console.log(`[CharacterBible] Prólogo: encontrado "${foundInPrologue.substring(0, 50)}..."`);
+              
+              const result = await correctSingleIssue({
+                fullChapter: prologueData.content,
+                targetText: foundInPrologue,
+                instruction: `El personaje ${characterBibleInfo.characterName} tiene ${characterBibleInfo.attribute} como "${characterBibleInfo.correctValue}" según la biblia de personajes. Cambiar "${characterBibleInfo.incorrectValue}" a "${characterBibleInfo.correctValue}".`,
+                suggestion: `Reemplazar con: "${characterBibleInfo.correctValue}"`
+              });
+              
+              pendingCorrections.push({
+                id: `correction-${Date.now()}-${i}-prologue`,
+                issueId: `issue-${i}`,
+                location: 'Prólogo',
+                chapterNumber: 0,
+                originalText: result.originalText,
+                correctedText: result.correctedText,
+                instruction: `[CHARACTER-BIBLE] ${characterBibleInfo.attribute}: "${characterBibleInfo.incorrectValue}" → "${characterBibleInfo.correctValue}"`,
+                severity: issue.severity,
+                status: result.success ? 'pending' : 'rejected',
+                diffStats: result.diffStats,
+                createdAt: new Date().toISOString()
+              });
+              
+              totalOccurrences++;
+              if (result.success) successCount++;
+            }
+          }
+          continue;
+        }
+        
         const isMultiChapterBible = issue.location?.toLowerCase().includes('vs capítulos') ||
                                     issue.location?.toLowerCase().includes('múltiples') ||
                                     issue.description.toLowerCase().includes('vs múltiples') ||
