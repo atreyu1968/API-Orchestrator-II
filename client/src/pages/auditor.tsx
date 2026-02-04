@@ -207,7 +207,7 @@ export default function AuditorPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "audits"] });
+      queryClient.invalidateQueries({ queryKey: [`/api/projects/${currentProject?.id}/audits`] });
       toast({
         title: "Auditoría eliminada",
         description: "La auditoría ha sido eliminada correctamente",
