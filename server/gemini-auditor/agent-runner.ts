@@ -193,6 +193,40 @@ FORMATO JSON REQUERIDO:
 };
 
 /**
+ * Attempt to repair truncated JSON
+ */
+function repairJSON(text: string): string {
+  let repaired = text.trim();
+  
+  // Count open braces/brackets
+  const openBraces = (repaired.match(/{/g) || []).length;
+  const closeBraces = (repaired.match(/}/g) || []).length;
+  const openBrackets = (repaired.match(/\[/g) || []).length;
+  const closeBrackets = (repaired.match(/\]/g) || []).length;
+  
+  // If truncated mid-string, close the string
+  const lastQuote = repaired.lastIndexOf('"');
+  const beforeLastQuote = repaired.substring(0, lastQuote);
+  const quotesBeforeLast = (beforeLastQuote.match(/"/g) || []).length;
+  if (quotesBeforeLast % 2 === 0) {
+    // Odd number of quotes, truncated in a string - close it
+    repaired += '"';
+  }
+  
+  // Close any unclosed brackets
+  for (let i = 0; i < openBrackets - closeBrackets; i++) {
+    repaired += ']';
+  }
+  
+  // Close any unclosed braces
+  for (let i = 0; i < openBraces - closeBraces; i++) {
+    repaired += '}';
+  }
+  
+  return repaired;
+}
+
+/**
  * Run a single agent - uses Standard mode with full context injection
  */
 export async function runAgent(agentType: AgentType): Promise<AgentReport> {
@@ -209,7 +243,7 @@ export async function runAgent(agentType: AgentType): Promise<AgentReport> {
       generationConfig: {
         responseMimeType: "application/json",
         temperature: 0.3,
-        maxOutputTokens: 8192,
+        maxOutputTokens: 65536,
       },
     });
     
@@ -221,17 +255,26 @@ export async function runAgent(agentType: AgentType): Promise<AgentReport> {
       }
     }
     
-    const systemPrompt = "Eres un Editor Literario Senior. Responde SIEMPRE en JSON válido.";
+    const systemPrompt = "Eres un Editor Literario Senior. Responde SIEMPRE en JSON válido y COMPLETO. Limita tu respuesta a los 10 problemas más importantes.";
     const fullPrompt = `SYSTEM: ${systemPrompt}\n\nCONTEXTO:\n${fullContext}\n\n${config.prompt}`;
     
     const result = await model.generateContent(fullPrompt);
-    const text = result.response.text();
+    let text = result.response.text();
     
     if (!text) {
       throw new Error("No text response from Gemini");
     }
     
-    const parsed = JSON.parse(text) as AgentReport;
+    // Try to parse, if fails try to repair
+    let parsed: AgentReport;
+    try {
+      parsed = JSON.parse(text) as AgentReport;
+    } catch (parseError) {
+      console.log(`[AgentRunner] ${agentType}: JSON parse failed, attempting repair...`);
+      const repaired = repairJSON(text);
+      parsed = JSON.parse(repaired) as AgentReport;
+      console.log(`[AgentRunner] ${agentType}: JSON repair successful`);
+    }
     
     if (!parsed.agentType || typeof parsed.overallScore !== 'number' || !Array.isArray(parsed.issues)) {
       throw new Error("Invalid agent report structure");
