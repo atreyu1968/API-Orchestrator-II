@@ -3,6 +3,9 @@ import { db } from '../db';
 import { correctedManuscripts, manuscriptAudits, projects } from '@shared/schema';
 import { eq } from 'drizzle-orm';
 import type { CorrectionRecord, AuditIssue, AgentReport } from '@shared/schema';
+import { getStructuralIssueFromCorrection, applyStructuralResolution } from './structural-resolver';
+
+export { applyStructuralResolution, getStructuralIssueFromCorrection } from './structural-resolver';
 
 const deepseek = new OpenAI({
   baseURL: 'https://api.deepseek.com',

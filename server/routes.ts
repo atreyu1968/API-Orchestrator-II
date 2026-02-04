@@ -11358,6 +11358,110 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
     }
   });
 
+  // Apply structural resolution
+  app.post("/api/corrected-manuscripts/:id/structural-resolve/:correctionId", async (req: Request, res: Response) => {
+    const manuscriptId = parseInt(req.params.id);
+    const correctionId = req.params.correctionId;
+    const { optionId } = req.body;
+
+    if (!optionId) {
+      return res.status(400).json({ error: "Se requiere optionId" });
+    }
+
+    try {
+      const [manuscript] = await db.select()
+        .from(correctedManuscripts)
+        .where(eq(correctedManuscripts.id, manuscriptId));
+      
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscrito no encontrado" });
+      }
+
+      const pendingCorrections = (manuscript.pendingCorrections as any[]) || [];
+      const correction = pendingCorrections.find((c: any) => c.id === correctionId);
+      
+      if (!correction) {
+        return res.status(404).json({ error: "Corrección no encontrada" });
+      }
+
+      if (correction.status !== 'pending') {
+        return res.status(400).json({ error: "Solo se pueden resolver correcciones pendientes" });
+      }
+
+      const { getStructuralIssueFromCorrection, applyStructuralResolution } = await import('./deepseek-corrector');
+      const structuralIssue = getStructuralIssueFromCorrection(correction);
+      
+      if (!structuralIssue) {
+        return res.status(400).json({ error: "Esta corrección no es un problema estructural" });
+      }
+
+      const result = await applyStructuralResolution(manuscriptId, correctionId, optionId);
+      
+      if (result.success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ error: result.error || "No se pudo aplicar la resolución" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get structural issue options for a correction
+  app.get("/api/corrected-manuscripts/:id/structural-options/:correctionId", async (req: Request, res: Response) => {
+    const manuscriptId = parseInt(req.params.id);
+    const correctionId = req.params.correctionId;
+
+    try {
+      const { getStructuralIssueFromCorrection } = await import('./deepseek-corrector');
+      const [manuscript] = await db.select()
+        .from(correctedManuscripts)
+        .where(eq(correctedManuscripts.id, manuscriptId));
+      
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscrito no encontrado" });
+      }
+
+      const pendingCorrections = (manuscript.pendingCorrections as any[]) || [];
+      const correction = pendingCorrections.find((c: any) => c.id === correctionId);
+      
+      if (!correction) {
+        return res.status(404).json({ error: "Corrección no encontrada" });
+      }
+
+      const structuralIssue = getStructuralIssueFromCorrection(correction);
+      
+      if (structuralIssue) {
+        res.json({ 
+          isStructural: true, 
+          options: structuralIssue.resolutionOptions,
+          affectedChapters: structuralIssue.affectedChapters
+        });
+      } else {
+        const structuralPatterns = [
+          /capítulos?\s+(son\s+)?idénticos/i,
+          /repetición\s+literal/i,
+          /mismo[s]?\s+evento[s]?/i,
+          /contenido\s+duplicado/i,
+          /capítulos?\s+duplicados/i
+        ];
+        const looksStructural = structuralPatterns.some(p => p.test(correction.instruction || ''));
+        
+        if (looksStructural) {
+          res.json({ 
+            isStructural: false, 
+            options: [],
+            error: "Este problema parece estructural pero no se pudieron identificar los capítulos afectados. La descripción debe incluir referencias explícitas a los capítulos (ej: 'Capítulo 9, Capítulo 16 y Capítulo 17')."
+          });
+        } else {
+          res.json({ isStructural: false, options: [] });
+        }
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Finalize manuscript (mark as approved)
   app.post("/api/corrected-manuscripts/:id/finalize", async (req: Request, res: Response) => {
     const manuscriptId = parseInt(req.params.id);

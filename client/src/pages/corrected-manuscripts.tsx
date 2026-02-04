@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,13 +21,41 @@ import {
   ThumbsDown,
   FileCheck,
   ArrowLeft,
+  Layers,
+  Merge,
+  FileX,
+  RefreshCw,
+  ChevronDown,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { Link } from "wouter";
 
 interface CorrectionDiffStats {
   wordsAdded: number;
   wordsRemoved: number;
   lengthChange: number;
+}
+
+interface ResolutionOption {
+  id: string;
+  type: 'delete' | 'rewrite' | 'merge';
+  label: string;
+  description: string;
+  estimatedTokens?: number;
+}
+
+interface StructuralOptions {
+  isStructural: boolean;
+  options: ResolutionOption[];
+  affectedChapters: number[];
+  error?: string;
 }
 
 interface CorrectionRecord {
@@ -94,27 +122,82 @@ function CorrectionCard({
   manuscriptId,
   onApprove,
   onReject,
+  onStructuralResolve,
   isApproving,
-  isRejecting
+  isRejecting,
+  isResolving
 }: { 
   correction: CorrectionRecord;
   manuscriptId: number;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onStructuralResolve: (correctionId: string, optionId: string) => void;
   isApproving: boolean;
   isRejecting: boolean;
+  isResolving: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [structuralOptions, setStructuralOptions] = useState<StructuralOptions | null>(null);
+  const [loadingOptions, setLoadingOptions] = useState(false);
+  const [checkedStructural, setCheckedStructural] = useState(false);
   const isPending = correction.status === 'pending';
 
+  const isStructural = structuralOptions?.isStructural || false;
+
+  useEffect(() => {
+    if (isPending && !checkedStructural) {
+      checkIfStructural();
+    }
+  }, [isPending, checkedStructural]);
+
+  const checkIfStructural = async () => {
+    try {
+      const response = await fetch(`/api/corrected-manuscripts/${manuscriptId}/structural-options/${correction.id}`);
+      const data = await response.json();
+      setStructuralOptions(data);
+      setCheckedStructural(true);
+    } catch (error) {
+      console.error('Error checking structural status:', error);
+      setCheckedStructural(true);
+    }
+  };
+
+  const loadStructuralOptions = async () => {
+    if (structuralOptions || loadingOptions) return;
+    setLoadingOptions(true);
+    try {
+      const response = await fetch(`/api/corrected-manuscripts/${manuscriptId}/structural-options/${correction.id}`);
+      const data = await response.json();
+      setStructuralOptions(data);
+    } catch (error) {
+      console.error('Error loading structural options:', error);
+    } finally {
+      setLoadingOptions(false);
+    }
+  };
+
+  const getOptionIcon = (type: string) => {
+    switch (type) {
+      case 'delete': return <FileX className="h-4 w-4 mr-2" />;
+      case 'rewrite': return <RefreshCw className="h-4 w-4 mr-2" />;
+      case 'merge': return <Merge className="h-4 w-4 mr-2" />;
+      default: return null;
+    }
+  };
+
   return (
-    <Card className="mb-3" data-testid={`card-correction-${correction.id}`}>
+    <Card className={`mb-3 ${isStructural ? 'border-amber-500 dark:border-amber-600' : ''}`} data-testid={`card-correction-${correction.id}`}>
       <CardHeader className="py-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 flex-1 min-w-0">
             <Badge variant={getSeverityColor(correction.severity)} data-testid={`badge-severity-${correction.id}`}>
               {correction.severity}
             </Badge>
+            {isStructural && (
+              <Badge variant="outline" className="border-amber-500 text-amber-600" data-testid={`badge-structural-${correction.id}`}>
+                <Layers className="h-3 w-3 mr-1" />Estructural
+              </Badge>
+            )}
             <span className="text-sm text-muted-foreground truncate" data-testid={`text-location-${correction.id}`}>
               {correction.location}
             </span>
@@ -123,6 +206,11 @@ function CorrectionCard({
             {correction.status === 'approved' && (
               <Badge className="bg-green-600" data-testid={`badge-approved-${correction.id}`}>
                 <CheckCircle2 className="h-3 w-3 mr-1" />Aprobada
+              </Badge>
+            )}
+            {correction.status === 'applied' && (
+              <Badge className="bg-blue-600" data-testid={`badge-applied-${correction.id}`}>
+                <CheckCircle2 className="h-3 w-3 mr-1" />Aplicada
               </Badge>
             )}
             {correction.status === 'rejected' && (
@@ -147,49 +235,123 @@ function CorrectionCard({
       
       {expanded && (
         <CardContent className="pt-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Texto Original:</p>
-              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded text-sm border border-red-200 dark:border-red-800" data-testid={`text-original-${correction.id}`}>
-                {correction.originalText || '[No localizado]'}
+          {isStructural && isPending ? (
+            <Alert className="mb-4 border-amber-500 bg-amber-50 dark:bg-amber-950/30">
+              <Layers className="h-4 w-4 text-amber-600" />
+              <AlertTitle className="text-amber-700 dark:text-amber-400">Problema Estructural Detectado</AlertTitle>
+              <AlertDescription className="text-amber-600 dark:text-amber-300 text-sm">
+                Este problema requiere una resolución estructural. La corrección simple no es suficiente.
+                Selecciona una opción de resolución abajo.
+              </AlertDescription>
+            </Alert>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Texto Original:</p>
+                <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded text-sm border border-red-200 dark:border-red-800" data-testid={`text-original-${correction.id}`}>
+                  {correction.originalText || '[No localizado]'}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1">Texto Corregido:</p>
+                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded text-sm border border-green-200 dark:border-green-800" data-testid={`text-corrected-${correction.id}`}>
+                  {correction.correctedText || '[Sin corrección]'}
+                </div>
               </div>
             </div>
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Texto Corregido:</p>
-              <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded text-sm border border-green-200 dark:border-green-800" data-testid={`text-corrected-${correction.id}`}>
-                {correction.correctedText || '[Sin corrección]'}
-              </div>
-            </div>
-          </div>
+          )}
           
           <div className="flex items-center justify-between mt-4">
             <div className="flex gap-2 text-xs text-muted-foreground" data-testid={`text-diff-stats-${correction.id}`}>
-              <span>+{correction.diffStats.wordsAdded} palabras</span>
-              <span>-{correction.diffStats.wordsRemoved} palabras</span>
-              <span>({correction.diffStats.lengthChange > 0 ? '+' : ''}{correction.diffStats.lengthChange} caracteres)</span>
+              {!isStructural && (
+                <>
+                  <span>+{correction.diffStats.wordsAdded} palabras</span>
+                  <span>-{correction.diffStats.wordsRemoved} palabras</span>
+                  <span>({correction.diffStats.lengthChange > 0 ? '+' : ''}{correction.diffStats.lengthChange} caracteres)</span>
+                </>
+              )}
             </div>
             
             {isPending && (
               <div className="flex gap-2">
-                <Button 
-                  size="sm" 
-                  variant="outline"
-                  onClick={() => onReject(correction.id)}
-                  disabled={isRejecting}
-                  data-testid={`button-reject-${correction.id}`}
-                >
-                  {isRejecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsDown className="h-4 w-4 mr-1" />}
-                  Rechazar
-                </Button>
-                <Button 
-                  size="sm"
-                  onClick={() => onApprove(correction.id)}
-                  disabled={isApproving}
-                  data-testid={`button-approve-${correction.id}`}
-                >
-                  {isApproving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsUp className="h-4 w-4 mr-1" />}
-                  Aprobar
-                </Button>
+                {isStructural ? (
+                  <DropdownMenu onOpenChange={(open) => open && loadStructuralOptions()}>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        size="sm" 
+                        className="bg-amber-600"
+                        disabled={isResolving}
+                        data-testid={`button-structural-options-${correction.id}`}
+                      >
+                        {isResolving ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                        ) : (
+                          <Layers className="h-4 w-4 mr-1" />
+                        )}
+                        Resolver Problema
+                        <ChevronDown className="h-4 w-4 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-80">
+                      <DropdownMenuLabel>Opciones de Resolución</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {loadingOptions ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          Cargando opciones...
+                        </div>
+                      ) : structuralOptions?.isStructural ? (
+                        structuralOptions.options.map((option) => (
+                          <DropdownMenuItem 
+                            key={option.id}
+                            onClick={() => onStructuralResolve(correction.id, option.id)}
+                            className="flex flex-col items-start py-3 cursor-pointer"
+                            data-testid={`menu-item-${option.id}`}
+                          >
+                            <div className="flex items-center font-medium">
+                              {getOptionIcon(option.type)}
+                              {option.label}
+                            </div>
+                            <span className="text-xs text-muted-foreground ml-6 mt-1">
+                              {option.description}
+                            </span>
+                            {option.estimatedTokens && (
+                              <span className="text-xs text-amber-600 ml-6">
+                                ~{option.estimatedTokens} tokens
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        ))
+                      ) : (
+                        <div className="py-2 px-3 text-sm text-muted-foreground">
+                          {structuralOptions?.error || "No se encontraron opciones de resolución"}
+                        </div>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <>
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => onReject(correction.id)}
+                      disabled={isRejecting}
+                      data-testid={`button-reject-${correction.id}`}
+                    >
+                      {isRejecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsDown className="h-4 w-4 mr-1" />}
+                      Rechazar
+                    </Button>
+                    <Button 
+                      size="sm"
+                      onClick={() => onApprove(correction.id)}
+                      disabled={isApproving}
+                      data-testid={`button-approve-${correction.id}`}
+                    >
+                      {isApproving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsUp className="h-4 w-4 mr-1" />}
+                      Aprobar
+                    </Button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -203,10 +365,11 @@ function ManuscriptDetail({ manuscript, onBack }: { manuscript: CorrectedManuscr
   const { toast } = useToast();
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   const corrections = manuscript.pendingCorrections || [];
   const pendingCount = corrections.filter(c => c.status === 'pending').length;
-  const approvedCount = corrections.filter(c => c.status === 'approved').length;
+  const approvedCount = corrections.filter(c => c.status === 'approved' || c.status === 'applied').length;
   const rejectedCount = corrections.filter(c => c.status === 'rejected').length;
 
   const approveMutation = useMutation({
@@ -242,6 +405,27 @@ function ManuscriptDetail({ manuscript, onBack }: { manuscript: CorrectedManuscr
       setRejectingId(null);
     }
   });
+
+  const structuralResolveMutation = useMutation({
+    mutationFn: async ({ correctionId, optionId }: { correctionId: string; optionId: string }) => {
+      setResolvingId(correctionId);
+      const res = await apiRequest('POST', `/api/corrected-manuscripts/${manuscript.id}/structural-resolve/${correctionId}`, { optionId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/corrected-manuscripts', manuscript.id] });
+      toast({ title: "Resolución aplicada", description: "El problema estructural ha sido resuelto." });
+      setResolvingId(null);
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+      setResolvingId(null);
+    }
+  });
+
+  const handleStructuralResolve = (correctionId: string, optionId: string) => {
+    structuralResolveMutation.mutate({ correctionId, optionId });
+  };
 
   const finalizeMutation = useMutation({
     mutationFn: async () => {
@@ -336,8 +520,10 @@ function ManuscriptDetail({ manuscript, onBack }: { manuscript: CorrectedManuscr
                   manuscriptId={manuscript.id}
                   onApprove={(id) => approveMutation.mutate(id)}
                   onReject={(id) => rejectMutation.mutate(id)}
+                  onStructuralResolve={handleStructuralResolve}
                   isApproving={approvingId === correction.id}
                   isRejecting={rejectingId === correction.id}
+                  isResolving={resolvingId === correction.id}
                 />
               ))
             )}
