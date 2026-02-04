@@ -160,6 +160,7 @@ export default function AuditorPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState<{ phase: string; message: string } | null>(null);
   const [currentAuditId, setCurrentAuditId] = useState<number | null>(null);
+  const [dismissedErrorId, setDismissedErrorId] = useState<number | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -453,7 +454,7 @@ export default function AuditorPage() {
         </div>
       )}
 
-      {displayAudit && displayAudit.status === "error" && (
+      {displayAudit && displayAudit.status === "error" && dismissedErrorId !== displayAudit.id && (
         <Alert variant="destructive" data-testid="alert-error" className="relative">
           <XCircle className="h-4 w-4" />
           <AlertTitle>Error en auditoría</AlertTitle>
@@ -462,7 +463,7 @@ export default function AuditorPage() {
             variant="ghost"
             size="sm"
             className="absolute top-2 right-2 h-6 w-6 p-0"
-            onClick={() => setDisplayAudit(null)}
+            onClick={() => setDismissedErrorId(displayAudit.id)}
             data-testid="button-dismiss-error"
           >
             <X className="h-4 w-4" />
