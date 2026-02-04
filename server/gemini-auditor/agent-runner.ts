@@ -234,10 +234,21 @@ function repairJSON(text: string): string {
 }
 
 /**
- * Run a single agent - uses Standard mode with full context injection
+ * Sleep helper for retry backoff
  */
-export async function runAgent(agentType: AgentType): Promise<AgentReport> {
-  console.log(`[AgentRunner] Running ${agentType} agent...`);
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Run a single agent - uses Standard mode with full context injection
+ * Includes automatic retry with exponential backoff for network errors
+ */
+export async function runAgent(agentType: AgentType, retryCount = 0): Promise<AgentReport> {
+  const MAX_RETRIES = 3;
+  const BASE_DELAY = 2000; // 2 seconds
+  
+  console.log(`[AgentRunner] Running ${agentType} agent${retryCount > 0 ? ` (retry ${retryCount}/${MAX_RETRIES})` : ''}...`);
   
   const config = AGENT_CONFIGS[agentType];
   const context = getCurrentContext();
@@ -304,17 +315,32 @@ export async function runAgent(agentType: AgentType): Promise<AgentReport> {
     };
     
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Error desconocido';
+    const isNetworkError = errorMessage.includes('fetch failed') || 
+                          errorMessage.includes('ECONNRESET') ||
+                          errorMessage.includes('timeout') ||
+                          errorMessage.includes('ETIMEDOUT') ||
+                          errorMessage.includes('network');
+    
+    // Retry on network errors with exponential backoff
+    if (isNetworkError && retryCount < MAX_RETRIES) {
+      const delay = BASE_DELAY * Math.pow(2, retryCount);
+      console.log(`[AgentRunner] ${agentType}: Network error, retrying in ${delay}ms...`);
+      await sleep(delay);
+      return runAgent(agentType, retryCount + 1);
+    }
+    
     console.error(`[AgentRunner] ${agentType} agent error:`, error);
     
     return {
       agentType: config.type,
       overallScore: 0,
-      analysis: `Error durante el análisis: ${error instanceof Error ? error.message : 'Error desconocido'}`,
+      analysis: `Error durante el análisis: ${errorMessage}${isNetworkError ? ' (agotados reintentos automáticos)' : ''}`,
       issues: [{
         location: "Sistema",
-        description: `El agente de ${agentType} encontró un error`,
+        description: `El agente de ${agentType} encontró un error de ${isNetworkError ? 'conexión' : 'procesamiento'}`,
         severity: 'HIGH',
-        suggestion: "Reintentar el análisis",
+        suggestion: isNetworkError ? "Verificar conexión a internet y reintentar" : "Reintentar el análisis",
       }],
     };
   }
