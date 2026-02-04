@@ -613,6 +613,151 @@ function sanitizeResponse(response: string): string {
   return cleaned.trim();
 }
 
+function isNarrativeTransitionIssue(description: string): boolean {
+  const transitionKeywords = [
+    'salto abrupt',
+    'transición',
+    'sin resolver',
+    'sin explicar',
+    'cliffhanger',
+    'no se explica',
+    'salta de',
+    'omite cómo',
+    'sin aclarar',
+    'queda sin resolver',
+    'no hay transición',
+    'brecha narrativa',
+    'discontinuidad',
+    'una hora después',
+    'tiempo después',
+    'al día siguiente'
+  ];
+  
+  const lowerDesc = description.toLowerCase();
+  return transitionKeywords.some(kw => lowerDesc.includes(kw));
+}
+
+interface TransitionCorrectionResult {
+  success: boolean;
+  originalText: string;
+  correctedText: string;
+  transitionText: string;
+  diffStats: {
+    wordsAdded: number;
+    wordsRemoved: number;
+    lengthChange: number;
+  };
+  error?: string;
+}
+
+async function correctNarrativeTransition(
+  chapterContent: string,
+  issueDescription: string,
+  chapterTitle: string
+): Promise<TransitionCorrectionResult> {
+  if (!GEMINI_API_KEY) {
+    return {
+      success: false,
+      originalText: '',
+      correctedText: '',
+      transitionText: '',
+      diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
+      error: 'No hay API key de Gemini'
+    };
+  }
+  
+  try {
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    
+    const analysisPrompt = `Eres un editor literario experto en continuidad narrativa.
+
+PROBLEMA DETECTADO:
+${issueDescription}
+
+CAPÍTULO A ANALIZAR:
+---
+${chapterTitle}
+${chapterContent.substring(0, 20000)}
+---
+
+TAREA: Identificar el punto exacto donde hay un salto narrativo abrupto y proponer una transición.
+
+INSTRUCCIONES:
+1. Encuentra la oración EXACTA donde termina la escena (antes del salto)
+2. Encuentra la oración EXACTA donde comienza la nueva escena (después del salto)
+3. Propón un párrafo de transición (2-4 oraciones) que explique brevemente qué pasó entre ambos momentos
+
+FORMATO DE RESPUESTA (JSON estricto):
+{
+  "found": true,
+  "beforeJump": "Oración exacta donde termina la escena antes del salto",
+  "afterJump": "Oración exacta donde comienza la escena después del salto", 
+  "proposedTransition": "Párrafo de transición que explica lo que pasó entre ambos momentos, manteniendo el estilo del autor"
+}
+
+Si no puedes identificar el salto:
+{"found": false, "reason": "explicación"}
+
+IMPORTANTE: Solo devuelve el JSON, sin explicaciones ni markdown.`;
+
+    const result = await model.generateContent(analysisPrompt);
+    const response = result.response.text().trim();
+    
+    console.log(`[Transition AI] Analysis response:`, response.substring(0, 300));
+    
+    const cleanedResponse = response.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    
+    try {
+      const parsed = JSON.parse(cleanedResponse);
+      
+      if (parsed.found && parsed.beforeJump && parsed.afterJump && parsed.proposedTransition) {
+        const beforeIndex = chapterContent.indexOf(parsed.beforeJump);
+        const afterIndex = chapterContent.indexOf(parsed.afterJump);
+        
+        if (beforeIndex !== -1 && afterIndex !== -1 && afterIndex > beforeIndex) {
+          const originalSection = chapterContent.substring(beforeIndex, afterIndex + parsed.afterJump.length);
+          
+          const transitionParagraph = `\n\n${parsed.proposedTransition}\n\n`;
+          const correctedSection = parsed.beforeJump + transitionParagraph + parsed.afterJump;
+          
+          console.log(`[Transition AI] Found jump point, adding transition of ${parsed.proposedTransition.length} chars`);
+          
+          return {
+            success: true,
+            originalText: originalSection,
+            correctedText: correctedSection,
+            transitionText: parsed.proposedTransition,
+            diffStats: calculateDiffStats(originalSection, correctedSection)
+          };
+        } else {
+          console.log(`[Transition AI] Could not locate jump points in chapter`);
+        }
+      }
+    } catch (parseErr) {
+      console.log('[Transition AI] Failed to parse JSON response:', parseErr);
+    }
+    
+    return {
+      success: false,
+      originalText: '',
+      correctedText: '',
+      transitionText: '',
+      diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
+      error: 'No se pudo identificar el punto de transición'
+    };
+  } catch (error) {
+    console.error('[Transition AI] Error:', error);
+    return {
+      success: false,
+      originalText: '',
+      correctedText: '',
+      transitionText: '',
+      diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
+      error: String(error)
+    };
+  }
+}
+
 export async function correctSingleIssue(req: CorrectionRequest): Promise<CorrectionResult> {
   try {
     const { prevContext, nextContext, targetIndex, actualTarget } = extractContext(req.fullChapter, req.targetText);
@@ -1131,6 +1276,56 @@ export async function startCorrectionProcess(
         total: allIssues.length,
         message: `Corrigiendo issue ${i + 1}/${allIssues.length}: ${issue.severity}`
       });
+
+      if (isNarrativeTransitionIssue(issue.description)) {
+        onProgress?.({
+          phase: 'analyzing',
+          current: i + 1,
+          total: allIssues.length,
+          message: `Detectado salto narrativo: generando transición con IA...`
+        });
+        
+        const chapterMatch = issue.location.match(/Cap[íi]tulo\s*(\d+)/i);
+        const chapterNum = chapterMatch ? parseInt(chapterMatch[1]) : null;
+        
+        let chapterData = null;
+        if (chapterNum) {
+          chapterData = extractChapterContent2(correctedContent, chapterNum);
+        }
+        
+        if (chapterData) {
+          const transitionResult = await correctNarrativeTransition(
+            chapterData.content,
+            issue.description,
+            `Capítulo ${chapterNum}`
+          );
+          
+          if (transitionResult.success) {
+            console.log(`[Transition] Generada transición de ${transitionResult.transitionText.length} caracteres`);
+            
+            const correctionRecord: CorrectionRecord = {
+              id: `correction-${Date.now()}-${i}-transition`,
+              issueId: `issue-${i}`,
+              location: issue.location,
+              chapterNumber: chapterNum || 0,
+              originalText: transitionResult.originalText,
+              correctedText: transitionResult.correctedText,
+              instruction: `[TRANSICIÓN NARRATIVA] ${issue.description.substring(0, 100)}...`,
+              severity: issue.severity,
+              status: 'pending',
+              diffStats: transitionResult.diffStats,
+              createdAt: new Date().toISOString()
+            };
+            
+            pendingCorrections.push(correctionRecord);
+            totalOccurrences++;
+            successCount++;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            continue;
+          }
+        }
+      }
 
       const targetText = extractTargetFromLocation(correctedContent, issue.location, issue.description);
       
