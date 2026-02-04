@@ -1,11 +1,12 @@
 /**
- * Agent Runner - Executes literary analysis agents against cached novel context
- * Supports parallel execution of multiple specialized agents
+ * Agent Runner - Executes literary analysis agents
+ * Supports both Cache mode (paid tier) and Standard mode (fallback)
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAICacheManager } from "@google/generative-ai/server";
 import type { AgentReport, AuditIssue } from "@shared/schema";
+import { getCurrentContext, getModelName, type ContextResult } from "./cache-manager";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
 
@@ -21,40 +22,24 @@ const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   CONTINUITY: {
     type: 'CONTINUITY',
     focusAreas: ['Cronología', 'Objetos', 'Ubicaciones', 'Reglas del mundo'],
-    prompt: `Eres el AGENTE DE CONTINUIDAD. Tu especialidad es detectar inconsistencias lógicas y temporales.
+    prompt: `ROL: AGENTE DE CONTINUIDAD
+TAREA: Detectar inconsistencias lógicas y temporales en la novela.
 
-ANALIZA LA NOVELA COMPLETA Y BUSCA:
+ANALIZA:
+1. CRONOLOGÍA: Contradicciones temporales, eventos fuera de orden, edades que no cuadran
+2. OBJETOS: Elementos que aparecen/desaparecen sin lógica
+3. UBICACIONES: Distancias imposibles, descripciones contradictorias
+4. REGLAS DEL MUNDO: Magia/tecnología usada inconsistentemente
 
-1. CRONOLOGÍA:
-   - Contradicciones temporales (un personaje en dos lugares a la vez)
-   - Eventos fuera de orden sin explicación narrativa
-   - Saltos temporales inconsistentes
-   - Edades de personajes que no cuadran
-
-2. OBJETOS Y ELEMENTOS:
-   - Objetos que aparecen/desaparecen sin lógica
-   - Armas, herramientas o recursos usados inconsistentemente
-   - Dinero o economía que no cuadra
-
-3. UBICACIONES:
-   - Distancias imposibles o inconsistentes
-   - Descripciones contradictorias del mismo lugar
-   - Personajes que llegan a lugares imposiblemente rápido
-
-4. REGLAS DEL MUNDO:
-   - Magia o tecnología usada inconsistentemente
-   - Reglas establecidas que se rompen sin justificación
-   - Límites que se ignoran convenientemente
-
-RESPONDE EN ESTE FORMATO JSON EXACTO:
+FORMATO JSON REQUERIDO:
 {
   "agentType": "CONTINUITY",
-  "overallScore": [0-100, donde 100 es perfecto],
-  "analysis": "[Resumen ejecutivo de 2-3 párrafos sobre el estado de la continuidad]",
+  "overallScore": [0-100],
+  "analysis": "[Resumen de 2-3 párrafos]",
   "issues": [
     {
-      "location": "[Capítulo X, párrafo Y o cita textual exacta]",
-      "description": "[Descripción clara del problema]",
+      "location": "[Capítulo X, cita]",
+      "description": "[Problema]",
       "severity": "CRITICAL|HIGH|MEDIUM|LOW",
       "suggestion": "[Cómo arreglarlo]"
     }
@@ -65,39 +50,24 @@ RESPONDE EN ESTE FORMATO JSON EXACTO:
   CHARACTER: {
     type: 'CHARACTER',
     focusAreas: ['Psicología', 'Voz', 'Evolución', 'Motivaciones'],
-    prompt: `Eres el AGENTE DE PERSONAJES. Tu especialidad es la psicología y coherencia de los personajes.
+    prompt: `ROL: AGENTE DE PERSONAJES
+TAREA: Evaluar psicología y coherencia de personajes.
 
-ANALIZA LA NOVELA COMPLETA Y EVALÚA:
+ANALIZA:
+1. EVOLUCIÓN: ¿Los arcos están justificados? ¿Hay cambios erráticos?
+2. VOZ: ¿Cada personaje tiene voz distintiva y consistente?
+3. MOTIVACIONES: ¿Las acciones tienen sentido según sus valores?
+4. RELACIONES: ¿Las dinámicas evolucionan coherentemente?
 
-1. EVOLUCIÓN EMOCIONAL:
-   - ¿Los arcos de personajes están justificados por eventos de la trama?
-   - ¿Hay cambios erráticos de personalidad sin motivación?
-   - ¿Las transformaciones son graduales o abruptas sin razón?
-
-2. VOZ Y MANERA DE HABLAR:
-   - ¿Cada personaje tiene una voz distintiva?
-   - ¿La voz se mantiene consistente o cambia arbitrariamente?
-   - ¿Los diálogos suenan naturales para cada personaje?
-
-3. MOTIVACIONES:
-   - ¿Las acciones de los personajes tienen sentido según sus motivaciones?
-   - ¿Hay decisiones que contradicen sus valores establecidos?
-   - ¿Los antagonistas tienen motivaciones creíbles?
-
-4. RELACIONES:
-   - ¿Las dinámicas entre personajes evolucionan coherentemente?
-   - ¿Hay cambios de relación injustificados?
-   - ¿Las lealtades y traiciones tienen fundamento?
-
-RESPONDE EN ESTE FORMATO JSON EXACTO:
+FORMATO JSON REQUERIDO:
 {
   "agentType": "CHARACTER",
-  "overallScore": [0-100, donde 100 es perfecto],
-  "analysis": "[Resumen ejecutivo de 2-3 párrafos sobre la coherencia de personajes]",
+  "overallScore": [0-100],
+  "analysis": "[Resumen de 2-3 párrafos]",
   "issues": [
     {
-      "location": "[Capítulo X, párrafo Y o cita textual exacta]",
-      "description": "[Descripción clara del problema]",
+      "location": "[Capítulo X, cita]",
+      "description": "[Problema]",
       "severity": "CRITICAL|HIGH|MEDIUM|LOW",
       "suggestion": "[Cómo arreglarlo]"
     }
@@ -108,45 +78,25 @@ RESPONDE EN ESTE FORMATO JSON EXACTO:
   STYLE: {
     type: 'STYLE',
     focusAreas: ['Prosa', 'Ritmo', 'Diálogos', 'Show vs Tell'],
-    prompt: `Eres el AGENTE DE ESTILO. Tu especialidad es la calidad de la prosa y técnica narrativa.
+    prompt: `ROL: AGENTE DE ESTILO
+TAREA: Evaluar calidad de prosa y técnica narrativa.
 
-ANALIZA LA NOVELA COMPLETA Y EVALÚA:
+ANALIZA:
+1. SHOW DON'T TELL: Exceso de exposición vs. demostración
+2. REPETICIONES: Palabras/frases usadas excesivamente
+3. DIÁLOGOS: Naturalidad, voces distintivas
+4. RITMO: Secciones estancadas, pacing, transiciones
+5. PROSA: Calidad de descripciones, metáforas
 
-1. SHOW DON'T TELL:
-   - Exceso de exposición directa vs. demostración a través de acciones
-   - Emociones "dichas" en vez de "mostradas"
-   - Info-dumps que rompen el flujo narrativo
-
-2. REPETICIONES Y MULETILLAS:
-   - Palabras o frases usadas excesivamente
-   - Estructuras sintácticas repetitivas
-   - Tics de escritura (empezar siempre igual, etc.)
-
-3. DIÁLOGOS:
-   - Diálogos robóticos o poco naturales
-   - Personajes que suenan todos igual
-   - Diálogos demasiado expositivos ("As you know, Bob...")
-
-4. RITMO Y PACING:
-   - Secciones que se estancan innecesariamente
-   - Escenas de acción que pierden tensión
-   - Transiciones abruptas o torpes
-   - Desequilibrio entre acción y reflexión
-
-5. PROSA:
-   - Calidad de las descripciones
-   - Uso de metáforas y lenguaje figurativo
-   - Variedad y fluidez de las oraciones
-
-RESPONDE EN ESTE FORMATO JSON EXACTO:
+FORMATO JSON REQUERIDO:
 {
   "agentType": "STYLE",
-  "overallScore": [0-100, donde 100 es perfecto],
-  "analysis": "[Resumen ejecutivo de 2-3 párrafos sobre la calidad estilística]",
+  "overallScore": [0-100],
+  "analysis": "[Resumen de 2-3 párrafos]",
   "issues": [
     {
-      "location": "[Capítulo X, párrafo Y o cita textual exacta]",
-      "description": "[Descripción clara del problema]",
+      "location": "[Capítulo X, cita]",
+      "description": "[Problema]",
       "severity": "CRITICAL|HIGH|MEDIUM|LOW",
       "suggestion": "[Cómo arreglarlo]"
     }
@@ -156,34 +106,66 @@ RESPONDE EN ESTE FORMATO JSON EXACTO:
 };
 
 /**
- * Run a single agent against the cached novel context
+ * Run a single agent - automatically uses Cache or Standard mode
  */
-export async function runAgent(cacheId: string, agentType: AgentType): Promise<AgentReport> {
+export async function runAgent(cacheIdOrContext: string, agentType: AgentType): Promise<AgentReport> {
   console.log(`[AgentRunner] Running ${agentType} agent...`);
   
   const config = AGENT_CONFIGS[agentType];
+  const context = getCurrentContext();
   
   try {
-    const cacheManager = new GoogleAICacheManager(GEMINI_API_KEY);
-    const cache = await cacheManager.get(cacheId);
-    
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-    const model = genAI.getGenerativeModelFromCachedContent(cache, {
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.3, // Low temperature for consistent analysis
-        maxOutputTokens: 8192,
-      },
-    });
+    let result;
     
-    const result = await model.generateContent(config.prompt);
-    const response = result.response;
-    const text = response.text();
+    if (context?.mode === 'CACHE' && context.cacheId) {
+      console.log(`[AgentRunner] ${agentType}: Using CACHE mode`);
+      
+      const cacheManager = new GoogleAICacheManager(GEMINI_API_KEY);
+      const cache = await cacheManager.get(context.cacheId);
+      
+      const model = genAI.getGenerativeModelFromCachedContent(cache, {
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
+          maxOutputTokens: 8192,
+        },
+      });
+      
+      result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: config.prompt }] }],
+      });
+      
+    } else {
+      console.log(`[AgentRunner] ${agentType}: Using STANDARD mode (fallback)`);
+      
+      const model = genAI.getGenerativeModel({
+        model: getModelName(),
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.3,
+          maxOutputTokens: 8192,
+        },
+      });
+      
+      let fullContext = "";
+      if (context?.novelContent) {
+        fullContext = `=== NOVELA COMPLETA ===\n\n${context.novelContent}`;
+        if (context.bibleContent) {
+          fullContext += `\n\n=== BIBLIA DE LA HISTORIA ===\n\n${context.bibleContent}`;
+        }
+      }
+      
+      const systemPrompt = "Eres un Editor Literario Senior. Responde SIEMPRE en JSON válido.";
+      
+      result = await model.generateContent([
+        { text: `SYSTEM: ${systemPrompt}\n\nCONTEXTO:\n${fullContext}\n\n${config.prompt}` }
+      ]);
+    }
     
-    // Parse JSON response
+    const text = result.response.text();
     const parsed = JSON.parse(text) as AgentReport;
     
-    // Validate structure
     if (!parsed.agentType || typeof parsed.overallScore !== 'number' || !Array.isArray(parsed.issues)) {
       throw new Error("Invalid agent report structure");
     }
@@ -207,23 +189,22 @@ export async function runAgent(cacheId: string, agentType: AgentType): Promise<A
   } catch (error) {
     console.error(`[AgentRunner] ${agentType} agent error:`, error);
     
-    // Return error report
     return {
       agentType: config.type,
       overallScore: 0,
       analysis: `Error durante el análisis: ${error instanceof Error ? error.message : 'Error desconocido'}`,
       issues: [{
         location: "Sistema",
-        description: `El agente de ${agentType} encontró un error durante el análisis`,
+        description: `El agente de ${agentType} encontró un error`,
         severity: 'HIGH',
-        suggestion: "Reintentar el análisis o revisar la conexión con Gemini",
+        suggestion: "Reintentar el análisis",
       }],
     };
   }
 }
 
 /**
- * Run all agents in parallel against the same cached context
+ * Run all agents in parallel
  */
 export async function runAllAgents(cacheId: string): Promise<AgentReport[]> {
   console.log("[AgentRunner] Starting parallel agent execution...");
@@ -235,7 +216,6 @@ export async function runAllAgents(cacheId: string): Promise<AgentReport[]> {
   ]);
   
   console.log("[AgentRunner] All agents completed");
-  
   return results;
 }
 
@@ -253,7 +233,6 @@ export function countCriticalIssues(reports: AgentReport[]): number {
  */
 export function calculateOverallScore(reports: AgentReport[]): number {
   if (reports.length === 0) return 0;
-  
   const totalScore = reports.reduce((sum, report) => sum + report.overallScore, 0);
   return Math.round(totalScore / reports.length);
 }

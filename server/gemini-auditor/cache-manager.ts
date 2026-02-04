@@ -1,63 +1,67 @@
 /**
  * Gemini Context Caching Manager
- * Handles file upload and cache creation for novel auditing
+ * Handles cache creation with automatic fallback to standard mode
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import { GoogleAICacheManager, CachedContent } from "@google/generative-ai/server";
+import { GoogleAICacheManager } from "@google/generative-ai/server";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const MODEL_NAME = "models/gemini-1.5-pro-001";
-const CACHE_TTL_SECONDS = 3600; // 1 hour
+const MODEL_NAME = "models/gemini-1.5-pro";
+const CACHE_TTL_SECONDS = 3600;
 
-export interface CacheResult {
+export type AuditMode = 'CACHE' | 'STANDARD';
+
+export interface ContextResult {
   success: boolean;
+  mode: AuditMode;
   cacheId?: string;
   cacheName?: string;
   expiresAt?: Date;
+  novelContent?: string;
+  bibleContent?: string | null;
   error?: string;
 }
 
+let currentContext: ContextResult | null = null;
+
+export function getModelName(): string {
+  return MODEL_NAME;
+}
+
+export function getCurrentContext(): ContextResult | null {
+  return currentContext;
+}
+
 /**
- * Initialize novel context by uploading files and creating a cached context
- * This allows multiple agents to query the same context efficiently
+ * Initialize novel context - tries Cache first, falls back to Standard mode
  */
 export async function initializeNovelContext(
   novelContent: string,
   bibleContent: string | null,
   novelTitle: string
-): Promise<CacheResult> {
+): Promise<ContextResult> {
+  console.log(`[CacheManager] Initializing context for: ${novelTitle}`);
+  
+  let fullContext = `=== NOVELA COMPLETA ===\n\n${novelContent}`;
+  if (bibleContent) {
+    fullContext += `\n\n=== BIBLIA DE LA HISTORIA ===\n\n${bibleContent}`;
+  }
+  
+  console.log(`[CacheManager] Context size: ${fullContext.length} chars`);
+  
   try {
-    console.log(`[CacheManager] Initializing context for: ${novelTitle}`);
+    console.log("[CacheManager] Intentando activar Context Caching (Tier Pago)...");
     
     const cacheManager = new GoogleAICacheManager(GEMINI_API_KEY);
     
-    // Combine novel and bible into a single context
-    let fullContext = `=== NOVELA COMPLETA ===\n\n${novelContent}`;
-    
-    if (bibleContent) {
-      fullContext += `\n\n=== BIBLIA DE LA HISTORIA (Reglas del Mundo, Personajes, Cronología) ===\n\n${bibleContent}`;
-    }
-    
-    console.log(`[CacheManager] Context size: ${fullContext.length} chars`);
-    
-    // Create cached content with the full novel context
     const cache = await cacheManager.create({
       model: MODEL_NAME,
       displayName: `Novel Audit: ${novelTitle}`,
       systemInstruction: {
         role: "system",
         parts: [{
-          text: `Eres un Editor Literario Senior con décadas de experiencia. Tienes acceso a la novela completa y a la biblia de la historia. Tu trabajo es analizar el texto basándote estrictamente en la consistencia interna y la calidad literaria.
-
-REGLAS IMPORTANTES:
-1. Responde SIEMPRE en formato JSON válido
-2. Analiza TODO el texto, no solo fragmentos
-3. Basa tus observaciones en evidencia textual concreta
-4. Cita ubicaciones específicas (capítulo, párrafo, cita)
-5. Sé constructivo pero implacablemente honesto
-
-Tienes el contexto completo de la obra en tu memoria.`
+          text: `Eres un Editor Literario Senior. Tienes acceso a la novela completa y a la biblia de la historia. Responde SIEMPRE en formato JSON válido.`
         }]
       },
       contents: [{
@@ -67,23 +71,32 @@ Tienes el contexto completo de la obra en tu memoria.`
       ttlSeconds: CACHE_TTL_SECONDS,
     });
     
-    console.log(`[CacheManager] Cache created: ${cache.name}`);
+    console.log(`[CacheManager] Modo CACHÉ activado: ${cache.name}`);
     
     const expiresAt = cache.expireTime ? new Date(cache.expireTime) : new Date(Date.now() + CACHE_TTL_SECONDS * 1000);
     
-    return {
+    currentContext = {
       success: true,
+      mode: 'CACHE',
       cacheId: cache.name,
       cacheName: cache.displayName,
       expiresAt,
     };
     
-  } catch (error) {
-    console.error("[CacheManager] Error creating cache:", error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error creating cache",
+    return currentContext;
+    
+  } catch (error: any) {
+    console.warn(`[CacheManager] No se pudo activar Caché: ${error.message}`);
+    console.log("[CacheManager] Activando modo STANDARD (Fallback)...");
+    
+    currentContext = {
+      success: true,
+      mode: 'STANDARD',
+      novelContent,
+      bibleContent,
     };
+    
+    return currentContext;
   }
 }
 
@@ -94,11 +107,8 @@ export async function isCacheValid(cacheId: string): Promise<boolean> {
   try {
     const cacheManager = new GoogleAICacheManager(GEMINI_API_KEY);
     const cache = await cacheManager.get(cacheId);
-    
     if (!cache.expireTime) return false;
-    
-    const expiresAt = new Date(cache.expireTime);
-    return expiresAt > new Date();
+    return new Date(cache.expireTime) > new Date();
   } catch {
     return false;
   }
@@ -112,6 +122,7 @@ export async function deleteCache(cacheId: string): Promise<boolean> {
     const cacheManager = new GoogleAICacheManager(GEMINI_API_KEY);
     await cacheManager.delete(cacheId);
     console.log(`[CacheManager] Cache deleted: ${cacheId}`);
+    currentContext = null;
     return true;
   } catch (error) {
     console.error("[CacheManager] Error deleting cache:", error);
@@ -120,13 +131,8 @@ export async function deleteCache(cacheId: string): Promise<boolean> {
 }
 
 /**
- * Get cache info
+ * Clear current context
  */
-export async function getCacheInfo(cacheId: string): Promise<CachedContent | null> {
-  try {
-    const cacheManager = new GoogleAICacheManager(GEMINI_API_KEY);
-    return await cacheManager.get(cacheId);
-  } catch {
-    return null;
-  }
+export function clearContext(): void {
+  currentContext = null;
 }
