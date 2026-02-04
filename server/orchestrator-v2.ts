@@ -9439,25 +9439,34 @@ Responde SOLO en JSON válido (sin markdown):
       const isMultiChapter = relatedChapters.length > 0;
       
       let multiChapterPlan: string | null = null;
+      
+      // v2.9.6: COORDINATED MULTI-CHAPTER CORRECTION
+      // When we find an issue that affects multiple chapters, we'll fix ALL of them
+      // in sequence before moving to the next issue type
+      const allChaptersToFix = isMultiChapter 
+        ? [issue.chapter, ...relatedChapters] 
+        : [issue.chapter];
+      
       if (isMultiChapter) {
-        console.log(`[OrchestratorV2] Related issues detected: ${issue.tipo} also affects chapters ${relatedChapters.join(', ')}`);
+        console.log(`[OrchestratorV2] MULTI-CHAPTER FIX: ${issue.tipo} affects chapters ${allChaptersToFix.join(', ')} - fixing ALL now`);
         
         await storage.createActivityLog({
           projectId: project.id,
           level: "info",
-          message: `[MULTI-CAPÍTULO] ${issue.tipo} también afecta capítulos ${relatedChapters.join(', ')} - corrección coordinada`,
+          message: `[MULTI-CAPÍTULO] ${issue.tipo} afecta capítulos ${allChaptersToFix.join(', ')} - corrigiendo TODOS en secuencia`,
           agentRole: "smart-editor",
         });
         
         // Build plan for coordinated correction
-        multiChapterPlan = `[ADVERTENCIA: PROBLEMA EN MULTIPLES CAPITULOS]
-Este tipo de problema (${issue.tipo}) tambien existe en capitulos: ${relatedChapters.join(', ')}
+        multiChapterPlan = `[CORRECCIÓN COORDINADA MULTI-CAPÍTULO]
+Este problema (${issue.tipo}) afecta capítulos: ${allChaptersToFix.join(', ')}
+Estás corrigiendo el capítulo ACTUAL como parte de una serie de correcciones coordinadas.
 
 INSTRUCCIONES DE CONSISTENCIA:
-1. Corrige el capitulo ${issue.chapter} (actual) de forma CONSISTENTE
-2. Los cambios NO deben contradecir lo que esta en capitulos ${relatedChapters.join(', ')}
-3. Si corriges un atributo o hecho, debe ser coherente con toda la novela
-4. Manten la coherencia narrativa global`;
+1. Corrige de forma que sea CONSISTENTE con los demás capítulos
+2. Si corriges un atributo o hecho, debe ser coherente con toda la novela
+3. Mantén la coherencia narrativa global
+4. Las correcciones deben complementarse entre capítulos`;
       }
 
       // Emit issue being fixed
@@ -9675,6 +9684,80 @@ INSTRUCCIONES DE CONSISTENCIA:
               message: `[CORREGIDO] Cap ${issue.chapter}: ${issue.tipo} - "${issue.descripcion.substring(0, 50)}..." (${correctionMethod}, intento ${issue.attempts})`,
               agentRole: "smart-editor",
             });
+
+            // v2.9.6: COORDINATED FIX - Now fix ALL related chapters for this issue type
+            if (isMultiChapter && relatedIssues.length > 0) {
+              console.log(`[OrchestratorV2] Fixing ${relatedIssues.length} related chapters for ${issue.tipo}...`);
+              
+              for (const relatedIssue of relatedIssues) {
+                if (relatedIssue.status === 'resolved' || relatedIssue.status === 'escalated') continue;
+                
+                const relatedChapter = chapterMap.get(relatedIssue.chapter);
+                if (!relatedChapter || !relatedChapter.content) continue;
+                
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  message: `[MULTI-CAP] Corrigiendo capítulo relacionado ${relatedIssue.chapter} (mismo issue: ${issue.tipo})`,
+                  agentRole: "smart-editor",
+                });
+
+                // Build error description for related issue
+                const relatedErrorDesc = `[CORRECCIÓN COORDINADA - Parte de issue multi-capítulo]
+${multiChapterPlan || ''}
+
+[${relatedIssue.severidad.toUpperCase()}] ${relatedIssue.tipo}: ${relatedIssue.descripcion}
+${relatedIssue.contexto ? `Contexto: "${relatedIssue.contexto}"` : ''}
+${relatedIssue.instrucciones ? `Instrucciones: ${relatedIssue.instrucciones}` : ''}`;
+
+                // Try to fix the related chapter (single attempt with focused rewrite)
+                relatedIssue.attempts = 1;
+                relatedIssue.status = 'fixing';
+                relatedIssue.originalContent = relatedChapter.content;
+                
+                try {
+                  const rewriteResult = await this.smartEditor.focusedParagraphRewrite({
+                    chapterContent: relatedChapter.content,
+                    errorDescription: relatedErrorDesc,
+                    worldBible,
+                    chapterNumber: relatedIssue.chapter,
+                  });
+
+                  this.addTokenUsage(rewriteResult.tokenUsage);
+                  await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", rewriteResult.tokenUsage, relatedIssue.chapter);
+
+                  if (rewriteResult.rewrittenContent && rewriteResult.rewrittenContent !== relatedChapter.content) {
+                    // Apply the correction
+                    await storage.updateChapter(relatedChapter.id, {
+                      content: rewriteResult.rewrittenContent,
+                    });
+                    relatedChapter.content = rewriteResult.rewrittenContent;
+                    
+                    relatedIssue.status = 'resolved';
+                    relatedIssue.resolvedAt = new Date().toISOString();
+                    resolvedCount++;
+                    
+                    await storage.createActivityLog({
+                      projectId: project.id,
+                      level: "success",
+                      message: `[MULTI-CAP CORREGIDO] Cap ${relatedIssue.chapter}: ${relatedIssue.tipo} (corrección coordinada)`,
+                      agentRole: "smart-editor",
+                    });
+                    
+                    console.log(`[OrchestratorV2] Related issue in chapter ${relatedIssue.chapter} resolved`);
+                  } else {
+                    relatedIssue.status = 'escalated';
+                    relatedIssue.lastAttemptError = 'Corrección coordinada no generó cambios';
+                    escalatedCount++;
+                  }
+                } catch (relatedError) {
+                  console.error(`[OrchestratorV2] Failed to fix related chapter ${relatedIssue.chapter}:`, relatedError);
+                  relatedIssue.status = 'escalated';
+                  relatedIssue.lastAttemptError = `Error en corrección coordinada: ${relatedError instanceof Error ? relatedError.message : 'error'}`;
+                  escalatedCount++;
+                }
+              }
+            }
 
           } else {
             // The ORIGINAL issue was NOT fixed - count as failure
