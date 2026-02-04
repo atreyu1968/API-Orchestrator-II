@@ -302,6 +302,25 @@ export class QueueManager {
           ? HEARTBEAT_TIMEOUT_MS * 4  // 20 minutes for final review
           : HEARTBEAT_TIMEOUT_MS;     // 5 minutes for other states
         
+        // LitAgents 2.9.6: Check if project was paused due to quality validation failure
+        // If the last log contains "PROYECTO PAUSADO" or "validation failed", do NOT auto-recover
+        if (project.status === "paused") {
+          const recentLogs = await storage.getActivityLogsByProject(project.id, 5);
+          const pausedDueToQuality = recentLogs.some((log: { message: string; level: string }) => 
+            (log.message.includes("PROYECTO PAUSADO") || 
+             log.message.includes("validation failed") ||
+             log.message.includes("Estructura narrativa débil") ||
+             log.message.includes("PROTAGONISTA AUSENTE") ||
+             log.message.includes("no cumple los estándares")) &&
+            log.level === "error"
+          );
+          
+          if (pausedDueToQuality) {
+            // Skip auto-recovery for quality-paused projects
+            continue;
+          }
+        }
+        
         if (timeSinceActivity > effectiveTimeout) {
             console.log(`[QueueManager] FROZEN PROJECT DETECTED: "${project.title}" (ID: ${project.id}) - no activity for ${Math.round(timeSinceActivity / 60000)} minutes`);
             
