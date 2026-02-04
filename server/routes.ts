@@ -3872,6 +3872,93 @@ ${series.seriesGuide.substring(0, 50000)}`;
 
   // ============ MANUAL CHAPTER EDITING ENDPOINTS ============
 
+  // Merge two chapters into one
+  const mergeChaptersSchema = z.object({
+    sourceChapterNumber: z.number().int(),
+    targetChapterNumber: z.number().int(),
+    separator: z.string().optional().default("\n\n* * *\n\n"),
+  });
+
+  app.post("/api/projects/:projectId/merge-chapters", async (req: Request, res: Response) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      
+      const validation = mergeChaptersSchema.safeParse(req.body);
+      if (!validation.success) {
+        return res.status(400).json({ error: validation.error.errors });
+      }
+      
+      const { sourceChapterNumber, targetChapterNumber, separator } = validation.data;
+      
+      if (sourceChapterNumber === targetChapterNumber) {
+        return res.status(400).json({ error: "Cannot merge a chapter with itself" });
+      }
+      
+      // Get both chapters
+      const allChapters = await storage.getChaptersByProject(projectId);
+      const sourceChapter = allChapters.find(c => c.chapterNumber === sourceChapterNumber);
+      const targetChapter = allChapters.find(c => c.chapterNumber === targetChapterNumber);
+      
+      if (!sourceChapter || !targetChapter) {
+        return res.status(404).json({ error: "One or both chapters not found" });
+      }
+      
+      // Merge content: target content + separator + source content
+      const mergedContent = `${targetChapter.content || ""}${separator}${sourceChapter.content || ""}`;
+      
+      // Update word count
+      const wordCount = mergedContent.split(/\s+/).filter(w => w.length > 0).length;
+      
+      // Update target chapter with merged content
+      await storage.updateChapter(targetChapter.id, {
+        content: mergedContent,
+        wordCount,
+        summary: `${targetChapter.summary || ""} [Fusionado con capítulo ${sourceChapterNumber}]`,
+      });
+      
+      // Delete source chapter
+      await storage.deleteChapter(sourceChapter.id);
+      
+      // Renumber remaining chapters if needed (only for regular chapters 1-99)
+      // Special chapters: 0=prologue, 998=epilogue, 999=author note - should not be renumbered
+      const remainingChapters = await storage.getChaptersByProject(projectId);
+      const isSourceSpecialChapter = sourceChapterNumber === 0 || sourceChapterNumber >= 998;
+      
+      let chaptersToRenumber: typeof remainingChapters = [];
+      if (!isSourceSpecialChapter) {
+        // Only renumber regular chapters (1-997) that come after the deleted source
+        chaptersToRenumber = remainingChapters
+          .filter(c => c.chapterNumber > sourceChapterNumber && c.chapterNumber > 0 && c.chapterNumber < 998)
+          .sort((a, b) => a.chapterNumber - b.chapterNumber);
+        
+        for (const chapter of chaptersToRenumber) {
+          await storage.updateChapter(chapter.id, {
+            chapterNumber: chapter.chapterNumber - 1,
+            title: chapter.title?.replace(/^(Capítulo|Chapter)\s+\d+/i, `Capítulo ${chapter.chapterNumber - 1}`),
+          });
+        }
+      }
+      
+      // Log the merge
+      await storage.createActivityLog({
+        projectId,
+        level: "info",
+        agentRole: "system",
+        message: `Capitulos fusionados: ${sourceChapterNumber} -> ${targetChapterNumber}. ${chaptersToRenumber.length} capitulos renumerados.`,
+      });
+      
+      res.json({ 
+        success: true, 
+        message: `Capítulo ${sourceChapterNumber} fusionado con ${targetChapterNumber}`,
+        newWordCount: wordCount,
+        chaptersRenumbered: chaptersToRenumber.length,
+      });
+    } catch (error) {
+      console.error("[Routes] Error merging chapters:", error);
+      res.status(500).json({ error: "Failed to merge chapters" });
+    }
+  });
+
   // Update chapter content manually (save edits)
   const updateChapterContentSchema = z.object({
     content: z.string().min(1, "Content cannot be empty"),

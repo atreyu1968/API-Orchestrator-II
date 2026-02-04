@@ -155,6 +155,9 @@ export default function Dashboard() {
   const [architectInstructions, setArchitectInstructions] = useState("");
   const [showExtendDialog, setShowExtendDialog] = useState(false);
   const [showResetReviewerDialog, setShowResetReviewerDialog] = useState(false);
+  const [showMergeChaptersDialog, setShowMergeChaptersDialog] = useState(false);
+  const [mergeSource, setMergeSource] = useState<number | null>(null);
+  const [mergeTarget, setMergeTarget] = useState<number | null>(null);
   const [targetChapters, setTargetChapters] = useState("");
   const [useV2Pipeline, setUseV2Pipeline] = useState(true);
   const [sceneProgress, setSceneProgress] = useState<{chapterNumber: number; sceneNumber: number; totalScenes: number; wordCount: number} | null>(null);
@@ -625,6 +628,27 @@ export default function Dashboard() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "No se pudo extender el proyecto", variant: "destructive" });
+    },
+  });
+
+  const mergeChaptersMutation = useMutation({
+    mutationFn: async ({ projectId, sourceChapterNumber, targetChapterNumber }: { projectId: number; sourceChapterNumber: number; targetChapterNumber: number }) => {
+      const response = await apiRequest("POST", `/api/projects/${projectId}/merge-chapters`, { sourceChapterNumber, targetChapterNumber });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", currentProject?.id, "chapters"] });
+      toast({ 
+        title: "Capitulos fusionados", 
+        description: data.message || "Fusion completada exitosamente"
+      });
+      setShowMergeChaptersDialog(false);
+      setMergeSource(null);
+      setMergeTarget(null);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "No se pudo fusionar los capítulos", variant: "destructive" });
     },
   });
 
@@ -1453,16 +1477,28 @@ export default function Dashboard() {
                   )}
 
                   {["completed", "paused", "cancelled", "error"].includes(currentProject.status) && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowExtendDialog(true)}
-                      disabled={extendProjectMutation.isPending}
-                      data-testid="button-extend-project"
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Extender
-                    </Button>
+                    <>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowExtendDialog(true)}
+                        disabled={extendProjectMutation.isPending}
+                        data-testid="button-extend-project"
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Extender
+                      </Button>
+                      {chapters && chapters.filter(c => c.chapterNumber > 0).length >= 2 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setShowMergeChaptersDialog(true)}
+                          data-testid="button-merge-chapters"
+                        >
+                          Fusionar Capítulos
+                        </Button>
+                      )}
+                    </>
                   )}
 
                   {currentProject.status === "archived" ? (
@@ -1755,6 +1791,92 @@ export default function Dashboard() {
                   <Plus className="h-4 w-4 mr-2" />
                   Extender Proyecto
                 </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge Chapters Dialog */}
+      <Dialog open={showMergeChaptersDialog} onOpenChange={setShowMergeChaptersDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fusionar Capítulos</DialogTitle>
+            <DialogDescription>
+              Fusiona dos capítulos en uno. El contenido del capítulo origen se añadirá al final del capítulo destino, y los capítulos posteriores se renumerarán automáticamente.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="merge-target">Capítulo destino (se mantiene)</Label>
+              <select
+                id="merge-target"
+                value={mergeTarget ?? ""}
+                onChange={(e) => setMergeTarget(e.target.value ? parseInt(e.target.value) : null)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid="select-merge-target"
+              >
+                <option value="">Seleccionar capítulo destino...</option>
+                {chapters?.filter(c => c.chapterNumber > 0 && c.chapterNumber !== mergeSource).map(c => (
+                  <option key={c.id} value={c.chapterNumber}>
+                    Capítulo {c.chapterNumber}: {c.title?.replace(/^Capítulo \d+\s*[-:]?\s*/i, '') || 'Sin título'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="merge-source">Capítulo origen (se eliminará)</Label>
+              <select
+                id="merge-source"
+                value={mergeSource ?? ""}
+                onChange={(e) => setMergeSource(e.target.value ? parseInt(e.target.value) : null)}
+                className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                data-testid="select-merge-source"
+              >
+                <option value="">Seleccionar capítulo origen...</option>
+                {chapters?.filter(c => c.chapterNumber > 0 && c.chapterNumber !== mergeTarget).map(c => (
+                  <option key={c.id} value={c.chapterNumber}>
+                    Capítulo {c.chapterNumber}: {c.title?.replace(/^Capítulo \d+\s*[-:]?\s*/i, '') || 'Sin título'}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {mergeSource && mergeTarget && (
+              <div className="text-sm text-muted-foreground bg-muted p-3 rounded-md">
+                <p><strong>Vista previa:</strong></p>
+                <p>El contenido del <strong>Capítulo {mergeSource}</strong> se añadirá al final del <strong>Capítulo {mergeTarget}</strong>.</p>
+                <p className="text-amber-600 dark:text-amber-400 mt-2">Advertencia: Esta acción no se puede deshacer fácilmente.</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setShowMergeChaptersDialog(false);
+              setMergeSource(null);
+              setMergeTarget(null);
+            }}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                if (currentProject && mergeSource && mergeTarget) {
+                  mergeChaptersMutation.mutate({ 
+                    projectId: currentProject.id, 
+                    sourceChapterNumber: mergeSource,
+                    targetChapterNumber: mergeTarget
+                  });
+                }
+              }}
+              disabled={mergeChaptersMutation.isPending || !mergeSource || !mergeTarget}
+              data-testid="button-confirm-merge"
+            >
+              {mergeChaptersMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Fusionando...
+                </>
+              ) : (
+                "Fusionar Capítulos"
               )}
             </Button>
           </DialogFooter>
