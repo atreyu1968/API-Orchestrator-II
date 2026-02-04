@@ -11,13 +11,14 @@ const deepseek = new OpenAI({
 
 export interface StructuralIssue {
   id: string;
-  type: 'duplicate_chapters' | 'duplicate_scenes' | 'redundant_content' | 'continuity_conflict';
+  type: 'duplicate_chapters' | 'duplicate_scenes' | 'redundant_content' | 'continuity_conflict' | 'repeated_scene';
   severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
   description: string;
   affectedChapters: number[];
   affectedContent: string[];
   resolutionOptions: ResolutionOption[];
   conflictDetails?: ContinuityConflict;
+  recommendedOption?: string;
 }
 
 export interface ContinuityConflict {
@@ -88,13 +89,21 @@ function isStructuralIssue(issue: AuditIssue): boolean {
     /capítulos?\s+duplicados/i,
     /exactamente\s+los\s+mismos/i,
     /narran\s+lo\s+mismo/i,
-    /repiten?\s+(el|los)\s+mismo/i
+    /repiten?\s+(el|los)\s+mismo/i,
+    /se\s+repite\s+en\s+\w+\s+capítulos/i,
+    /sensación\s+de\s+repetición/i,
+    /teléfono.*vibr.*repite/i,
+    /llamada.*repite/i
   ];
   
   const descriptionLower = issue.description.toLowerCase();
+  const hasMultipleChapters = (issue.location?.match(/capítulo/gi)?.length || 0) >= 2 ||
+                              (issue.location?.match(/,/g)?.length || 0) >= 2;
+  
   return structuralPatterns.some(pattern => pattern.test(issue.description)) ||
     (descriptionLower.includes('capítulo') && 
-     (descriptionLower.includes('idéntic') || descriptionLower.includes('duplic')));
+     (descriptionLower.includes('idéntic') || descriptionLower.includes('duplic'))) ||
+    (hasMultipleChapters && (descriptionLower.includes('repite') || descriptionLower.includes('similar')));
 }
 
 export function isContinuityConflict(issue: AuditIssue): boolean {
@@ -329,49 +338,93 @@ function extractAffectedContent(manuscriptContent: string, chapters: number[]): 
   return content;
 }
 
+function isRepeatedSceneIssue(description: string): boolean {
+  const patterns = [
+    /se repite\s*(con|en)/i,
+    /repeti(ción|tiv[ao])/i,
+    /misma\s*(escena|descripción|acción)/i,
+    /muy\s*similar(es)?/i,
+    /sensación\s*de\s*repetición/i,
+    /objeto(tiva)?mente\s*se\s*repite/i,
+    /teléfono\s*vibr/i,
+    /llamada\s*(de|del)\s*\w+\s*se\s*repite/i
+  ];
+  return patterns.some(p => p.test(description));
+}
+
 function generateResolutionOptions(chapters: number[], description: string): ResolutionOption[] {
   const options: ResolutionOption[] = [];
+  const isRepeatedScene = isRepeatedSceneIssue(description);
   
-  options.push({
-    id: `delete-keep-first`,
-    type: 'delete',
-    label: `Eliminar duplicados (mantener Capítulo ${chapters[0]})`,
-    description: `Mantiene el Capítulo ${chapters[0]} y elimina los capítulos ${chapters.slice(1).join(', ')}`,
-    chapterToKeep: chapters[0],
-    chaptersToDelete: chapters.slice(1)
-  });
-  
-  if (chapters.length > 1) {
+  if (isRepeatedScene && chapters.length > 2) {
     options.push({
-      id: `delete-keep-last`,
+      id: `vary-all-scenes`,
+      type: 'rewrite',
+      label: `✨ RECOMENDADO: Variar la escena en cada capítulo`,
+      description: `Mantiene la primera aparición y genera variaciones únicas para los capítulos ${chapters.slice(1).join(', ')}. Cada variación tendrá diferente enfoque narrativo.`,
+      chaptersToMerge: chapters.slice(1),
+      estimatedTokens: chapters.length * 1500
+    });
+    
+    options.push({
+      id: `keep-first-remove-rest`,
       type: 'delete',
-      label: `Eliminar duplicados (mantener Capítulo ${chapters[chapters.length - 1]})`,
-      description: `Mantiene el Capítulo ${chapters[chapters.length - 1]} y elimina los capítulos ${chapters.slice(0, -1).join(', ')}`,
+      label: `Eliminar escena de capítulos posteriores`,
+      description: `Mantiene la escena solo en Capítulo ${chapters[0]} y la elimina de los capítulos ${chapters.slice(1).join(', ')}`,
+      chapterToKeep: chapters[0],
+      chaptersToDelete: chapters.slice(1)
+    });
+    
+    options.push({
+      id: `keep-last-remove-rest`,
+      type: 'delete',
+      label: `Mantener solo en último capítulo`,
+      description: `Elimina la escena de los capítulos ${chapters.slice(0, -1).join(', ')} y la mantiene solo en Capítulo ${chapters[chapters.length - 1]}`,
       chapterToKeep: chapters[chapters.length - 1],
       chaptersToDelete: chapters.slice(0, -1)
     });
-  }
-  
-  for (const chapter of chapters.slice(1)) {
+  } else {
     options.push({
-      id: `rewrite-${chapter}`,
-      type: 'rewrite',
-      label: `Reescribir Capítulo ${chapter}`,
-      description: `Genera contenido completamente nuevo para el Capítulo ${chapter}, diferente al Capítulo ${chapters[0]}`,
-      chaptersToMerge: [chapter],
-      estimatedTokens: 3000
+      id: `delete-keep-first`,
+      type: 'delete',
+      label: `Eliminar duplicados (mantener Capítulo ${chapters[0]})`,
+      description: `Mantiene el Capítulo ${chapters[0]} y elimina los capítulos ${chapters.slice(1).join(', ')}`,
+      chapterToKeep: chapters[0],
+      chaptersToDelete: chapters.slice(1)
     });
-  }
-  
-  if (chapters.length === 2) {
-    options.push({
-      id: `merge-${chapters.join('-')}`,
-      type: 'merge',
-      label: `Fusionar Capítulos ${chapters.join(' y ')}`,
-      description: `Combina los mejores elementos de ambos capítulos en uno solo`,
-      chaptersToMerge: chapters,
-      estimatedTokens: 4000
-    });
+    
+    if (chapters.length > 1) {
+      options.push({
+        id: `delete-keep-last`,
+        type: 'delete',
+        label: `Eliminar duplicados (mantener Capítulo ${chapters[chapters.length - 1]})`,
+        description: `Mantiene el Capítulo ${chapters[chapters.length - 1]} y elimina los capítulos ${chapters.slice(0, -1).join(', ')}`,
+        chapterToKeep: chapters[chapters.length - 1],
+        chaptersToDelete: chapters.slice(0, -1)
+      });
+    }
+    
+    for (const chapter of chapters.slice(1)) {
+      options.push({
+        id: `rewrite-${chapter}`,
+        type: 'rewrite',
+        label: `Reescribir Capítulo ${chapter}`,
+        description: `Genera contenido completamente nuevo para el Capítulo ${chapter}, diferente al Capítulo ${chapters[0]}`,
+        chaptersToMerge: [chapter],
+        estimatedTokens: 3000
+      });
+    }
+    
+    if (chapters.length === 2) {
+      options.push({
+        id: `merge-${chapters.join('-')}`,
+        type: 'merge',
+        label: `Fusionar Capítulos ${chapters.join(' y ')}`,
+        description: `Combina los mejores elementos de ambos capítulos en uno solo`,
+        chaptersToMerge: chapters,
+        estimatedTokens: 4000
+      });
+    }
   }
   
   return options;
