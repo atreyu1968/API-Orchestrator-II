@@ -994,4 +994,58 @@ export const insertGenerationLockSchema = createInsertSchema(generationLocks).om
 export type GenerationLock = typeof generationLocks.$inferSelect;
 export type InsertGenerationLock = z.infer<typeof insertGenerationLockSchema>;
 
+// =============================================
+// MANUSCRIPT AUDITOR (Gemini Context Caching)
+// =============================================
+
+export const manuscriptAudits = pgTable("manuscript_audits", {
+  id: serial("id").primaryKey(),
+  projectId: integer("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("pending"), // pending, caching, analyzing, completed, error
+  novelContent: text("novel_content").notNull(),
+  bibleContent: text("bible_content"),
+  cacheId: text("cache_id"),
+  cacheExpiresAt: timestamp("cache_expires_at"),
+  continuityReport: jsonb("continuity_report"),
+  characterReport: jsonb("character_report"),
+  styleReport: jsonb("style_report"),
+  finalAudit: jsonb("final_audit"),
+  criticalFlags: integer("critical_flags").default(0),
+  overallScore: integer("overall_score"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  completedAt: timestamp("completed_at"),
+});
+
+export const insertManuscriptAuditSchema = createInsertSchema(manuscriptAudits).omit({
+  id: true,
+  createdAt: true,
+  completedAt: true,
+});
+
+export type ManuscriptAudit = typeof manuscriptAudits.$inferSelect;
+export type InsertManuscriptAudit = z.infer<typeof insertManuscriptAuditSchema>;
+
+// TypeScript interfaces for audit reports
+export interface AuditIssue {
+  location: string;
+  description: string;
+  severity: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  suggestion: string;
+}
+
+export interface AgentReport {
+  agentType: 'CONTINUITY' | 'CHARACTER' | 'STYLE';
+  overallScore: number;
+  analysis: string;
+  issues: AuditIssue[];
+}
+
+export interface FinalAudit {
+  timestamp: string;
+  novelTitle: string;
+  reports: AgentReport[];
+  criticalFlags: number;
+}
+
 export * from "./models/chat";

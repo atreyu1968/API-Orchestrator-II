@@ -29,6 +29,7 @@ import ComparePage from "@/pages/compare";
 import GenerateGuidePage from "@/pages/generate-guide";
 import GenerateSeriesGuidePage from "@/pages/generate-series-guide";
 import StyleGuidesPage from "@/pages/style-guides";
+import AuditorPage from "@/pages/auditor";
 import asdLogo from "@assets/ASD_1766442257801.png";
 
 interface AuthStatus {
@@ -55,6 +56,7 @@ function Router() {
       <Route path="/generate-guide" component={GenerateGuidePage} />
       <Route path="/generate-series-guide" component={GenerateSeriesGuidePage} />
       <Route path="/style-guides" component={StyleGuidesPage} />
+      <Route path="/auditor" component={AuditorPage} />
       <Route path="/config" component={ConfigPage} />
       <Route component={NotFound} />
     </Switch>

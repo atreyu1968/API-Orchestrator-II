@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { OrchestratorV2 } from "./orchestrator-v2";
 import { queueManager } from "./queue-manager";
-import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, consistencyViolations, worldEntities, worldRulesTable, worldBibles, chapterAnnotations, insertChapterAnnotationSchema, chapters as chaptersTable, generationLocks } from "@shared/schema";
+import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, consistencyViolations, worldEntities, worldRulesTable, worldBibles, chapterAnnotations, insertChapterAnnotationSchema, chapters as chaptersTable, generationLocks, manuscriptAudits, type AgentReport, type FinalAudit } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import multer from "multer";
 import mammoth from "mammoth";
@@ -10782,6 +10782,216 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
         error: error.message || "Error al generar la guía de estilo",
         details: error.errors || undefined
       });
+    }
+  });
+
+  // =============================================
+  // MANUSCRIPT AUDITOR - Gemini Context Caching Literary Analysis
+  // =============================================
+  
+  app.post("/api/projects/:id/start-audit", async (req: Request, res: Response) => {
+    const projectId = parseInt(req.params.id);
+    
+    try {
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Proyecto no encontrado" });
+      }
+      
+      // Get all chapters for the manuscript
+      const chapters = await storage.getChaptersByProject(projectId);
+      if (!chapters || chapters.length === 0) {
+        return res.status(400).json({ error: "El proyecto no tiene capítulos para auditar" });
+      }
+      
+      // Sort chapters by number
+      const sortedChapters = [...chapters].sort((a, b) => a.chapterNumber - b.chapterNumber);
+      
+      // Build novel content
+      let novelContent = "";
+      for (const chapter of sortedChapters) {
+        if (chapter.content) {
+          let chapterLabel = "";
+          if (chapter.chapterNumber === 0) chapterLabel = "Prólogo";
+          else if (chapter.chapterNumber === 998) chapterLabel = "Epílogo";
+          else if (chapter.chapterNumber === 999) chapterLabel = "Nota del Autor";
+          else chapterLabel = `Capítulo ${chapter.chapterNumber}`;
+          
+          novelContent += `\n\n=== ${chapterLabel}: ${chapter.title || ""} ===\n\n${chapter.content}`;
+        }
+      }
+      
+      // Get world bible if exists
+      let bibleContent: string | null = null;
+      const worldBible = await storage.getWorldBibleByProject(projectId);
+      if (worldBible?.content) {
+        bibleContent = worldBible.content;
+      }
+      
+      // Create audit record
+      const [audit] = await db.insert(manuscriptAudits).values({
+        projectId,
+        status: "pending",
+        novelContent,
+        bibleContent,
+      }).returning();
+      
+      res.json({
+        success: true,
+        auditId: audit.id,
+        message: "Auditoría iniciada. Procesando manuscrito...",
+        stats: {
+          chapters: sortedChapters.length,
+          words: novelContent.split(/\s+/).length,
+          hasWorldBible: !!bibleContent,
+        },
+      });
+      
+    } catch (error: any) {
+      console.error("[ManuscriptAuditor] Error starting audit:", error);
+      res.status(500).json({ error: error.message || "Error al iniciar auditoría" });
+    }
+  });
+  
+  // Run the actual audit (SSE for progress)
+  app.get("/api/audits/:id/run", async (req: Request, res: Response) => {
+    const auditId = parseInt(req.params.id);
+    
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    try {
+      const { initializeNovelContext, runAllAgents, countCriticalIssues, calculateOverallScore, deleteCache } = await import("./gemini-auditor");
+      
+      // Get audit record
+      const [audit] = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.id, auditId)).limit(1);
+      if (!audit) {
+        sendEvent("error", { message: "Auditoría no encontrada" });
+        return res.end();
+      }
+      
+      const project = await storage.getProject(audit.projectId);
+      const novelTitle = project?.title || "Sin título";
+      
+      // Phase 1: Create cache
+      sendEvent("progress", { phase: "caching", message: "Creando caché de contexto con Gemini..." });
+      await db.update(manuscriptAudits).set({ status: "caching" }).where(eq(manuscriptAudits.id, auditId));
+      
+      const cacheResult = await initializeNovelContext(audit.novelContent, audit.bibleContent, novelTitle);
+      
+      if (!cacheResult.success || !cacheResult.cacheId) {
+        sendEvent("error", { message: `Error creando caché: ${cacheResult.error}` });
+        await db.update(manuscriptAudits).set({ 
+          status: "error", 
+          errorMessage: cacheResult.error 
+        }).where(eq(manuscriptAudits.id, auditId));
+        return res.end();
+      }
+      
+      await db.update(manuscriptAudits).set({ 
+        cacheId: cacheResult.cacheId,
+        cacheExpiresAt: cacheResult.expiresAt,
+      }).where(eq(manuscriptAudits.id, auditId));
+      
+      sendEvent("progress", { phase: "caching_complete", message: "Caché creado. Iniciando análisis paralelo..." });
+      
+      // Phase 2: Run agents in parallel
+      sendEvent("progress", { phase: "analyzing", message: "Ejecutando 3 agentes de análisis en paralelo..." });
+      await db.update(manuscriptAudits).set({ status: "analyzing" }).where(eq(manuscriptAudits.id, auditId));
+      
+      const reports = await runAllAgents(cacheResult.cacheId);
+      
+      // Find reports by type
+      const continuityReport = reports.find(r => r.agentType === 'CONTINUITY');
+      const characterReport = reports.find(r => r.agentType === 'CHARACTER');
+      const styleReport = reports.find(r => r.agentType === 'STYLE');
+      
+      // Calculate summary
+      const criticalFlags = countCriticalIssues(reports);
+      const overallScore = calculateOverallScore(reports);
+      
+      // Create final audit
+      const finalAudit: FinalAudit = {
+        timestamp: new Date().toISOString(),
+        novelTitle,
+        reports,
+        criticalFlags,
+      };
+      
+      // Save results
+      await db.update(manuscriptAudits).set({
+        status: "completed",
+        continuityReport: continuityReport as any,
+        characterReport: characterReport as any,
+        styleReport: styleReport as any,
+        finalAudit: finalAudit as any,
+        criticalFlags,
+        overallScore,
+        completedAt: new Date(),
+      }).where(eq(manuscriptAudits.id, auditId));
+      
+      // Clean up cache
+      await deleteCache(cacheResult.cacheId);
+      
+      sendEvent("complete", {
+        overallScore,
+        criticalFlags,
+        reports: reports.map(r => ({
+          agentType: r.agentType,
+          score: r.overallScore,
+          issueCount: r.issues.length,
+        })),
+      });
+      
+    } catch (error: any) {
+      console.error("[ManuscriptAuditor] Error running audit:", error);
+      sendEvent("error", { message: error.message || "Error durante la auditoría" });
+      
+      await db.update(manuscriptAudits).set({ 
+        status: "error", 
+        errorMessage: error.message 
+      }).where(eq(manuscriptAudits.id, auditId));
+    }
+    
+    res.end();
+  });
+  
+  // Get audit results
+  app.get("/api/audits/:id", async (req: Request, res: Response) => {
+    const auditId = parseInt(req.params.id);
+    
+    try {
+      const [audit] = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.id, auditId)).limit(1);
+      
+      if (!audit) {
+        return res.status(404).json({ error: "Auditoría no encontrada" });
+      }
+      
+      res.json(audit);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get all audits for a project
+  app.get("/api/projects/:id/audits", async (req: Request, res: Response) => {
+    const projectId = parseInt(req.params.id);
+    
+    try {
+      const audits = await db.select()
+        .from(manuscriptAudits)
+        .where(eq(manuscriptAudits.projectId, projectId))
+        .orderBy(desc(manuscriptAudits.createdAt));
+      
+      res.json(audits);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
     }
   });
 

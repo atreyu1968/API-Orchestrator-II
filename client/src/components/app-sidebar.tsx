@@ -37,6 +37,7 @@ import {
   DollarSign,
   GitCompare,
   Palette,
+  Microscope,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -56,6 +57,7 @@ const translationsNavItems = [
   { title: "Exportar y Traducir", url: "/export", icon: Download },
   { title: "Comparar Versiones", url: "/compare", icon: GitCompare },
   { title: "Reeditar Manuscrito", url: "/reedit", icon: Edit3 },
+  { title: "Auditor Literario", url: "/auditor", icon: Microscope },
 ];
 
 const settingsNavItems = [
