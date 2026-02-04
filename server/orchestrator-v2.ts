@@ -441,6 +441,22 @@ export class OrchestratorV2 {
       return true;
     }
     
+    // LitAgents 2.9.6: Check if correction was cancelled via routes.ts
+    const isCorrectionCancelled = (global as any).isCorrectionCancelled;
+    if (isCorrectionCancelled && isCorrectionCancelled(projectId)) {
+      console.log(`[OrchestratorV2] Correction cancelled for project ${projectId} - stopping processing`);
+      // Log cancellation for traceability
+      try {
+        await storage.createActivityLog({
+          projectId,
+          level: "warning",
+          agentRole: "system",
+          message: "⏹️ Corrección cancelada por el usuario. Proceso detenido.",
+        });
+      } catch (e) { /* ignore logging errors */ }
+      return true;
+    }
+    
     // Then check if our token is still valid (prevents parallel executions)
     if (!(await this.isTokenStillValid(projectId))) {
       console.log(`[OrchestratorV2] Stopping obsolete process for project ${projectId} - new generation started`);
