@@ -4,4 +4,4 @@
  */
 
 export { initializeNovelContext, clearContext, getCurrentContext, getModelName, type ContextResult, type AuditMode } from "./cache-manager";
-export { runAgent, runAllAgents, countCriticalIssues, calculateOverallScore, type AgentType } from "./agent-runner";
+export { runAgent, runAllAgents, runAllAgentsWithProgress, runMissingAgents, countCriticalIssues, calculateOverallScore, type AgentType, type AgentReportWithStatus } from "./agent-runner";

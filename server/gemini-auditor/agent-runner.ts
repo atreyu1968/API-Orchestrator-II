@@ -332,34 +332,151 @@ export async function runAgent(agentType: AgentType, retryCount = 0): Promise<Ag
     
     console.error(`[AgentRunner] ${agentType} agent error:`, error);
     
-    return {
-      agentType: config.type,
-      overallScore: 0,
-      analysis: `Error durante el análisis: ${errorMessage}${isNetworkError ? ' (agotados reintentos automáticos)' : ''}`,
-      issues: [{
-        location: "Sistema",
-        description: `El agente de ${agentType} encontró un error de ${isNetworkError ? 'conexión' : 'procesamiento'}`,
-        severity: 'HIGH',
-        suggestion: isNetworkError ? "Verificar conexión a internet y reintentar" : "Reintentar el análisis",
-      }],
-    };
+    // Throw error to be caught by runAllAgentsWithProgress for proper failure tracking
+    const enhancedError = new Error(`Error durante el análisis: ${errorMessage}${isNetworkError ? ' (agotados reintentos automáticos)' : ''}`);
+    (enhancedError as any).agentType = agentType;
+    (enhancedError as any).isNetworkError = isNetworkError;
+    throw enhancedError;
   }
 }
 
+// Extended report type with failure tracking
+export interface AgentReportWithStatus extends AgentReport {
+  failed?: boolean; // Explicit failure flag - don't rely on score
+}
+
 /**
- * Run all agents in parallel
+ * Run all agents in parallel with progressive saving
+ * Each agent result is passed to onAgentComplete callback immediately when done
  */
-export async function runAllAgents(): Promise<AgentReport[]> {
-  console.log("[AgentRunner] Starting parallel agent execution...");
+export async function runAllAgentsWithProgress(
+  onAgentComplete: (report: AgentReportWithStatus) => Promise<void>
+): Promise<AgentReportWithStatus[]> {
+  console.log("[AgentRunner] Starting parallel agent execution with progressive saving...");
   
-  const results = await Promise.all([
-    runAgent('CONTINUITY'),
-    runAgent('CHARACTER'),
-    runAgent('STYLE'),
-  ]);
+  const agentTypes: AgentType[] = ['CONTINUITY', 'CHARACTER', 'STYLE'];
+  const reports: AgentReportWithStatus[] = [];
   
-  console.log("[AgentRunner] All agents completed");
-  return results;
+  // Run each agent independently and save immediately on completion
+  const promises = agentTypes.map(async (agentType) => {
+    try {
+      const report = await runAgent(agentType);
+      const reportWithStatus: AgentReportWithStatus = { ...report, failed: false };
+      reports.push(reportWithStatus);
+      await onAgentComplete(reportWithStatus);
+      return reportWithStatus;
+    } catch (error: any) {
+      console.error(`[AgentRunner] ${agentType} agent failed:`, error);
+      const failedReport: AgentReportWithStatus = {
+        agentType,
+        overallScore: 0,
+        analysis: `Error: ${error?.message || 'Fallo de conexión'}`,
+        issues: [{
+          location: "Sistema",
+          description: `El agente ${agentType} falló por error de conexión`,
+          severity: 'HIGH',
+          suggestion: "Usar 'Reanudar Auditoría' para reintentar este agente"
+        }],
+        failed: true
+      };
+      reports.push(failedReport);
+      await onAgentComplete(failedReport);
+      return failedReport;
+    }
+  });
+  
+  await Promise.allSettled(promises);
+  console.log("[AgentRunner] All agents completed (some may have failed)");
+  return reports;
+}
+
+/**
+ * Run all agents in parallel with resilient execution (simple version for backward compat)
+ * Uses Promise.allSettled to not lose partial results on failure
+ */
+export async function runAllAgents(): Promise<AgentReportWithStatus[]> {
+  return runAllAgentsWithProgress(async () => {}); // No-op callback
+}
+
+/**
+ * Check if an agent report indicates failure (uses explicit flag, not score)
+ */
+function isAgentFailed(report: AgentReportWithStatus | null | undefined): boolean {
+  if (!report) return true;
+  // Use explicit failed flag if available
+  if (report.failed !== undefined) return report.failed;
+  // Fallback: check if analysis indicates an error (various formats)
+  const analysis = report.analysis || '';
+  return analysis.startsWith('Error:') || analysis.startsWith('Error durante');
+}
+
+/**
+ * Run only missing/failed agents (for resuming partial audits)
+ * Uses explicit failure flag instead of score to determine what needs re-running
+ */
+export async function runMissingAgents(
+  existingReports: { continuity?: AgentReportWithStatus; character?: AgentReportWithStatus; style?: AgentReportWithStatus },
+  onAgentComplete?: (report: AgentReportWithStatus) => Promise<void>
+): Promise<AgentReportWithStatus[]> {
+  const reports: AgentReportWithStatus[] = [];
+  const toRun: AgentType[] = [];
+  
+  // Check each agent using failure flag, not score
+  if (isAgentFailed(existingReports.continuity)) {
+    toRun.push('CONTINUITY');
+  } else {
+    reports.push(existingReports.continuity!);
+  }
+  
+  if (isAgentFailed(existingReports.character)) {
+    toRun.push('CHARACTER');
+  } else {
+    reports.push(existingReports.character!);
+  }
+  
+  if (isAgentFailed(existingReports.style)) {
+    toRun.push('STYLE');
+  } else {
+    reports.push(existingReports.style!);
+  }
+  
+  if (toRun.length === 0) {
+    console.log("[AgentRunner] All agents already completed successfully, nothing to resume");
+    return reports;
+  }
+  
+  console.log(`[AgentRunner] Resuming audit - running ${toRun.length} missing/failed agents: ${toRun.join(', ')}`);
+  
+  // Run missing agents with progressive saving
+  const promises = toRun.map(async (agentType) => {
+    try {
+      const report = await runAgent(agentType);
+      const reportWithStatus: AgentReportWithStatus = { ...report, failed: false };
+      reports.push(reportWithStatus);
+      if (onAgentComplete) await onAgentComplete(reportWithStatus);
+      return reportWithStatus;
+    } catch (error: any) {
+      console.error(`[AgentRunner] ${agentType} agent failed on resume:`, error);
+      const failedReport: AgentReportWithStatus = {
+        agentType,
+        overallScore: 0,
+        analysis: `Error: ${error?.message || 'Fallo de conexión'}`,
+        issues: [{
+          location: "Sistema",
+          description: `El agente ${agentType} falló por error de conexión`,
+          severity: 'HIGH',
+          suggestion: "Reintentar la reanudación"
+        }],
+        failed: true
+      };
+      reports.push(failedReport);
+      if (onAgentComplete) await onAgentComplete(failedReport);
+      return failedReport;
+    }
+  });
+  
+  await Promise.allSettled(promises);
+  return reports;
 }
 
 /**

@@ -10887,7 +10887,7 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
     };
     
     try {
-      const { initializeNovelContext, runAllAgents, countCriticalIssues, calculateOverallScore } = await import("./gemini-auditor");
+      const { initializeNovelContext, runAllAgentsWithProgress, countCriticalIssues, calculateOverallScore } = await import("./gemini-auditor");
       
       // Get audit record
       const [audit] = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.id, auditId)).limit(1);
@@ -10916,16 +10916,44 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
       
       sendEvent("progress", { phase: "context_ready", message: "Contexto listo. Iniciando análisis paralelo..." });
       
-      // Phase 2: Run agents in parallel
+      // Phase 2: Run agents in parallel with progressive saving
       sendEvent("progress", { phase: "analyzing", message: "Ejecutando 3 agentes de análisis en paralelo..." });
       await db.update(manuscriptAudits).set({ status: "analyzing" }).where(eq(manuscriptAudits.id, auditId));
       
-      const reports = await runAllAgents();
+      let completedCount = 0;
+      const reports = await runAllAgentsWithProgress(async (report: any) => {
+        // Save each agent result immediately to DB
+        completedCount++;
+        const updateData: any = {};
+        
+        if (report.agentType === 'CONTINUITY') {
+          updateData.continuityReport = report;
+        } else if (report.agentType === 'CHARACTER') {
+          updateData.characterReport = report;
+        } else if (report.agentType === 'STYLE') {
+          updateData.styleReport = report;
+        }
+        
+        await db.update(manuscriptAudits).set(updateData).where(eq(manuscriptAudits.id, auditId));
+        
+        const status = report.failed ? 'falló' : `completado (${report.overallScore}/100)`;
+        sendEvent("agent_complete", { 
+          agentType: report.agentType, 
+          status,
+          completed: completedCount,
+          total: 3,
+          failed: report.failed || false
+        });
+      });
       
       // Find reports by type
       const continuityReport = reports.find(r => r.agentType === 'CONTINUITY');
       const characterReport = reports.find(r => r.agentType === 'CHARACTER');
       const styleReport = reports.find(r => r.agentType === 'STYLE');
+      
+      // Check if all agents succeeded (using explicit failed flag)
+      const allSucceeded = reports.every(r => !r.failed);
+      const failedAgents = reports.filter(r => r.failed).map(r => r.agentType);
       
       // Calculate summary
       const criticalFlags = countCriticalIssues(reports);
@@ -10939,27 +10967,42 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
         criticalFlags,
       };
       
-      // Save results
+      // Save results (partial or complete)
       await db.update(manuscriptAudits).set({
-        status: "completed",
+        status: allSucceeded ? "completed" : "partial",
         continuityReport: continuityReport as any,
         characterReport: characterReport as any,
         styleReport: styleReport as any,
         finalAudit: finalAudit as any,
         criticalFlags,
         overallScore,
-        completedAt: new Date(),
+        completedAt: allSucceeded ? new Date() : null,
+        errorMessage: allSucceeded ? null : `Agentes fallidos: ${failedAgents.join(', ')} - usa "Reanudar" para reintentar`,
       }).where(eq(manuscriptAudits.id, auditId));
       
-      sendEvent("complete", {
-        overallScore,
-        criticalFlags,
-        reports: reports.map(r => ({
-          agentType: r.agentType,
-          score: r.overallScore,
-          issueCount: r.issues.length,
-        })),
-      });
+      if (allSucceeded) {
+        sendEvent("complete", {
+          overallScore,
+          criticalFlags,
+          reports: reports.map(r => ({
+            agentType: r.agentType,
+            score: r.overallScore,
+            issueCount: r.issues.length,
+          })),
+        });
+      } else {
+        sendEvent("partial", {
+          message: `${3 - failedAgents.length}/3 agentes completados. Fallaron: ${failedAgents.join(', ')}. Usa "Reanudar" para reintentar.`,
+          overallScore,
+          criticalFlags,
+          failedAgents,
+          reports: reports.map(r => ({
+            agentType: r.agentType,
+            score: r.overallScore,
+            issueCount: r.issues.length,
+          })),
+        });
+      }
       
     } catch (error: any) {
       console.error("[ManuscriptAuditor] Error running audit:", error);
@@ -11017,6 +11060,171 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
     } catch (error: any) {
       res.status(500).json({ error: error.message });
     }
+  });
+
+  // Resume a partial/failed audit - continues from where it left off
+  app.post("/api/audits/:id/resume", async (req: Request, res: Response) => {
+    const auditId = parseInt(req.params.id);
+    
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+    
+    try {
+      const { initializeNovelContext, runMissingAgents, countCriticalIssues, calculateOverallScore } = await import("./gemini-auditor");
+      
+      // Get existing audit
+      const [audit] = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.id, auditId)).limit(1);
+      if (!audit) {
+        sendEvent("error", { message: "Auditoría no encontrada" });
+        return res.end();
+      }
+      
+      // Check which agents already completed successfully (using failed flag, not score)
+      const existingReports = {
+        continuity: audit.continuityReport as any,
+        character: audit.characterReport as any,
+        style: audit.styleReport as any,
+      };
+      
+      // Helper to check if agent failed (use explicit flag or check for Error: prefix)
+      const isAgentFailed = (report: any) => {
+        if (!report) return true;
+        if (report.failed !== undefined) return report.failed;
+        return report.analysis?.startsWith('Error:') || false;
+      };
+      
+      const successfulAgents = [
+        !isAgentFailed(existingReports.continuity) ? 'CONTINUITY' : null,
+        !isAgentFailed(existingReports.character) ? 'CHARACTER' : null,
+        !isAgentFailed(existingReports.style) ? 'STYLE' : null,
+      ].filter(Boolean);
+      
+      if (successfulAgents.length === 3) {
+        sendEvent("complete", { 
+          message: "Todos los agentes ya están completos",
+          overallScore: audit.overallScore,
+          criticalFlags: audit.criticalFlags,
+        });
+        return res.end();
+      }
+      
+      const project = await storage.getProject(audit.projectId);
+      const novelTitle = project?.title || "Sin título";
+      
+      sendEvent("progress", { 
+        phase: "resuming", 
+        message: `Reanudando auditoría... ${successfulAgents.length}/3 agentes ya completados` 
+      });
+      
+      // Re-initialize context
+      await db.update(manuscriptAudits).set({ status: "analyzing" }).where(eq(manuscriptAudits.id, auditId));
+      
+      const contextResult = await initializeNovelContext(audit.novelContent, audit.bibleContent, novelTitle);
+      if (!contextResult.success) {
+        sendEvent("error", { message: `Error inicializando contexto: ${contextResult.error}` });
+        return res.end();
+      }
+      
+      sendEvent("progress", { 
+        phase: "analyzing", 
+        message: `Ejecutando ${3 - successfulAgents.length} agentes faltantes...` 
+      });
+      
+      // Run only missing agents with progressive saving
+      let completedCount = successfulAgents.length;
+      const reports = await runMissingAgents(existingReports, async (report: any) => {
+        // Save each agent result immediately to DB
+        completedCount++;
+        const updateData: any = {};
+        
+        if (report.agentType === 'CONTINUITY') {
+          updateData.continuityReport = report;
+        } else if (report.agentType === 'CHARACTER') {
+          updateData.characterReport = report;
+        } else if (report.agentType === 'STYLE') {
+          updateData.styleReport = report;
+        }
+        
+        await db.update(manuscriptAudits).set(updateData).where(eq(manuscriptAudits.id, auditId));
+        
+        const status = report.failed ? 'falló' : `completado (${report.overallScore}/100)`;
+        sendEvent("agent_complete", { 
+          agentType: report.agentType, 
+          status,
+          completed: completedCount,
+          total: 3,
+          failed: report.failed || false
+        });
+      });
+      
+      // Find reports by type
+      const continuityReport = reports.find(r => r.agentType === 'CONTINUITY');
+      const characterReport = reports.find(r => r.agentType === 'CHARACTER');
+      const styleReport = reports.find(r => r.agentType === 'STYLE');
+      
+      // Check if all agents now succeeded (using explicit failed flag)
+      const allSucceeded = reports.every(r => !r.failed);
+      const criticalFlags = countCriticalIssues(reports);
+      const overallScore = calculateOverallScore(reports);
+      
+      // Create final audit
+      const finalAudit: FinalAudit = {
+        timestamp: new Date().toISOString(),
+        novelTitle,
+        reports,
+        criticalFlags,
+      };
+      
+      // Save results (partial or complete)
+      await db.update(manuscriptAudits).set({
+        status: allSucceeded ? "completed" : "partial",
+        continuityReport: continuityReport as any,
+        characterReport: characterReport as any,
+        styleReport: styleReport as any,
+        finalAudit: finalAudit as any,
+        criticalFlags,
+        overallScore,
+        completedAt: allSucceeded ? new Date() : null,
+        errorMessage: allSucceeded ? null : "Algunos agentes fallaron - usar 'Reanudar' para reintentar",
+      }).where(eq(manuscriptAudits.id, auditId));
+      
+      if (allSucceeded) {
+        sendEvent("complete", {
+          overallScore,
+          criticalFlags,
+          reports: reports.map(r => ({
+            agentType: r.agentType,
+            score: r.overallScore,
+            issueCount: r.issues.length,
+          })),
+        });
+      } else {
+        const failedAgents = reports.filter(r => r.overallScore === 0).map(r => r.agentType);
+        sendEvent("partial", {
+          message: `${3 - failedAgents.length}/3 agentes completados. Fallaron: ${failedAgents.join(', ')}`,
+          overallScore,
+          criticalFlags,
+          failedAgents,
+        });
+      }
+      
+    } catch (error: any) {
+      console.error("[ManuscriptAuditor] Error resuming audit:", error);
+      sendEvent("error", { message: error.message || "Error durante la reanudación" });
+      
+      await db.update(manuscriptAudits).set({ 
+        status: "error", 
+        errorMessage: error.message 
+      }).where(eq(manuscriptAudits.id, auditId));
+    }
+    
+    res.end();
   });
 
   // =============================================
