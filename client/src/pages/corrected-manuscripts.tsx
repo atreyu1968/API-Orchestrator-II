@@ -26,7 +26,9 @@ import {
   FileX,
   RefreshCw,
   ChevronDown,
+  Microscope,
 } from "lucide-react";
+import { useLocation } from "wouter";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -547,6 +549,8 @@ export default function CorrectedManuscriptsPage() {
     enabled: !!selectedId,
   });
 
+  const [, navigate] = useLocation();
+  
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
       const res = await apiRequest('DELETE', `/api/corrected-manuscripts/${id}`);
@@ -555,6 +559,20 @@ export default function CorrectedManuscriptsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/corrected-manuscripts'] });
       toast({ title: "Manuscrito eliminado" });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    }
+  });
+  
+  const reAuditMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const res = await apiRequest('POST', `/api/projects/${projectId}/start-audit`);
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "Auditoría iniciada", description: "Redirigiendo al auditor..." });
+      navigate('/auditor');
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -622,6 +640,24 @@ export default function CorrectedManuscriptsPage() {
                     <Button 
                       size="icon" 
                       variant="ghost"
+                      title="Re-Auditar Manuscrito"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reAuditMutation.mutate(manuscript.projectId);
+                      }}
+                      disabled={reAuditMutation.isPending}
+                      data-testid={`button-reaudit-${manuscript.id}`}
+                    >
+                      {reAuditMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Microscope className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </Button>
+                    <Button 
+                      size="icon" 
+                      variant="ghost"
+                      title="Eliminar Manuscrito"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteMutation.mutate(manuscript.id);
