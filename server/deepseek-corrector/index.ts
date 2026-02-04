@@ -42,24 +42,54 @@ function extractContext(fullText: string, targetText: string, contextChars: numb
   prevContext: string;
   nextContext: string;
   targetIndex: number;
+  actualTarget: string;
 } {
-  const targetIndex = fullText.indexOf(targetText);
+  let targetIndex = fullText.indexOf(targetText);
+  let actualTarget = targetText;
+  
   if (targetIndex === -1) {
     const normalizedTarget = targetText.replace(/\s+/g, ' ').trim();
     const normalizedFull = fullText.replace(/\s+/g, ' ');
     const normalizedIndex = normalizedFull.indexOf(normalizedTarget);
+    
     if (normalizedIndex === -1) {
-      return { prevContext: '', nextContext: '', targetIndex: -1 };
+      const words = normalizedTarget.split(' ').filter(w => w.length > 5);
+      if (words.length > 0) {
+        const keywordPattern = words.slice(0, 3).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?');
+        const regex = new RegExp(keywordPattern, 'i');
+        const match = fullText.match(regex);
+        if (match && match.index !== undefined) {
+          targetIndex = match.index;
+          actualTarget = match[0];
+        } else {
+          return { prevContext: '', nextContext: '', targetIndex: -1, actualTarget: targetText };
+        }
+      } else {
+        return { prevContext: '', nextContext: '', targetIndex: -1, actualTarget: targetText };
+      }
+    } else {
+      let charCount = 0;
+      let realIndex = 0;
+      for (let i = 0; i < fullText.length && charCount < normalizedIndex; i++) {
+        if (!/\s/.test(fullText[i]) || (i > 0 && !/\s/.test(fullText[i-1]))) {
+          charCount++;
+        }
+        realIndex = i;
+      }
+      targetIndex = Math.max(0, realIndex - normalizedTarget.length);
+      
+      const endIndex = Math.min(fullText.length, targetIndex + normalizedTarget.length + 100);
+      actualTarget = fullText.substring(targetIndex, endIndex).split(/\n\n/)[0];
     }
   }
   
   const prevContext = fullText.substring(Math.max(0, targetIndex - contextChars), targetIndex);
   const nextContext = fullText.substring(
-    targetIndex + targetText.length,
-    targetIndex + targetText.length + contextChars
+    targetIndex + actualTarget.length,
+    targetIndex + actualTarget.length + contextChars
   );
   
-  return { prevContext, nextContext, targetIndex };
+  return { prevContext, nextContext, targetIndex, actualTarget };
 }
 
 function calculateDiffStats(original: string, corrected: string) {
@@ -95,7 +125,7 @@ function sanitizeResponse(response: string): string {
 
 export async function correctSingleIssue(req: CorrectionRequest): Promise<CorrectionResult> {
   try {
-    const { prevContext, nextContext, targetIndex } = extractContext(req.fullChapter, req.targetText);
+    const { prevContext, nextContext, targetIndex, actualTarget } = extractContext(req.fullChapter, req.targetText);
     
     if (targetIndex === -1) {
       return {
@@ -107,11 +137,13 @@ export async function correctSingleIssue(req: CorrectionRequest): Promise<Correc
       };
     }
 
+    const textToCorrect = actualTarget || req.targetText;
+
     const userPrompt = `### CONTEXTO PREVIO (NO EDITAR)
 ${prevContext.slice(-300)}
 
 ### TEXTO A CORREGIR (TARGET)
-"${req.targetText}"
+"${textToCorrect}"
 
 ### CONTEXTO POSTERIOR (NO EDITAR)
 ${nextContext.slice(0, 300)}
@@ -140,21 +172,21 @@ Solución requerida: ${req.suggestion}
     const rawResponse = completion.choices[0]?.message?.content || '';
     const correctedText = sanitizeResponse(rawResponse);
 
-    if (!correctedText || correctedText.length > req.targetText.length * 2.5) {
+    if (!correctedText || correctedText.length > textToCorrect.length * 2.5) {
       return {
         success: false,
-        originalText: req.targetText,
-        correctedText: req.targetText,
+        originalText: textToCorrect,
+        correctedText: textToCorrect,
         diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
         error: 'Corrección descartada por anomalía de longitud'
       };
     }
 
-    const diffStats = calculateDiffStats(req.targetText, correctedText);
+    const diffStats = calculateDiffStats(textToCorrect, correctedText);
 
     return {
       success: true,
-      originalText: req.targetText,
+      originalText: textToCorrect,
       correctedText,
       diffStats
     };
