@@ -165,6 +165,14 @@ export default function GenerateSeriesGuidePage() {
     queryKey: ["/api/pseudonyms"],
   });
 
+  const { data: serverGenerationStatus, refetch: refetchServerStatus } = useQuery<{
+    isGenerating: boolean;
+    activeGeneration: { type: string; title: string; startedAt: string } | null;
+  }>({
+    queryKey: ["/api/generation-status"],
+    refetchInterval: generationStatus?.isGenerating ? 5000 : 10000,
+  });
+
   const cancelMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/cancel-guide-generation");
@@ -173,6 +181,7 @@ export default function GenerateSeriesGuidePage() {
     onSuccess: () => {
       localStorage.removeItem(GENERATION_STATUS_KEY);
       setGenerationStatus(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/generation-status"] });
       toast({
         title: "Generacion cancelada",
         description: "La generacion de la guia fue cancelada",
@@ -294,6 +303,40 @@ export default function GenerateSeriesGuidePage() {
 
   return (
     <div className="container mx-auto px-6 py-6 max-w-4xl">
+      {serverGenerationStatus?.isGenerating && (
+        <Card className="mb-6 border-orange-500/50 bg-orange-500/10">
+          <CardContent className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+              <div>
+                <p className="font-medium text-orange-600 dark:text-orange-400">
+                  Generación en curso: {serverGenerationStatus.activeGeneration?.type}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  "{serverGenerationStatus.activeGeneration?.title}"
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+              data-testid="button-cancel-banner"
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <XCircle className="h-4 w-4 mr-1" />
+                  Cancelar
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="mb-6" data-testid="page-header">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-page-title">

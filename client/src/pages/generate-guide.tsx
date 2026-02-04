@@ -113,6 +113,7 @@ export default function GenerateGuidePage() {
       return response.json();
     },
     onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/generation-status"] });
       toast({
         title: "Cancelado",
         description: data.message || "Generación de guía cancelada",
@@ -125,6 +126,14 @@ export default function GenerateGuidePage() {
         variant: "destructive",
       });
     },
+  });
+
+  const { data: serverGenerationStatus } = useQuery<{
+    isGenerating: boolean;
+    activeGeneration: { type: string; title: string; startedAt: string } | null;
+  }>({
+    queryKey: ["/api/generation-status"],
+    refetchInterval: generateMutation.isPending ? 5000 : 15000,
   });
 
   const onSubmit = (data: FormData) => {
@@ -156,6 +165,40 @@ export default function GenerateGuidePage() {
 
   return (
     <div className="container mx-auto p-6 max-w-4xl">
+      {serverGenerationStatus?.isGenerating && (
+        <Card className="mb-6 border-orange-500/50 bg-orange-500/10">
+          <CardContent className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
+              <div>
+                <p className="font-medium text-orange-600 dark:text-orange-400">
+                  Generación en curso: {serverGenerationStatus.activeGeneration?.type}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  "{serverGenerationStatus.activeGeneration?.title}"
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+              data-testid="button-cancel-banner"
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <X className="h-4 w-4 mr-1" />
+                  Cancelar
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
       <div className="mb-6" data-testid="page-header">
         <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-page-title">
           <Sparkles className="h-8 w-8 text-primary" />
