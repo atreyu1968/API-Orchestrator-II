@@ -60,6 +60,13 @@ MISIÓN CRÍTICA: Detectar TODAS las inconsistencias factuales en la novela. Sé
    - Flashbacks que contradicen el presente narrativo
    - Estaciones/clima inconsistentes con fechas
 
+7. FLUIDEZ ENTRE CAPÍTULOS (ALTO):
+   - Saltos temporales inexplicados entre capítulos
+   - Personajes que estaban en un lugar al final del capítulo y aparecen en otro al inicio del siguiente sin explicación
+   - Acciones iniciadas en un capítulo que no se resuelven o continúan lógicamente en el siguiente
+   - Estado emocional de personajes que cambia bruscamente entre capítulos sin justificación
+   - Objetos o información que desaparecen entre el final de un capítulo y el inicio del siguiente
+
 INSTRUCCIONES:
 - Lee CADA capítulo comparándolo con los demás
 - Extrae TODOS los datos factuales y compáralos
