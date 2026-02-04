@@ -103,6 +103,76 @@ function findAttributeInChapterContent(content: string, incorrectValue: string, 
   return null;
 }
 
+function findAnyAttributeMentionNotMatchingBible(
+  content: string, 
+  characterName: string, 
+  attribute: string, 
+  correctValue: string
+): string | null {
+  const firstName = characterName.split(' ')[0];
+  const lastName = characterName.split(' ').slice(1).join(' ');
+  const escapedCorrect = correctValue.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  
+  let attributePatterns: RegExp[] = [];
+  
+  if (attribute === 'ojos' || attribute === 'eyes') {
+    attributePatterns = [
+      /[^.]*\bojos\s+(\w+(?:\s+\w+)?)[^.]*\./gi,
+      /[^.]*\bmirada\s+(\w+)[^.]*\./gi,
+      /[^.]*\biris\s+(\w+)[^.]*\./gi,
+      /[^.]*(\w+)\s+ojos\b[^.]*\./gi
+    ];
+  } else if (attribute === 'cabello' || attribute === 'pelo' || attribute === 'hair') {
+    attributePatterns = [
+      /[^.]*\bcabello\s+(\w+(?:\s+\w+)?)[^.]*\./gi,
+      /[^.]*\bpelo\s+(\w+(?:\s+\w+)?)[^.]*\./gi,
+      /[^.]*\bmelena\s+(\w+(?:\s+\w+)?)[^.]*\./gi,
+      /[^.]*(\w+(?:\s+\w+)?)\s+cabello\b[^.]*\./gi
+    ];
+  }
+  
+  for (const pattern of attributePatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(content)) !== null) {
+      const sentence = match[0];
+      const foundValue = match[1]?.toLowerCase() || '';
+      
+      const mentionsCharacter = sentence.toLowerCase().includes(firstName.toLowerCase()) ||
+                                (lastName && sentence.toLowerCase().includes(lastName.toLowerCase()));
+      
+      if (mentionsCharacter || attributePatterns.length > 0) {
+        const correctWords = correctValue.toLowerCase().split(/\s+/);
+        const foundWords = foundValue.split(/\s+/);
+        const matchesCorrect = correctWords.some((cw: string) => foundWords.some((fw: string) => fw.includes(cw) || cw.includes(fw)));
+        
+        if (!matchesCorrect && foundValue.length > 2) {
+          console.log(`[CharacterBible Search] Encontrada mención incorrecta: "${sentence.substring(0, 60)}..." (valor: "${foundValue}", debería ser: "${correctValue}")`);
+          return sentence.trim();
+        }
+      }
+    }
+  }
+  
+  return null;
+}
+
+function findAttributeBySearchingAll(
+  content: string,
+  characterName: string,
+  attribute: string,
+  correctValue: string,
+  incorrectValue: string
+): string | null {
+  let result = findAttributeInChapterContent(content, incorrectValue, attribute);
+  
+  if (!result) {
+    console.log(`[CharacterBible] No encontrado valor incorrecto específico, buscando cualquier mención que no coincida con la Biblia...`);
+    result = findAnyAttributeMentionNotMatchingBible(content, characterName, attribute, correctValue);
+  }
+  
+  return result;
+}
+
 function extractCharacterBibleInfo(description: string): CharacterBibleExtraction | null {
   const patterns = [
     /La ficha de personaje de (\w+(?:\s+\w+)?)\s+describe su (\w+(?:\s+\w+)?)\s+como ['"]([^'"]+)['"]\.\s*Sin embargo,?\s*(?:en el )?(\w+(?:\s+\d+)?),?\s*se menciona que (?:su \w+ es |es )['"]?([^'".\n]+)['"]?/i,
@@ -1126,10 +1196,12 @@ export async function startCorrectionProcess(
           
           const prologueData = extractChapterContent2(correctedContent, 'prólogo');
           if (prologueData) {
-            const foundInPrologue = findAttributeInChapterContent(
+            const foundInPrologue = findAttributeBySearchingAll(
               prologueData.content,
-              characterBibleInfo.incorrectValue,
-              characterBibleInfo.attribute
+              characterBibleInfo.characterName,
+              characterBibleInfo.attribute,
+              characterBibleInfo.correctValue,
+              characterBibleInfo.incorrectValue
             );
             
             if (foundInPrologue) {
@@ -1188,10 +1260,12 @@ export async function startCorrectionProcess(
             const chapterData = extractChapterContent2(correctedContent, chapterNum);
             
             if (chapterData) {
-              const foundInChapter = findAttributeInChapterContent(
+              const foundInChapter = findAttributeBySearchingAll(
                 chapterData.content,
-                characterBibleInfo.incorrectValue,
-                characterBibleInfo.attribute
+                characterBibleInfo.characterName,
+                characterBibleInfo.attribute,
+                characterBibleInfo.correctValue,
+                characterBibleInfo.incorrectValue
               );
               
               if (foundInChapter) {
@@ -1229,10 +1303,12 @@ export async function startCorrectionProcess(
           if (hasEpilogue) {
             const epilogueData = extractEpilogueContent(correctedContent);
             if (epilogueData) {
-              const foundInEpilogue = findAttributeInChapterContent(
+              const foundInEpilogue = findAttributeBySearchingAll(
                 epilogueData.content,
-                characterBibleInfo.incorrectValue,
-                characterBibleInfo.attribute
+                characterBibleInfo.characterName,
+                characterBibleInfo.attribute,
+                characterBibleInfo.correctValue,
+                characterBibleInfo.incorrectValue
               );
               
               if (foundInEpilogue) {
