@@ -10821,11 +10821,31 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
         }
       }
       
-      // Get world bible if exists
+      // Get world bible if exists - include all structured data
       let bibleContent: string | null = null;
       const worldBible = await storage.getWorldBibleByProject(projectId);
-      if (worldBible?.content) {
-        bibleContent = worldBible.content;
+      if (worldBible) {
+        const bibleParts: string[] = [];
+        
+        if (worldBible.content) {
+          bibleParts.push(worldBible.content);
+        }
+        
+        if (worldBible.characters) {
+          bibleParts.push(`\n\n=== PERSONAJES ===\n${JSON.stringify(worldBible.characters, null, 2)}`);
+        }
+        
+        if (worldBible.timeline) {
+          bibleParts.push(`\n\n=== LÍNEA TEMPORAL ===\n${JSON.stringify(worldBible.timeline, null, 2)}`);
+        }
+        
+        if (worldBible.worldRules) {
+          bibleParts.push(`\n\n=== REGLAS DEL MUNDO ===\n${JSON.stringify(worldBible.worldRules, null, 2)}`);
+        }
+        
+        if (bibleParts.length > 0) {
+          bibleContent = bibleParts.join('\n');
+        }
       }
       
       // Create audit record
