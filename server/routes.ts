@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { OrchestratorV2 } from "./orchestrator-v2";
 import { queueManager } from "./queue-manager";
-import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, consistencyViolations, worldEntities, worldRulesTable, worldBibles, chapterAnnotations, insertChapterAnnotationSchema, chapters as chaptersTable, generationLocks, manuscriptAudits, type AgentReport, type FinalAudit } from "@shared/schema";
+import { insertProjectSchema, insertPseudonymSchema, insertStyleGuideSchema, insertSeriesSchema, insertReeditProjectSchema, consistencyViolations, worldEntities, worldRulesTable, worldBibles, chapterAnnotations, insertChapterAnnotationSchema, chapters as chaptersTable, generationLocks, manuscriptAudits, correctedManuscripts, type AgentReport, type FinalAudit } from "@shared/schema";
 import { eq, desc, and, sql } from "drizzle-orm";
 import multer from "multer";
 import mammoth from "mammoth";
@@ -11013,6 +11013,191 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
     
     try {
       await db.delete(manuscriptAudits).where(eq(manuscriptAudits.id, auditId));
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // =============================================
+  // CORRECTED MANUSCRIPTS - Surgical Correction Module
+  // =============================================
+
+  // Start correction process from audit
+  app.post("/api/audits/:id/start-correction", async (req: Request, res: Response) => {
+    const auditId = parseInt(req.params.id);
+    
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+
+    const sendEvent = (event: string, data: any) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const { startCorrectionProcess } = await import('./deepseek-corrector');
+      
+      const result = await startCorrectionProcess(auditId, (progress) => {
+        sendEvent('progress', progress);
+      });
+
+      if (result.success) {
+        sendEvent('completed', { manuscriptId: result.manuscriptId });
+      } else {
+        sendEvent('error', { message: result.error });
+      }
+    } catch (error: any) {
+      sendEvent('error', { message: error.message });
+    }
+
+    res.end();
+  });
+
+  // Get all corrected manuscripts
+  app.get("/api/corrected-manuscripts", async (req: Request, res: Response) => {
+    try {
+      const manuscripts = await db.select({
+        id: correctedManuscripts.id,
+        auditId: correctedManuscripts.auditId,
+        projectId: correctedManuscripts.projectId,
+        status: correctedManuscripts.status,
+        totalIssues: correctedManuscripts.totalIssues,
+        correctedIssues: correctedManuscripts.correctedIssues,
+        approvedIssues: correctedManuscripts.approvedIssues,
+        rejectedIssues: correctedManuscripts.rejectedIssues,
+        createdAt: correctedManuscripts.createdAt,
+        completedAt: correctedManuscripts.completedAt,
+        projectTitle: projects.title
+      })
+      .from(correctedManuscripts)
+      .leftJoin(projects, eq(correctedManuscripts.projectId, projects.id))
+      .orderBy(desc(correctedManuscripts.createdAt));
+
+      res.json(manuscripts);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get single corrected manuscript with details
+  app.get("/api/corrected-manuscripts/:id", async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id);
+    
+    try {
+      const [manuscript] = await db.select()
+        .from(correctedManuscripts)
+        .where(eq(correctedManuscripts.id, id))
+        .limit(1);
+
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscrito no encontrado" });
+      }
+
+      const [project] = await db.select({ title: projects.title })
+        .from(projects)
+        .where(eq(projects.id, manuscript.projectId))
+        .limit(1);
+
+      res.json({ ...manuscript, projectTitle: project?.title });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Approve a correction
+  app.post("/api/corrected-manuscripts/:id/approve/:correctionId", async (req: Request, res: Response) => {
+    const manuscriptId = parseInt(req.params.id);
+    const correctionId = req.params.correctionId;
+
+    try {
+      const { approveCorrection } = await import('./deepseek-corrector');
+      const success = await approveCorrection(manuscriptId, correctionId);
+      
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ error: "No se pudo aprobar la corrección" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Reject a correction
+  app.post("/api/corrected-manuscripts/:id/reject/:correctionId", async (req: Request, res: Response) => {
+    const manuscriptId = parseInt(req.params.id);
+    const correctionId = req.params.correctionId;
+
+    try {
+      const { rejectCorrection } = await import('./deepseek-corrector');
+      const success = await rejectCorrection(manuscriptId, correctionId);
+      
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ error: "No se pudo rechazar la corrección" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Finalize manuscript (mark as approved)
+  app.post("/api/corrected-manuscripts/:id/finalize", async (req: Request, res: Response) => {
+    const manuscriptId = parseInt(req.params.id);
+
+    try {
+      const { finalizeManuscript } = await import('./deepseek-corrector');
+      const success = await finalizeManuscript(manuscriptId);
+      
+      if (success) {
+        res.json({ success: true });
+      } else {
+        res.status(400).json({ error: "No se pudo finalizar el manuscrito" });
+      }
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Download corrected manuscript
+  app.get("/api/corrected-manuscripts/:id/download", async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id);
+
+    try {
+      const [manuscript] = await db.select()
+        .from(correctedManuscripts)
+        .where(eq(correctedManuscripts.id, id))
+        .limit(1);
+
+      if (!manuscript) {
+        return res.status(404).json({ error: "Manuscrito no encontrado" });
+      }
+
+      const [project] = await db.select({ title: projects.title })
+        .from(projects)
+        .where(eq(projects.id, manuscript.projectId))
+        .limit(1);
+
+      const content = manuscript.correctedContent || manuscript.originalContent;
+      const filename = `${project?.title || 'manuscrito'}_corregido.txt`;
+
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.send(content);
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete corrected manuscript
+  app.delete("/api/corrected-manuscripts/:id", async (req: Request, res: Response) => {
+    const id = parseInt(req.params.id);
+
+    try {
+      await db.delete(correctedManuscripts).where(eq(correctedManuscripts.id, id));
       res.json({ success: true });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
