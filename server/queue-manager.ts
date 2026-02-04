@@ -743,6 +743,29 @@ export class QueueManager {
       return;
     }
 
+    // CRITICAL: Check if there's an active correction for this project
+    // This prevents the QueueManager from starting a new generation while a detect-and-fix is running
+    const isAnyCorrectionActive = (global as any).isAnyCorrectionActive;
+    if (isAnyCorrectionActive && isAnyCorrectionActive(project.id)) {
+      console.log(`[QueueManager] BLOCKED: Project ${project.id} has active correction. Skipping processing.`);
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "warn",
+        message: `Procesamiento bloqueado: ya hay una corrección activa en ejecución`,
+        agentRole: "system",
+      });
+      // Reset queue item to waiting so it can be retried later
+      await storage.updateQueueItem(queueItem.id, {
+        status: "waiting",
+        startedAt: null,
+      });
+      this.currentProjectId = null;
+      this.processingLock = false;
+      // Don't process this project, move on
+      setTimeout(() => this.processQueue(), 30000); // Retry in 30 seconds
+      return;
+    }
+
     await storage.updateQueueItem(queueItem.id, {
       status: "processing",
       startedAt: new Date(),

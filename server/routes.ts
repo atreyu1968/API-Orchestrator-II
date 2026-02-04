@@ -187,8 +187,15 @@ export async function registerRoutes(
     return correction && !correction.cancelled;
   };
   const startCorrection = (projectId: number, type: 'detect-fix' | 'legacy') => {
+    // CRITICAL: Don't overwrite an active correction - this prevents duplicate processes
+    const existing = activeCorrections.get(projectId);
+    if (existing && !existing.cancelled) {
+      console.warn(`[Corrections] BLOCKED: Attempted to start ${type} for project ${projectId} but ${existing.type} is already active since ${existing.startTime.toISOString()}`);
+      return false; // Signal that start was blocked
+    }
     activeCorrections.set(projectId, { type, startTime: new Date(), cancelled: false });
     console.log(`[Corrections] Started ${type} for project ${projectId}`);
+    return true;
   };
   const endCorrection = (projectId: number) => {
     activeCorrections.delete(projectId);
