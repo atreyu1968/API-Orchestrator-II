@@ -305,7 +305,7 @@ export class QueueManager {
         // LitAgents 2.9.6: Check if project was paused due to quality validation failure
         // If the last log contains "PROYECTO PAUSADO" or "validation failed", do NOT auto-recover
         if (project.status === "paused") {
-          const recentLogs = await storage.getActivityLogsByProject(project.id, 5);
+          const recentLogs = await storage.getActivityLogsByProject(project.id, 10);
           const pausedDueToQuality = recentLogs.some((log: { message: string; level: string }) => 
             (log.message.includes("PROYECTO PAUSADO") || 
              log.message.includes("validation failed") ||
@@ -319,6 +319,24 @@ export class QueueManager {
             // Skip auto-recovery for quality-paused projects
             continue;
           }
+          
+          // LitAgents 2.9.6: Skip auto-recovery for manually cancelled projects
+          const cancelledManually = recentLogs.some((log: { message: string; level: string; agentRole?: string }) => 
+            log.message.includes("cancelada por el usuario") ||
+            log.message.includes("Corrección") && log.message.includes("cancelada") ||
+            log.message.includes("Generación cancelada") ||
+            log.message.includes("Revisión detenida por el usuario")
+          );
+          
+          if (cancelledManually) {
+            console.log(`[QueueManager] Skipping auto-recovery for project ${project.id} - was manually cancelled`);
+            continue;
+          }
+        }
+        
+        // LitAgents 2.9.6: Never auto-recover projects with "cancelled" status
+        if (project.status === "cancelled") {
+          continue;
         }
         
         if (timeSinceActivity > effectiveTimeout) {
