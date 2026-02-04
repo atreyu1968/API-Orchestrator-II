@@ -604,6 +604,35 @@ export const PROMPTS_V2 = {
     ║ VERIFICA: chapter_num 1, 2, 3... hasta ${chapters} DEBEN existir.        ║
     ╚══════════════════════════════════════════════════════════════════╝
 
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║ ⚠️ REGLA CRÍTICA: PRESENCIA DEL PROTAGONISTA (OBLIGATORIA)      ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║                                                                  ║
+    ║ El PROTAGONISTA (personaje principal, POV, héroe) DEBE:         ║
+    ║                                                                  ║
+    ║ 1. Estar EXPLÍCITAMENTE NOMBRADO en el "summary" O "key_event"  ║
+    ║    de AL MENOS el 40% de los capítulos (${Math.ceil(chapters * 0.4)} de ${chapters} caps).       ║
+    ║                                                                  ║
+    ║ 2. Aparecer en los capítulos MÁS IMPORTANTES:                   ║
+    ║    - Prólogo (si existe): establecer al protagonista            ║
+    ║    - Capítulo 1: OBLIGATORIO                                    ║
+    ║    - Punto de giro 25% (~Cap ${Math.ceil(chapters * 0.25)}): OBLIGATORIO                  ║
+    ║    - Punto medio 50% (~Cap ${Math.ceil(chapters * 0.5)}): OBLIGATORIO                    ║
+    ║    - Clímax 75% (~Cap ${Math.ceil(chapters * 0.75)}): OBLIGATORIO                        ║
+    ║    - Capítulo final: OBLIGATORIO                                ║
+    ║                                                                  ║
+    ║ 3. En el "summary" o "key_event", usa el NOMBRE PROPIO del      ║
+    ║    protagonista, NO solo pronombres o "el protagonista".        ║
+    ║    INCORRECTO: "El héroe descubre la verdad"                    ║
+    ║    CORRECTO: "María descubre que su padre la traicionó"         ║
+    ║                                                                  ║
+    ║ 4. Si la guía extendida define un protagonista, USA ESE NOMBRE. ║
+    ║    NO inventes nombres diferentes para el personaje principal.  ║
+    ║                                                                  ║
+    ║ VALIDACIÓN: El sistema RECHAZARÁ estructuras donde el           ║
+    ║ protagonista no aparezca en suficientes capítulos.              ║
+    ╚══════════════════════════════════════════════════════════════════╝
+
     SALIDA REQUERIDA (JSON Estricto):
     {
       "world_bible": { 

@@ -775,9 +775,11 @@ export class OrchestratorV2 {
                               role.includes('pov') ||
                               (char.importance === 1 || char.importancia === 1);
       
-      if (isMainCharacter && appearanceCount < safeOutline.length * 0.3) {
-        // LitAgents 2.9.5: Personajes principales ausentes ahora son CRÍTICOS
-        criticalIssues.push(`❌ PROTAGONISTA AUSENTE: ${char.name || char.nombre} solo aparece en ${appearanceCount}/${safeOutline.length} capítulos. DEBE aparecer en al menos ${Math.ceil(safeOutline.length * 0.3)} capítulos.`);
+      // LitAgents 2.9.6: Require 40% protagonist presence (aligned with prompts)
+      if (isMainCharacter && appearanceCount < safeOutline.length * 0.4) {
+        const minRequired = Math.ceil(safeOutline.length * 0.4);
+        const protagonistName = char.name || char.nombre;
+        criticalIssues.push(`❌ PROTAGONISTA AUSENTE: ${protagonistName} solo aparece en ${appearanceCount}/${safeOutline.length} capítulos. DEBE aparecer NOMBRADO EXPLÍCITAMENTE en el summary o key_event de al menos ${minRequired} capítulos (40%). Escribe "${protagonistName}" (no pronombres ni "el protagonista") en los resúmenes de capítulo.`);
       }
       
       // Characters shouldn't disappear mid-story without explanation
@@ -850,6 +852,127 @@ export class OrchestratorV2 {
     const isValid = criticalIssues.length === 0;
     
     return { isValid, criticalIssues, warnings };
+  }
+
+  /**
+   * LitAgents 2.9.6: Post-processor to inject protagonist name into outlines
+   * Called after final validation failure to enforce protagonist presence
+   * Injects into critical chapters AND enough additional chapters to reach 40%
+   * @returns Modified outline with protagonist injected to meet 40% requirement
+   */
+  private injectProtagonistIntoOutline(
+    outline: Array<{ chapter_num: number; title: string; summary: string; key_event: string; emotional_arc?: string }>,
+    protagonistName: string
+  ): Array<{ chapter_num: number; title: string; summary: string; key_event: string; emotional_arc?: string }> {
+    if (!outline || outline.length === 0 || !protagonistName) {
+      return outline;
+    }
+    
+    const protagonistNameLower = protagonistName.toLowerCase();
+    
+    // First, count current appearances
+    let currentAppearances = 0;
+    const chaptersWithProtagonist = new Set<number>();
+    const chaptersWithoutProtagonist: number[] = [];
+    
+    for (const chapter of outline) {
+      const summaryLower = (chapter.summary || '').toLowerCase();
+      const keyEventLower = (chapter.key_event || '').toLowerCase();
+      
+      if (summaryLower.includes(protagonistNameLower) || keyEventLower.includes(protagonistNameLower)) {
+        currentAppearances++;
+        chaptersWithProtagonist.add(chapter.chapter_num);
+      } else {
+        chaptersWithoutProtagonist.push(chapter.chapter_num);
+      }
+    }
+    
+    // Calculate how many more chapters need the protagonist (40% requirement)
+    const minRequired = Math.ceil(outline.length * 0.4);
+    const additionalNeeded = Math.max(0, minRequired - currentAppearances);
+    
+    console.log(`[OrchestratorV2] Protagonist "${protagonistName}" currently in ${currentAppearances}/${outline.length} chapters. Need ${minRequired} (40%). Additional needed: ${additionalNeeded}`);
+    
+    if (additionalNeeded === 0) {
+      console.log(`[OrchestratorV2] Protagonist already meets 40% requirement, no injection needed.`);
+      return outline;
+    }
+    
+    // Identify critical chapters where protagonist MUST appear (prioritize these)
+    const regularChapters = outline.filter(ch => ch.chapter_num > 0 && ch.chapter_num < 900);
+    const criticalChapterNums = new Set<number>();
+    
+    // Prologue (if exists)
+    if (outline.some(ch => ch.chapter_num === 0)) {
+      criticalChapterNums.add(0);
+    }
+    
+    // Chapter 1 (first regular chapter)
+    if (regularChapters.length > 0) {
+      criticalChapterNums.add(regularChapters[0].chapter_num);
+    }
+    
+    // 25% turning point
+    const quarterPoint = Math.ceil(regularChapters.length * 0.25);
+    if (regularChapters[quarterPoint - 1]) {
+      criticalChapterNums.add(regularChapters[quarterPoint - 1].chapter_num);
+    }
+    
+    // 50% midpoint
+    const midPoint = Math.ceil(regularChapters.length * 0.5);
+    if (regularChapters[midPoint - 1]) {
+      criticalChapterNums.add(regularChapters[midPoint - 1].chapter_num);
+    }
+    
+    // 75% turning point
+    const threeQuarterPoint = Math.ceil(regularChapters.length * 0.75);
+    if (regularChapters[threeQuarterPoint - 1]) {
+      criticalChapterNums.add(regularChapters[threeQuarterPoint - 1].chapter_num);
+    }
+    
+    // Final chapter
+    if (regularChapters.length > 0) {
+      criticalChapterNums.add(regularChapters[regularChapters.length - 1].chapter_num);
+    }
+    
+    // Build prioritized list of chapters to inject into:
+    // 1. Critical chapters without protagonist
+    // 2. Early chapters (to establish protagonist early)
+    const prioritizedChapters: number[] = [];
+    
+    // Add critical chapters first
+    for (const criticalNum of criticalChapterNums) {
+      if (!chaptersWithProtagonist.has(criticalNum)) {
+        prioritizedChapters.push(criticalNum);
+      }
+    }
+    
+    // Add remaining chapters in order (early chapters first)
+    const remainingChapters = chaptersWithoutProtagonist
+      .filter(num => !criticalChapterNums.has(num))
+      .sort((a, b) => a - b);
+    
+    prioritizedChapters.push(...remainingChapters);
+    
+    // Select the chapters to inject into
+    const chaptersToInject = new Set(prioritizedChapters.slice(0, additionalNeeded));
+    
+    console.log(`[OrchestratorV2] Injecting protagonist into ${chaptersToInject.size} chapters: ${Array.from(chaptersToInject).join(', ')}`);
+    
+    // Modify outline to inject protagonist name
+    const modifiedOutline = outline.map(chapter => {
+      if (chaptersToInject.has(chapter.chapter_num)) {
+        const injectedSummary = `${protagonistName} ${chapter.summary}`;
+        console.log(`[OrchestratorV2] Injected protagonist into chapter ${chapter.chapter_num}`);
+        return {
+          ...chapter,
+          summary: injectedSummary
+        };
+      }
+      return chapter;
+    });
+    
+    return modifiedOutline;
   }
 
   /**
@@ -1061,7 +1184,8 @@ Las siguientes tramas DEBEN ser avanzadas en este capítulo. Cada escena debe co
     warnings: string[],
     attemptNumber: number,
     previousCharacters?: Array<{ name: string; role: string }>,
-    extendedGuideCharacters?: Array<{ name: string; role: string; description: string }>
+    extendedGuideCharacters?: Array<{ name: string; role: string; description: string }>,
+    actualChapterCount?: number
   ): string {
     const severity = attemptNumber >= 2 ? '🔴 CRÍTICO' : '⚠️ IMPORTANTE';
     
@@ -1078,7 +1202,48 @@ La estructura anterior fue RECHAZADA por problemas graves. DEBES corregir:
     const protagonists = previousCharacters?.filter(c => c.role === 'protagonist' || c.role === 'protagonista') || [];
     const guideProtagonists = extendedGuideCharacters?.filter(c => c.role === 'protagonist') || [];
     
-    if (protagonists.length > 0 || guideProtagonists.length > 0) {
+    const allProtagonists = [...protagonists];
+    for (const char of guideProtagonists) {
+      if (!allProtagonists.some(p => p.name.toLowerCase() === char.name.toLowerCase())) {
+        allProtagonists.push(char);
+      }
+    }
+    
+    if (allProtagonists.length > 0) {
+      const mainProtagonist = allProtagonists[0];
+      const chapterCount = actualChapterCount || 20; // Use actual count if provided, or reasonable default
+      const minAppearances = Math.ceil(chapterCount * 0.4);
+      
+      instructions += `
+╔══════════════════════════════════════════════════════════════════╗
+║ ⚠️ CORRECCIÓN OBLIGATORIA: PRESENCIA DEL PROTAGONISTA           ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║ PROTAGONISTA PRINCIPAL: "${mainProtagonist.name}"                 ║
+║                                                                  ║
+║ PROBLEMA DETECTADO: El protagonista NO aparece en suficientes    ║
+║ capítulos. El sistema RECHAZA estructuras sin presencia clara.   ║
+║                                                                  ║
+║ SOLUCIÓN OBLIGATORIA:                                            ║
+║ 1. Escribe el NOMBRE "${mainProtagonist.name}" explícitamente    ║
+║    en el campo "summary" O "key_event" de cada capítulo donde    ║
+║    este personaje interviene.                                    ║
+║                                                                  ║
+║ 2. El protagonista DEBE aparecer NOMBRADO en:                    ║
+║    - Prólogo (si existe)                                         ║
+║    - Capítulo 1 (OBLIGATORIO)                                    ║
+║    - Capítulos de puntos de giro (~${Math.ceil(chapterCount * 0.25)}, ~${Math.ceil(chapterCount * 0.5)}, ~${Math.ceil(chapterCount * 0.75)})             ║
+║    - Capítulo final (${chapterCount}) (OBLIGATORIO)                             ║
+║    - AL MENOS ${minAppearances} de ${chapterCount} capítulos (40%)                           ║
+║                                                                  ║
+║ 3. INCORRECTO: "El detective investiga" / "descubre la verdad"  ║
+║    CORRECTO: "${mainProtagonist.name} investiga el crimen"       ║
+║                                                                  ║
+║ 4. NO cambies el nombre del protagonista. NO inventes otro.      ║
+╚══════════════════════════════════════════════════════════════════╝
+
+`;
+      
       instructions += `=== 🔒 PERSONAJES CANÓNICOS (NO CAMBIAR) ===\n`;
       instructions += `OBLIGATORIO: Mantener EXACTAMENTE los mismos personajes principales:\n`;
       
@@ -1092,7 +1257,7 @@ La estructura anterior fue RECHAZADA por problemas graves. DEBES corregir:
       }
       
       instructions += `\n⚠️ PROHIBIDO: Inventar nuevos protagonistas o cambiar los existentes.\n`;
-      instructions += `El protagonista DEBE aparecer en el summary/key_event de cada capítulo donde interviene.\n\n`;
+      instructions += `El protagonista "${mainProtagonist.name}" DEBE aparecer NOMBRADO en summary/key_event.\n\n`;
     }
     
     if (criticalIssues.length > 0) {
@@ -4244,12 +4409,16 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
               })) || [];
               const extendedGuideCharacters = this.extractCharactersFromExtendedGuide(extendedGuideContent);
               
+              // LitAgents 2.9.6: Pass actual chapter count for accurate protagonist requirements
+              const outlineChapterCount = globalResult.parsed?.outline?.length || project.chapters;
+              
               correctionInstructions = this.buildPlotCorrectionInstructions(
                 plotValidation.criticalIssues,
                 plotValidation.warnings,
                 architectureAttempt + 1,
                 previousCharacters,
-                extendedGuideCharacters
+                extendedGuideCharacters,
+                outlineChapterCount
               );
             }
           } else {
@@ -4264,9 +4433,60 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           }
         }
         
-        // LitAgents 2.9.5: If validation still fails after MAX attempts, pause the project
+        // LitAgents 2.9.6: If validation still fails after MAX attempts, try post-processing before pausing
         if (!plotValidation.isValid) {
-          console.error(`[OrchestratorV2] Plot coherence validation FAILED after ${MAX_ARCHITECTURE_ATTEMPTS} attempts. Pausing project.`);
+          console.warn(`[OrchestratorV2] Plot coherence validation FAILED after ${MAX_ARCHITECTURE_ATTEMPTS} attempts. Attempting post-processor fix...`);
+          
+          // LitAgents 2.9.6: Try to auto-fix protagonist issues via injection
+          const protagonistIssues = plotValidation.criticalIssues.filter(i => 
+            i.includes('PROTAGONISTA AUSENTE') || i.includes('protagonista')
+          );
+          
+          if (protagonistIssues.length > 0 && globalResult.parsed?.outline) {
+            // Extract protagonist name from world_bible or extended guide
+            const characters = globalResult.parsed.world_bible?.characters || [];
+            const protagonist = characters.find((c: any) => 
+              (c.role || c.rol || '').toLowerCase().includes('protagonist') ||
+              (c.role || c.rol || '').toLowerCase().includes('principal')
+            );
+            
+            if (protagonist) {
+              const protagonistName = protagonist.name || protagonist.nombre;
+              console.log(`[OrchestratorV2] Auto-injecting protagonist "${protagonistName}" into outline...`);
+              
+              const modifiedOutline = this.injectProtagonistIntoOutline(
+                globalResult.parsed.outline,
+                protagonistName
+              );
+              
+              // Replace outline and re-validate
+              globalResult.parsed.outline = modifiedOutline;
+              
+              const revalidation = this.validatePlotCoherence(
+                modifiedOutline,
+                globalResult.parsed.plot_threads,
+                globalResult.parsed.world_bible,
+                extendedGuideContent
+              );
+              
+              if (revalidation.isValid || revalidation.criticalIssues.filter(i => i.includes('PROTAGONISTA')).length === 0) {
+                console.log(`[OrchestratorV2] Post-processor successfully fixed protagonist presence issue!`);
+                plotValidation = revalidation;
+                
+                await storage.createActivityLog({
+                  projectId: project.id,
+                  level: "info",
+                  agentRole: "system",
+                  message: `✅ Post-procesador inyectó al protagonista "${protagonistName}" en capítulos críticos. Problema resuelto automáticamente.`,
+                });
+              }
+            }
+          }
+        }
+        
+        // If still invalid after post-processing, pause the project
+        if (!plotValidation.isValid) {
+          console.error(`[OrchestratorV2] Plot coherence validation FAILED after ${MAX_ARCHITECTURE_ATTEMPTS} attempts and post-processing. Pausing project.`);
           
           await storage.createActivityLog({
             projectId: project.id,
