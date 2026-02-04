@@ -106,8 +106,9 @@ export class PatternTracker {
   classifySceneType(plotBeat: string, emotionalBeat: string): SceneType {
     const combined = `${plotBeat} ${emotionalBeat}`.toLowerCase();
     
-    if (/pelea|lucha|persecución|escape|huye|corre|ataca|dispara|combate/.test(combined)) return 'action';
-    if (/escapa|huida|fuga/.test(combined)) return 'escape';
+    // Note: Order matters - more specific patterns must come before broader ones
+    if (/escapa|huida|fuga|huye.*(de|del)|escapa.*(de|del)/.test(combined)) return 'escape';
+    if (/pelea|lucha|persecución|corre|ataca|dispara|combate/.test(combined)) return 'action';
     if (/investiga|busca|analiza|examina|rastrea|revisa/.test(combined)) return 'investigation';
     if (/descubre|encuentra|halla|revela|se da cuenta/.test(combined)) return 'discovery';
     if (/enfrenta|confronta|cara a cara|acusa|desafía/.test(combined)) return 'confrontation';
@@ -200,20 +201,21 @@ export class PatternTracker {
       }
     });
 
-    const lastThreeOpenings = recentPatterns.slice(-3).map(p => p.opening);
-    const lastThreeClosings = recentPatterns.slice(-3).map(p => p.closing);
+    // Compare the MOST RECENT two chapters (not first two of last three)
+    const lastTwoOpenings = recentPatterns.slice(-2).map(p => p.opening);
+    const lastTwoClosings = recentPatterns.slice(-2).map(p => p.closing);
 
-    if (lastThreeOpenings.length >= 2 && lastThreeOpenings[0] === lastThreeOpenings[1]) {
-      analysis.avoidOpenings.push(lastThreeOpenings[0]);
+    if (lastTwoOpenings.length === 2 && lastTwoOpenings[0] === lastTwoOpenings[1]) {
+      analysis.avoidOpenings.push(lastTwoOpenings[0]);
       analysis.consecutivePatternWarnings.push(
-        `Los últimos ${lastThreeOpenings.filter(o => o === lastThreeOpenings[0]).length} capítulos abrieron con '${lastThreeOpenings[0]}'. VARÍA la apertura.`
+        `Los últimos 2 capítulos abrieron con '${lastTwoOpenings[0]}'. VARÍA la apertura.`
       );
     }
 
-    if (lastThreeClosings.length >= 2 && lastThreeClosings[0] === lastThreeClosings[1]) {
-      analysis.avoidClosings.push(lastThreeClosings[0]);
+    if (lastTwoClosings.length === 2 && lastTwoClosings[0] === lastTwoClosings[1]) {
+      analysis.avoidClosings.push(lastTwoClosings[0]);
       analysis.consecutivePatternWarnings.push(
-        `Los últimos ${lastThreeClosings.filter(c => c === lastThreeClosings[0]).length} capítulos cerraron con '${lastThreeClosings[0]}'. VARÍA el cierre.`
+        `Los últimos 2 capítulos cerraron con '${lastTwoClosings[0]}'. VARÍA el cierre.`
       );
     }
 
