@@ -107,9 +107,9 @@ FORMATO JSON REQUERIDO:
 };
 
 /**
- * Run a single agent - automatically uses Cache or Standard mode
+ * Run a single agent - uses Standard mode with full context injection
  */
-export async function runAgent(cacheIdOrContext: string, agentType: AgentType): Promise<AgentReport> {
+export async function runAgent(agentType: AgentType): Promise<AgentReport> {
   console.log(`[AgentRunner] Running ${agentType} agent...`);
   
   const config = AGENT_CONFIGS[agentType];
@@ -187,13 +187,13 @@ export async function runAgent(cacheIdOrContext: string, agentType: AgentType): 
 /**
  * Run all agents in parallel
  */
-export async function runAllAgents(cacheId: string): Promise<AgentReport[]> {
+export async function runAllAgents(): Promise<AgentReport[]> {
   console.log("[AgentRunner] Starting parallel agent execution...");
   
   const results = await Promise.all([
-    runAgent(cacheId, 'CONTINUITY'),
-    runAgent(cacheId, 'CHARACTER'),
-    runAgent(cacheId, 'STYLE'),
+    runAgent('CONTINUITY'),
+    runAgent('CHARACTER'),
+    runAgent('STYLE'),
   ]);
   
   console.log("[AgentRunner] All agents completed");

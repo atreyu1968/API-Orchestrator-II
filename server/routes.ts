@@ -10867,7 +10867,7 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
     };
     
     try {
-      const { initializeNovelContext, runAllAgents, countCriticalIssues, calculateOverallScore, deleteCache } = await import("./gemini-auditor");
+      const { initializeNovelContext, runAllAgents, countCriticalIssues, calculateOverallScore } = await import("./gemini-auditor");
       
       // Get audit record
       const [audit] = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.id, auditId)).limit(1);
@@ -10879,37 +10879,28 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
       const project = await storage.getProject(audit.projectId);
       const novelTitle = project?.title || "Sin título";
       
-      // Phase 1: Create cache
-      sendEvent("progress", { phase: "caching", message: "Creando caché de contexto con Gemini..." });
+      // Phase 1: Initialize context
+      sendEvent("progress", { phase: "initializing", message: "Preparando contexto para análisis con Gemini..." });
       await db.update(manuscriptAudits).set({ status: "caching" }).where(eq(manuscriptAudits.id, auditId));
       
-      const cacheResult = await initializeNovelContext(audit.novelContent, audit.bibleContent, novelTitle);
+      const contextResult = await initializeNovelContext(audit.novelContent, audit.bibleContent, novelTitle);
       
-      if (!cacheResult.success) {
-        sendEvent("error", { message: `Error inicializando contexto: ${cacheResult.error || 'Error desconocido'}` });
+      if (!contextResult.success) {
+        sendEvent("error", { message: `Error inicializando contexto: ${contextResult.error || 'Error desconocido'}` });
         await db.update(manuscriptAudits).set({ 
           status: "error", 
-          errorMessage: cacheResult.error || 'Error desconocido'
+          errorMessage: contextResult.error || 'Error desconocido'
         }).where(eq(manuscriptAudits.id, auditId));
         return res.end();
       }
       
-      // Update cache info (only in CACHE mode)
-      if (cacheResult.mode === 'CACHE' && cacheResult.cacheId) {
-        await db.update(manuscriptAudits).set({ 
-          cacheId: cacheResult.cacheId,
-          cacheExpiresAt: cacheResult.expiresAt,
-        }).where(eq(manuscriptAudits.id, auditId));
-        sendEvent("progress", { phase: "caching_complete", message: "Caché creado. Iniciando análisis paralelo..." });
-      } else {
-        sendEvent("progress", { phase: "caching_complete", message: "Modo estándar activado. Iniciando análisis paralelo..." });
-      }
+      sendEvent("progress", { phase: "context_ready", message: "Contexto listo. Iniciando análisis paralelo..." });
       
       // Phase 2: Run agents in parallel
       sendEvent("progress", { phase: "analyzing", message: "Ejecutando 3 agentes de análisis en paralelo..." });
       await db.update(manuscriptAudits).set({ status: "analyzing" }).where(eq(manuscriptAudits.id, auditId));
       
-      const reports = await runAllAgents(cacheResult.cacheId || "standard-mode");
+      const reports = await runAllAgents();
       
       // Find reports by type
       const continuityReport = reports.find(r => r.agentType === 'CONTINUITY');
@@ -10939,11 +10930,6 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
         overallScore,
         completedAt: new Date(),
       }).where(eq(manuscriptAudits.id, auditId));
-      
-      // Clean up cache (only in CACHE mode)
-      if (cacheResult.mode === 'CACHE' && cacheResult.cacheId) {
-        await deleteCache(cacheResult.cacheId);
-      }
       
       sendEvent("complete", {
         overallScore,
