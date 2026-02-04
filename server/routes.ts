@@ -4067,8 +4067,29 @@ ${series.seriesGuide.substring(0, 50000)}`;
       const conflictingChapter = existingChapters.find(c => c.chapterNumber === backup.chapterNumber);
       
       if (conflictingChapter) {
-        // If conflicting chapter exists, we need to handle it
-        // Option: Update the existing chapter with backup content
+        // SAFETY: Backup the conflicting chapter before overwriting
+        console.log(`[Routes] Creating backup of conflicting chapter ${conflictingChapter.id} before restore`);
+        await storage.createChapterBackup({
+          originalChapterId: conflictingChapter.id,
+          projectId: conflictingChapter.projectId,
+          chapterNumber: conflictingChapter.chapterNumber,
+          title: conflictingChapter.title,
+          content: conflictingChapter.content,
+          originalContent: conflictingChapter.originalContent,
+          wordCount: conflictingChapter.wordCount,
+          status: conflictingChapter.status,
+          summary: conflictingChapter.summary,
+          sceneBreakdown: conflictingChapter.sceneBreakdown,
+          editorFeedback: conflictingChapter.editorFeedback,
+          qualityScore: conflictingChapter.qualityScore,
+          operation: 'restore_overwrite',
+          operationDetails: JSON.stringify({
+            restoringBackupId: backupId,
+            timestamp: new Date().toISOString(),
+          }),
+        });
+
+        // Update the existing chapter with backup content
         await storage.updateChapter(conflictingChapter.id, {
           title: backup.title,
           content: backup.content,

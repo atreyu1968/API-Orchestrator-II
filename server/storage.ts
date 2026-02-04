@@ -67,6 +67,11 @@ export interface IStorage {
   getAllChapters(): Promise<Chapter[]>;
   updateChapter(id: number, data: Partial<Chapter>): Promise<Chapter | undefined>;
   deleteChapter(id: number): Promise<void>;
+  
+  createChapterBackup(data: InsertChapterBackup): Promise<ChapterBackup>;
+  getChapterBackupsByProject(projectId: number): Promise<ChapterBackup[]>;
+  getChapterBackup(id: number): Promise<ChapterBackup | undefined>;
+  markBackupRestored(id: number): Promise<void>;
 
   createWorldBible(data: InsertWorldBible): Promise<WorldBible>;
   getWorldBibleByProject(projectId: number): Promise<WorldBible | undefined>;
