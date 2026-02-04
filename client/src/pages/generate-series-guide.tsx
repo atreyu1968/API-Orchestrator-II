@@ -303,40 +303,6 @@ export default function GenerateSeriesGuidePage() {
 
   return (
     <div className="container mx-auto px-6 py-6 max-w-4xl">
-      {serverGenerationStatus?.isGenerating && (
-        <Card className="mb-6 border-orange-500/50 bg-orange-500/10">
-          <CardContent className="flex items-center justify-between py-4">
-            <div className="flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-orange-500" />
-              <div>
-                <p className="font-medium text-orange-600 dark:text-orange-400">
-                  Generación en curso: {serverGenerationStatus.activeGeneration?.type}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  "{serverGenerationStatus.activeGeneration?.title}"
-                </p>
-              </div>
-            </div>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => cancelMutation.mutate()}
-              disabled={cancelMutation.isPending}
-              data-testid="button-cancel-banner"
-            >
-              {cancelMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  <XCircle className="h-4 w-4 mr-1" />
-                  Cancelar
-                </>
-              )}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
-
       <div className="mb-6" data-testid="page-header">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-page-title">
@@ -447,6 +413,44 @@ export default function GenerateSeriesGuidePage() {
                 <XCircle className="h-4 w-4 mr-2" />
               )}
               Cancelar Generacion
+            </Button>
+          </CardContent>
+        </Card>
+      ) : serverGenerationStatus?.isGenerating ? (
+        <Card className="border-orange-500/50 bg-orange-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-orange-600 dark:text-orange-400" data-testid="text-server-generation-active">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              Generación en Curso
+            </CardTitle>
+            <CardDescription>
+              Espera a que termine o cancela la generación actual
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="bg-muted/50 p-4 rounded-lg">
+              <p className="font-medium text-lg">{serverGenerationStatus.activeGeneration?.type}</p>
+              <p className="text-xl mt-1">"{serverGenerationStatus.activeGeneration?.title}"</p>
+              {serverGenerationStatus.activeGeneration?.startedAt && (
+                <p className="text-sm text-muted-foreground mt-3">
+                  Iniciado: {new Date(serverGenerationStatus.activeGeneration.startedAt).toLocaleString()}
+                </p>
+              )}
+            </div>
+            
+            <Button
+              variant="destructive"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+              className="w-full"
+              data-testid="button-cancel-server-generation"
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Cancelar Generación
             </Button>
           </CardContent>
         </Card>
