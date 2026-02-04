@@ -9974,19 +9974,32 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
           
           const { seriesGuideGeneratorAgent } = await import("./agents/series-guide-generator");
           
-          console.log(`[SeriesGuideGenerator] Generating guide for series "${params.seriesTitle}"...`);
+          console.log(`[SeriesGuideGenerator] Starting phased generation for series "${params.seriesTitle}"...`);
           
-          // Generate the series guide
-          const guideResponse = await seriesGuideGeneratorAgent.generateSeriesGuide({
-            concept: params.concept,
-            seriesTitle: params.seriesTitle,
-            genre: params.genre,
-            tone: params.tone,
-            bookCount: params.bookCount,
-            workType: params.workType,
-            pseudonymName,
-            pseudonymStyleGuide,
-          });
+          // LitAgents 2.9.6: Generate using phased approach with cancellation check
+          const guideResponse = await seriesGuideGeneratorAgent.generateSeriesGuidePhased(
+            {
+              concept: params.concept,
+              seriesTitle: params.seriesTitle,
+              genre: params.genre,
+              tone: params.tone,
+              bookCount: params.bookCount,
+              workType: params.workType,
+              pseudonymName,
+              pseudonymStyleGuide,
+            },
+            (progress) => {
+              console.log(`[SeriesGuideGenerator] Progress: phase=${progress.phase}, volume=${progress.currentVolume || 0}/${progress.totalVolumes || 0}, completed=${progress.completedVolumes.length}`);
+            },
+            () => isGuideGenerationCancelled()
+          );
+          
+          // LitAgents 2.9.6: Check for cancellation or errors before proceeding
+          if (guideResponse.error) {
+            console.log(`[SeriesGuideGenerator] Generation stopped: ${guideResponse.error}`);
+            await releaseGenerationLock();
+            return;
+          }
           
           const guideContent = guideResponse.content;
           console.log(`[SeriesGuideGenerator] Guide generated (${guideContent.length} chars)`);
