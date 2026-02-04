@@ -180,8 +180,8 @@ export default function AuditorPage() {
   const startAuditMutation = useMutation({
     mutationFn: async () => {
       if (!currentProject?.id) throw new Error("No project selected");
-      const res = await apiRequest(`/api/projects/${currentProject.id}/start-audit`, "POST");
-      return res;
+      const res = await apiRequest("POST", `/api/projects/${currentProject.id}/start-audit`);
+      return res.json();
     },
     onSuccess: (data: any) => {
       setCurrentAuditId(data.auditId);
