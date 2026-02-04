@@ -108,11 +108,31 @@ function isStructuralIssue(issue: AuditIssue): boolean {
                         descriptionLower.includes('el mismo') ||
                         (descriptionLower.includes('primera') && descriptionLower.includes('segunda'));
   
+  const isDialogueFix = /fecha.*inconsistente|afirma.*sin embargo|'[^']+'.*pero|hace\s+\w+\s+semanas/i.test(issue.description);
+  
   return structuralPatterns.some(pattern => pattern.test(issue.description)) ||
     (descriptionLower.includes('capítulo') && 
      (descriptionLower.includes('idéntic') || descriptionLower.includes('duplic'))) ||
     (hasMultipleChapters && (descriptionLower.includes('repite') || descriptionLower.includes('similar'))) ||
-    hasRedundancy;
+    hasRedundancy ||
+    isDialogueFix;
+}
+
+export function isDialogueFixableIssue(issue: AuditIssue): boolean {
+  const dialoguePatterns = [
+    /fecha.*inconsistente/i,
+    /tiempo.*inconsistente/i,
+    /cronología.*inconsistente/i,
+    /afirma\s+que.*sin\s+embargo/i,
+    /dice\s+que.*pero/i,
+    /menciona.*contradice/i,
+    /'[^']+'\s*(para|pero|sin embargo)/i,
+    /"[^"]+"\s*(para|pero|sin embargo)/i,
+    /hace\s+(dos|tres|cuatro|cinco|\d+)\s+(semanas?|días?|meses?)/i,
+    /contraste\s+narrativo/i
+  ];
+  
+  return dialoguePatterns.some(p => p.test(issue.description));
 }
 
 export function isContinuityConflict(issue: AuditIssue): boolean {
@@ -404,6 +424,29 @@ function generateResolutionOptions(chapters: number[], description: string): Res
       type: 'rewrite',
       label: `Modificar para diferenciar`,
       description: `Modifica una de las interacciones para que sean claramente diferentes y no redundantes.`,
+      chaptersToMerge: chapters.length > 0 ? chapters : [0],
+      estimatedTokens: 2500
+    });
+    
+    return options;
+  }
+  
+  const isDialogueFix = /fecha.*inconsistente|afirma.*sin embargo|'[^']+'.*pero|hace\s+\w+\s+semanas/i.test(description);
+  if (isDialogueFix) {
+    options.push({
+      id: `fix-dialogue`,
+      type: 'rewrite',
+      label: `✨ RECOMENDADO: Corregir el diálogo`,
+      description: `Modifica el diálogo para que sea consistente con la cronología establecida. Ajusta la referencia temporal para que coincida con los eventos.`,
+      chaptersToMerge: chapters.length > 0 ? chapters : [0],
+      estimatedTokens: 2000
+    });
+    
+    options.push({
+      id: `add-clarification`,
+      type: 'rewrite',
+      label: `Añadir aclaración narrativa`,
+      description: `Mantiene el diálogo pero añade una aclaración del narrador que explique la discrepancia o corrija la percepción del lector.`,
       chaptersToMerge: chapters.length > 0 ? chapters : [0],
       estimatedTokens: 2500
     });
