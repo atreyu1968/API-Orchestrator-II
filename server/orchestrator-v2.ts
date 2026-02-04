@@ -947,12 +947,105 @@ Las siguientes tramas DEBEN ser avanzadas en este capítulo. Cada escena debe co
   }
 
   /**
-   * LitAgents 2.9.5: Build corrective instructions for Global Architect regeneration
+   * LitAgents 2.9.6: Extract main characters from extended guide
+   * Used to maintain character consistency between regeneration attempts
+   */
+  private extractCharactersFromExtendedGuide(extendedGuide?: string): Array<{ name: string; role: string; description: string }> {
+    if (!extendedGuide) return [];
+    
+    const characters: Array<{ name: string; role: string; description: string }> = [];
+    
+    // Pattern 1: Parse "## Personajes" sections with bullet/list items
+    // Matches: "## Personajes\n- Nombre: descripción" or "## Protagonistas\n* Nombre - descripción"
+    const sectionRegex = /##\s*(?:Personajes|Protagonistas?|Elenco|Characters)[^\n]*\n((?:[^\n#]*\n)*?)(?=##|$)/gi;
+    let sectionMatch;
+    
+    while ((sectionMatch = sectionRegex.exec(extendedGuide)) !== null) {
+      const sectionContent = sectionMatch[1];
+      // Guard against empty sections
+      if (!sectionContent || sectionContent.trim().length === 0) continue;
+      
+      // Parse bullet items: "- Name: description" or "* Name - description" or "- Name (role) description"
+      const bulletRegex = /^[\s]*[-*•]\s*\**([A-ZÁÉÍÓÚÑ][^:\n\-–*(]+?)\**\s*(?:\([^)]+\)\s*)?[:\-–]?\s*([^\n]*)/gim;
+      let bulletMatch;
+      
+      while ((bulletMatch = bulletRegex.exec(sectionContent)) !== null) {
+        const name = bulletMatch[1].trim().replace(/\*+/g, '');
+        const description = bulletMatch[2].trim().substring(0, 100);
+        
+        // Skip section headers
+        if (/^(personajes?|protagonistas?|antagonistas?|secundarios?|elenco)/i.test(name)) continue;
+        if (name.length < 2 || name.length > 80) continue;
+        
+        // Determine role from context
+        let role = 'supporting';
+        const sectionHeader = sectionMatch[0].toLowerCase();
+        if (/protagonista|principal/i.test(sectionHeader) || /protagonista/i.test(description)) role = 'protagonist';
+        else if (/antagonista|villano/i.test(sectionHeader) || /antagonista|villano/i.test(description)) role = 'antagonist';
+        
+        if (!characters.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+          characters.push({ name, role, description });
+        }
+      }
+    }
+    
+    // Pattern 2: Individual character entries "### Nombre del Personaje"
+    const charRegex = /###?\s*([A-ZÁÉÍÓÚÑ][^:\n]+?)(?:\s*[-–:]\s*|\s*\n)/gi;
+    let match;
+    
+    while ((match = charRegex.exec(extendedGuide)) !== null) {
+      const name = match[1].trim();
+      // Skip section headers
+      if (/^(personajes?|protagonistas?|antagonistas?|secundarios?|elenco|resumen|sinopsis|capítulo|acto|escena)/i.test(name)) continue;
+      if (name.length < 3 || name.length > 80) continue;
+      
+      // Try to determine role from context
+      const contextStart = Math.max(0, match.index - 50);
+      const contextEnd = Math.min(extendedGuide.length, match.index + match[0].length + 200);
+      const context = extendedGuide.substring(contextStart, contextEnd).toLowerCase();
+      
+      let role = 'supporting';
+      if (/protagonista|principal|héroe|heroína/i.test(context)) role = 'protagonist';
+      else if (/antagonista|villano|enemigo/i.test(context)) role = 'antagonist';
+      
+      // Get brief description (next 100 chars after name)
+      const descStart = match.index + match[0].length;
+      const description = extendedGuide.substring(descStart, descStart + 150).split('\n')[0].trim();
+      
+      // Avoid duplicates
+      if (!characters.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+        characters.push({ name, role, description: description.substring(0, 100) });
+      }
+    }
+    
+    // Pattern 3: Prose-style character mentions "X, un/una Y que..."
+    const premiseCharRegex = /([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){0,3}),?\s+(?:un|una|el|la)\s+([a-záéíóúñ\s]+?)\s+(?:que|quien|de)/gi;
+    while ((match = premiseCharRegex.exec(extendedGuide)) !== null) {
+      const name = match[1].trim();
+      const roleDesc = match[2].trim();
+      
+      if (name.length >= 3 && name.length <= 50 && !characters.some(c => c.name.toLowerCase() === name.toLowerCase())) {
+        characters.push({ 
+          name, 
+          role: /protagonista|héroe|heroína/i.test(roleDesc) ? 'protagonist' : 'supporting',
+          description: roleDesc.substring(0, 80)
+        });
+      }
+    }
+    
+    return characters.slice(0, 10); // Max 10 characters
+  }
+
+  /**
+   * LitAgents 2.9.6: Build corrective instructions for Global Architect regeneration
+   * Now includes character consistency requirements
    */
   private buildPlotCorrectionInstructions(
     criticalIssues: string[],
     warnings: string[],
-    attemptNumber: number
+    attemptNumber: number,
+    previousCharacters?: Array<{ name: string; role: string }>,
+    extendedGuideCharacters?: Array<{ name: string; role: string; description: string }>
   ): string {
     const severity = attemptNumber >= 2 ? '🔴 CRÍTICO' : '⚠️ IMPORTANTE';
     
@@ -964,6 +1057,27 @@ Las siguientes tramas DEBEN ser avanzadas en este capítulo. Cada escena debe co
 La estructura anterior fue RECHAZADA por problemas graves. DEBES corregir:
 
 `;
+
+    // LitAgents 2.9.6: Character consistency enforcement
+    const protagonists = previousCharacters?.filter(c => c.role === 'protagonist' || c.role === 'protagonista') || [];
+    const guideProtagonists = extendedGuideCharacters?.filter(c => c.role === 'protagonist') || [];
+    
+    if (protagonists.length > 0 || guideProtagonists.length > 0) {
+      instructions += `=== 🔒 PERSONAJES CANÓNICOS (NO CAMBIAR) ===\n`;
+      instructions += `OBLIGATORIO: Mantener EXACTAMENTE los mismos personajes principales:\n`;
+      
+      for (const char of protagonists) {
+        instructions += `- PROTAGONISTA: "${char.name}" (NO RENOMBRAR, NO REEMPLAZAR)\n`;
+      }
+      for (const char of guideProtagonists) {
+        if (!protagonists.some(p => p.name.toLowerCase() === char.name.toLowerCase())) {
+          instructions += `- PROTAGONISTA (de guía): "${char.name}" - ${char.description}\n`;
+        }
+      }
+      
+      instructions += `\n⚠️ PROHIBIDO: Inventar nuevos protagonistas o cambiar los existentes.\n`;
+      instructions += `El protagonista DEBE aparecer en el summary/key_event de cada capítulo donde interviene.\n\n`;
+    }
     
     if (criticalIssues.length > 0) {
       instructions += `=== PROBLEMAS CRÍTICOS (OBLIGATORIO RESOLVER) ===\n`;
@@ -988,6 +1102,7 @@ REQUISITOS PARA APROBAR:
 3. Cada capítulo DEBE avanzar algún hilo narrativo (no relleno)
 4. DEBE haber puntos de giro en 25%, 50% y 75% de la novela
 5. El clímax DEBE resolver TODAS las tramas principales
+6. El PROTAGONISTA debe aparecer explícitamente en al menos 30% de los capítulos
 
 Si no cumples estos requisitos, el proyecto será PAUSADO para revisión manual.
 `;
@@ -3903,7 +4018,61 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
       let outline: Array<{ chapter_num: number; title: string; summary: string; key_event: string; act?: number; emotional_arc?: string }>;
       let worldBible: { characters: any; rules: any };
       
-      if (existingWorldBible && existingWorldBible.plotOutline) {
+      // LitAgents 2.9.6: Check if chapters already exist - never regenerate structure if we have chapters
+      const existingChaptersCheck = await storage.getChaptersByProject(project.id);
+      const hasWrittenChapters = existingChaptersCheck.some(ch => ch.content && ch.content.length > 100);
+      
+      if (hasWrittenChapters && !existingWorldBible?.plotOutline) {
+        // Emergency: Chapters exist but no plot outline - reconstruct from chapters
+        console.log(`[OrchestratorV2] ⚠️ EMERGENCY: Chapters exist (${existingChaptersCheck.length}) but no plotOutline. Reconstructing from chapters...`);
+        
+        await storage.createActivityLog({
+          projectId: project.id,
+          level: "warn",
+          agentRole: "system",
+          message: `⚠️ Reconstruyendo estructura desde ${existingChaptersCheck.length} capítulos existentes (plotOutline faltante)`,
+        });
+        
+        // Build outline from existing chapters
+        outline = existingChaptersCheck.map(ch => ({
+          chapter_num: ch.chapterNumber,
+          title: ch.title || `Capítulo ${ch.chapterNumber}`,
+          summary: ch.summary || "",
+          key_event: "",
+        })).sort((a, b) => a.chapter_num - b.chapter_num);
+        
+        worldBible = {
+          characters: existingWorldBible?.characters || [],
+          rules: existingWorldBible?.worldRules || [],
+        };
+        
+        // LitAgents 2.9.6: Persist reconstructed outline to World Bible to avoid re-triggering
+        const reconstructedPlotOutline = {
+          chapterOutlines: outline.map(ch => ({
+            number: ch.chapter_num,
+            title: ch.title,
+            summary: ch.summary,
+            keyEvents: ch.key_event ? [ch.key_event] : [],
+          })),
+        };
+        
+        if (existingWorldBible) {
+          await storage.updateWorldBible(existingWorldBible.id, { plotOutline: reconstructedPlotOutline });
+          console.log(`[OrchestratorV2] ✅ Reconstructed plotOutline persisted to World Bible (${outline.length} chapters)`);
+        } else {
+          // Create minimal World Bible with reconstructed outline
+          await storage.createWorldBible({
+            projectId: project.id,
+            characters: [],
+            worldRules: [],
+            plotOutline: reconstructedPlotOutline,
+            timeline: [],
+          });
+          console.log(`[OrchestratorV2] ✅ Created new World Bible with reconstructed plotOutline (${outline.length} chapters)`);
+        }
+        
+        this.callbacks.onAgentStatus("global-architect", "completed", "Reconstructed from chapters");
+      } else if (existingWorldBible && existingWorldBible.plotOutline) {
         // Resuming - use existing outline and world bible
         console.log(`[OrchestratorV2] World Bible exists. Resuming chapter generation.`);
         this.callbacks.onAgentStatus("global-architect", "completed", "Using existing structure");
@@ -4052,10 +4221,19 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
             
             // Build correction instructions for next attempt
             if (architectureAttempt < MAX_ARCHITECTURE_ATTEMPTS) {
+              // LitAgents 2.9.6: Extract characters from previous attempt and extended guide
+              const previousCharacters = globalResult.parsed?.world_bible?.characters?.map((c: any) => ({
+                name: c.name || c.nombre,
+                role: c.role || c.rol
+              })) || [];
+              const extendedGuideCharacters = this.extractCharactersFromExtendedGuide(extendedGuideContent);
+              
               correctionInstructions = this.buildPlotCorrectionInstructions(
                 plotValidation.criticalIssues,
                 plotValidation.warnings,
-                architectureAttempt + 1
+                architectureAttempt + 1,
+                previousCharacters,
+                extendedGuideCharacters
               );
             }
           } else {

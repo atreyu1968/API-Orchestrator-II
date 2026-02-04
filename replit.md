@@ -1,11 +1,9 @@
 # LitAgents - Autonomous Literary Agent Orchestration System
 
 ## Overview
-
-LitAgents is a Node.js application designed for orchestrating autonomous AI literary agents to manage the entire novel-writing workflow, from initial plot planning to the production of a final, polished manuscript. It aims to provide a comprehensive solution for authoring and refining literary works, enhancing efficiency and quality through AI-driven processes. Key capabilities include orchestrating specialized AI agents, maintaining a persistent World Bible for consistency, real-time monitoring, automated refinement loops, and auto-recovery systems. The system supports importing and editing external manuscripts, advanced chapter manipulation, and an automatic pause and approval system for quality assurance. LitAgents 2.0 introduces a scene-based writing pipeline with surgical JSON patching for token efficiency and enhanced consistency checks, focusing on proactive quality prevention and robust error recovery.
+LitAgents is a Node.js application designed to orchestrate autonomous AI literary agents for managing the entire novel-writing workflow. It aims to provide a comprehensive solution for authoring and refining literary works, enhancing efficiency and quality through AI-driven processes. Key capabilities include orchestrating specialized AI agents, maintaining a persistent World Bible for consistency, real-time monitoring, automated refinement loops, and auto-recovery systems. The system supports importing and editing external manuscripts, advanced chapter manipulation, and an automatic pause and approval system for quality assurance. LitAgents focuses on a scene-based writing pipeline with surgical JSON patching for token efficiency, enhanced consistency checks, proactive quality prevention, and robust error recovery.
 
 ## User Preferences
-
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
@@ -29,8 +27,8 @@ Preferred communication style: Simple, everyday language.
 - **Schema**: Tables for projects, chapters, world Bibles, thought logs, agent statuses, series, continuity snapshots, imported manuscripts, plot threads, world entities, and consistency violations.
 
 ### AI Integration
-- **Default Provider**: DeepSeek (cost-efficient) for general tasks (`deepseek-chat` V3), final review (`deepseek-reasoner` R1), and creative tasks.
-- **Optional Provider**: Gemini for creative tasks (`gemini-3-pro-preview`) and analysis (`gemini-2.5-flash`).
+- **Default Provider**: DeepSeek (cost-efficient) for general tasks, final review, and creative tasks.
+- **Optional Provider**: Gemini for creative tasks and analysis.
 - **Performance Optimization**: Focus on V3 models for faster processing.
 - **Configuration**: `temperature: 1.0` for creative output.
 
@@ -39,58 +37,22 @@ Preferred communication style: Simple, everyday language.
 - **Production**: `esbuild` for server, Vite for client.
 
 ### Feature Specifications
-- **Optimized Pipeline**: Streamlined re-edit pipeline reducing token consumption and enhancing chapter management (expansion, reordering, header sync).
+- **Optimized Pipeline**: Streamlined re-edit pipeline reducing token consumption and enhancing chapter management.
 - **Automated Pause & Approval**: System pauses for user intervention after non-perfect evaluations; requires high score with no critical issues for project approval.
-- **Robust Recovery Systems**: Includes issue hash tracking, immediate cancellation, fast-track resume, server restart recovery, and generation token system to prevent parallel orchestrator executions.
-- **Translation Export Improvements**: Markdown exports strip artifacts, omit dividers, and use localized chapter labels.
+- **Robust Recovery Systems**: Includes issue hash tracking, immediate cancellation, fast-track resume, server restart recovery, and generation token system.
 - **Universal Consistency Module**: Prevents continuity violations by injecting constraints before writing and validating after each chapter, tracking entities, rules, and relationships.
 - **Anti-Repetition & Humanization**: Vocabulary tracking and explicit Ghostwriter instructions to prevent overused words, repetitive phrases, and AI cliches. Automatically regenerates truncated chapters.
-- **Physical Attribute Injection**: Ghostwriter now receives a "ATRIBUTOS FÍSICOS CANÓNICOS" section at the TOP of every scene prompt, listing eye color, hair, age, etc. for each character in the scene. This prevents the AI from inventing incorrect physical descriptions that later require correction.
-- **Full World Bible Injection**: Ghostwriter now receives comprehensive scene context from World Bible including: (1) Physical attributes of characters in scene, (2) Relationships between characters present, (3) Canonical location descriptions when matching scene setting, (4) World rules (magic/technology/era constraints), (5) Prohibited vocabulary. This prevents the AI from inventing details that contradict established canon.
-- **Death Tracking & Loop Prevention**: UniversalConsistency tracks character deaths to prevent resurrections. Loop detection system escalates recurring issues, with automatic scope expansion for persistent resurrection errors.
-- **Injury & Object Tracking**: Ghostwriter receives active injuries for characters in scene (limiting their actions), dead characters list (preventing resurrections), and established objects (Chekhov's Gun - preventing convenient new objects from appearing).
-- **Complete Context Injection**: Ghostwriter receives ALL available World Bible context for each scene: premise, timeline/era, character voices/speech patterns, character arcs/motivations/fears, central themes, literary motifs, sensory palette (colors/sounds/smells/textures), and continuity watchpoints.
-- **Series World Bible Propagation**: Carries forward accumulated world-building knowledge across multi-book series, extracting and injecting elements into Ghostwriter for continuity.
-- **Proactive Quality Prevention**: Enhanced vocabulary tracking, transition validation (SmartEditor penalizes abrupt scene changes), and Chekhov's Gun validation (SmartEditor penalizes objects used without prior establishment).
-- **LitAgents 2.9 (Log-Analysis Improvements)**: SmartEditor detects spatial/temporal transitions, impossible knowledge, age inconsistencies, and physical attribute changes with severe penalties (LOGIC = 4-6 max). UniversalConsistency tracks character ages (capitulo_edad_establecida) and PERSONAL_ITEM entities (rings, jewelry, watches). Escalated correction system with ultra-specific prompts on 4th retry. ChapterArchitect varies 3-5 scenes organically based on chapter complexity.
-- **LitAgents 2.9.1 (Proactive Error Prevention)**: Error history injection into Ghostwriter to avoid repeating past consistency violations. Pre-scene character validation warns if characters in scenePlan are not in World Bible. SmartEditor applies patches even when "approved" for stricter quality. Ghostwriter pre-validates scenes detecting truncation (missing punctuation, <150 words). Unified 15-cycle limit for all review flows. "Reiniciar Correcciones" button to reset revision cycle and retry from scratch.
-- **LitAgents 2.9.2 (Regression Rollback & Validation)**: Automatic chapter snapshot system stores content before corrections. If score drops by 2+ points between cycles, automatically rolls back affected chapters to pre-correction state and skips corrections that cycle. New "Canonical Elements" section in correction prompts explicitly lists physical traits, locations, timeline events, and objects that MUST NOT be modified. Post-correction validation detects potential regressions (changed eye colors, resurrected dead characters, removed locations) and logs warnings before saving.
-- **LitAgents 2.9.3 (Surgical-First Corrections)**: ALWAYS uses surgicalFix (parches quirúrgicos) FIRST for ALL issue types, even critical/major. fullRewrite only used as absolute last resort when patches fail completely. This prevents corrections from damaging chapters by rewriting too much content. Detailed correction visibility: cycle summary shows issue counts/severity/categories, per-chapter logs show top 3 problems before correction with severity and category.
-- **LitAgents 2.9.4 (Detect All, Then Fix Strategy)**: New two-phase correction strategy that prevents FinalReviewer inconsistency issues. Phase 1 (Detection): Run 3 consecutive reviews to detect ALL issues, deduplicated into a consolidated registry. Phase 2 (Verified Correction): Fix each issue one by one with immediate verification to ensure no new problems are introduced. If correction verification fails, retry up to 3 times with escalation. Issues that cannot be resolved are marked as "escalated" for manual review. Endpoint: `POST /api/projects/:id/detect-and-fix`. Parallel execution protection: Detect & Fix and Final Review cannot run simultaneously.
-- **LitAgents 2.9.5 (Zero-Cascade with Focused Verification)**: No CASCADE system - corrections never add new issues to the registry.
-  - **Focused Verification**: Uses a dedicated verification prompt that ONLY checks if the specific issue was fixed, not full chapter evaluation. This prevents pre-existing problems from being counted as "new issues caused by the correction".
-  - **Grave-Only Detection**: Only GRAVE problems are reported as new issues: contradictions, resurrections, canonical attribute changes. Minor style issues are ignored.
-  - **Simple Logic**: If original issue is fixed AND no grave new problems → ACCEPT. Otherwise → REJECT.
-  - **Progressive Escalation (NEW)**: When surgical patches fail repeatedly, the system escalates:
-    - Attempt 1: surgicalFix (small patch)
-    - Attempt 2: surgicalFix with expanded context prompt
-    - Attempt 3: Focused fullRewrite (paragraph-level) with STRICT validation:
-      - Injects FULL World Bible (physical attributes, dead characters, relationships, locations, timeline, rules, objects, injuries)
-      - Clear ALLOWED vs PROHIBITED actions in prompt
-      - Rejects if >15% of lines changed
-      - Rejects if length differs by >10%
-      - Full verification still applies to detect grave new issues
-    This allows fixing issues that patches can't handle while preventing fullRewrite from damaging the chapter.
-  - **Multi-Chapter Coordination**: When fixing an issue, the system detects related issues of the same type in other chapters and injects a coordination plan (warning-based heuristic) to ensure changes are consistent across the entire novel.
-  - **Specialized Prompts by Error Type**: Each error type now uses a tailored correction prompt:
-    - `physical_attribute`: Ultra-simple search/replace for eye color, hair, etc. (max 5 words)
-    - `lexical_repetition`: Synonym substitution preserving meaning (one word at a time)
-    - `timeline`: Minimal temporal reference adjustment (max 10 words)
-    - `narrative`: Slightly larger scope for plot coherence (max 30 words per patch)
-    - `generic`: Conservative fallback for unknown types
-  - **Plot Coherence Validation (STRICT MODE)**: Global Architect output is validated BEFORE chapter generation begins. ALL of the following are now CRITICAL issues that BLOCK generation and force regeneration (up to 3 attempts):
-    - ❌ TRAMA HUÉRFANA: Plot thread never appears in any chapter
-    - ❌ TRAMA DÉBIL: Plot thread only appears in 1 chapter (MUST appear in 3+)
-    - ❌ TRAMA SIN RESOLVER: Thread disappears before last 3 chapters without resolution
-    - ❌ PROTAGONISTA AUSENTE: Main character appears in <30% of chapters
-    - ❌ FALTA PUNTO DE GIRO ACTO 1: No turning point at ~25%
-    - ❌ FALTA PUNTO MEDIO: No crisis/revelation at ~50%
-    - ❌ FALTA CRISIS ACTO 2: No confrontation at ~75%
-    If still failing after 3 attempts, pauses project for manual review. This prevents structural issues that cannot be fixed during correction phase.
+- **Full Context Injection**: Ghostwriter receives comprehensive scene context from World Bible, including physical attributes, relationships, location descriptions, world rules, prohibited vocabulary, premise, timeline, character voices, arcs, motivations, themes, motifs, sensory palette, and continuity watchpoints.
+- **Series World Bible Propagation**: Carries forward accumulated world-building knowledge across multi-book series for continuity.
+- **Proactive Quality Prevention**: Enhanced vocabulary tracking, transition validation, and Chekhov's Gun validation.
+- **Surgical-First Corrections**: Prioritizes surgical patching for all issue types, using full rewrites only as a last resort. Provides detailed correction visibility.
+- **Detect All, Then Fix Strategy**: A two-phase correction strategy (Detection then Verified Correction) to prevent inconsistencies, with immediate verification and escalation for unresolved issues.
+- **Zero-Cascade with Focused Verification**: Corrections do not cascade; only grave new problems are reported. Employs progressive escalation for failed surgical patches, including focused full rewrites with strict validation. Supports multi-chapter coordination and specialized prompts by error type.
+- **Plot Coherence Validation**: Global Architect output is strictly validated BEFORE chapter generation to prevent structural issues such as orphaned plot threads, weak plot threads, unresolved plot threads, absent protagonists, and missing turning points.
+- **Character Consistency & Emergency Recovery**: Enforces character consistency during regeneration and provides emergency chapter recovery to reconstruct outlines from existing chapters if plotOutline is missing.
 - **Enhanced Error Recovery**: All orchestrator errors result in a "paused" status for easy resume, preserving state and providing activity logs with context.
-- **Death Tracking & Loop Prevention**: UniversalConsistency tracks character deaths to prevent resurrections. Loop detection system escalates recurring issues, with automatic scope expansion for persistent resurrection errors.
-- **Structural Issue Detection**: Identifies and auto-resolves structural issues (e.g., chapter reordering, renaming) to prevent infinite rewrite loops, notifying the user for manual intervention.
-- **Re-editor (Development Editor)**: Transforms Re-editor into a Development Editor with forensic consistency audits and commercial viability analysis (BetaReaderAgent). Features surgical fix optimization to minimize token consumption.
+- **Structural Issue Detection**: Identifies and auto-resolves structural issues to prevent infinite rewrite loops.
+- **Re-editor**: Functions as a Development Editor with forensic consistency audits and commercial viability analysis, using surgical fix optimization.
 
 ### LitAgents 2.0 (Scene-Based Pipeline)
 - **Architecture**: Scene-based writing pipeline optimized for DeepSeek AI models.
