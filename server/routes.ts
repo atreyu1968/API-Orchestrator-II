@@ -55,6 +55,22 @@ const activeManuscriptAnalysis = new Map<number, AbortController>();
 // Also keep in-memory cache for faster checks
 let activeGuideGenerationCache: { type: string; title: string; startedAt: Date } | null = null;
 
+// LitAgents 2.9.6: Track cancellation requests for guide generation
+let guideGenerationCancelled = false;
+
+function cancelGuideGeneration(): void {
+  guideGenerationCancelled = true;
+  console.log("[GenerationLock] Guide generation cancellation requested");
+}
+
+function isGuideGenerationCancelled(): boolean {
+  return guideGenerationCancelled;
+}
+
+function resetGuideGenerationCancellation(): void {
+  guideGenerationCancelled = false;
+}
+
 async function acquireGenerationLock(type: string, title: string): Promise<boolean> {
   // Check if there's an active lock in DB
   const activeLocks = await db.select()
@@ -9857,8 +9873,25 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       isGenerating: !!activeGen,
       activeGeneration: activeGen,
       message: activeGen 
-        ? `Generación en curso: ${activeGen.type} "${activeGen.title}" (iniciado: ${activeGen.startedAt.toISOString()})`
-        : "No hay generación en curso"
+        ? `Generacion en curso: ${activeGen.type} "${activeGen.title}" (iniciado: ${activeGen.startedAt.toISOString()})`
+        : "No hay generacion en curso"
+    });
+  });
+
+  // LitAgents 2.9.6: Cancel guide generation
+  app.post("/api/cancel-guide-generation", async (req: Request, res: Response) => {
+    const activeGen = await getActiveGeneration();
+    if (!activeGen) {
+      return res.status(404).json({ error: "No hay generacion de guia en curso" });
+    }
+    
+    cancelGuideGeneration();
+    await releaseGenerationLock();
+    
+    console.log(`[GenerationLock] Guide generation cancelled: ${activeGen.type} "${activeGen.title}"`);
+    res.json({ 
+      success: true, 
+      message: `Generacion de "${activeGen.title}" cancelada` 
     });
   });
 
@@ -9936,6 +9969,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       // BACKGROUND GENERATION - runs after response is sent
       setImmediate(async () => {
         try {
+          // LitAgents 2.9.6: Reset cancellation flag at start
+          resetGuideGenerationCancellation();
+          
           const { seriesGuideGeneratorAgent } = await import("./agents/series-guide-generator");
           
           console.log(`[SeriesGuideGenerator] Generating guide for series "${params.seriesTitle}"...`);
@@ -10048,6 +10084,12 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
               const generatedBooks: Array<{title: string, projectId: number}> = [];
               
               for (const volume of volumes) {
+                // LitAgents 2.9.6: Check for cancellation before each volume
+                if (isGuideGenerationCancelled()) {
+                  console.log(`[SeriesGuideGenerator] Generation cancelled by user after ${generatedBooks.length} volumes`);
+                  break;
+                }
+                
                 try {
                   console.log(`[SeriesGuideGenerator] Generating guide for Volume ${volume.number}: "${volume.title}"...`);
                   

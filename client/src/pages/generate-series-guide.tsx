@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Library, FileText, CheckCircle, BookMarked, Save } from "lucide-react";
+import { Loader2, Library, FileText, CheckCircle, BookMarked, Save, XCircle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const FORM_STORAGE_KEY = "series-guide-form-draft";
@@ -163,6 +163,28 @@ export default function GenerateSeriesGuidePage() {
 
   const { data: pseudonyms = [] } = useQuery<Pseudonym[]>({
     queryKey: ["/api/pseudonyms"],
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/cancel-guide-generation");
+      return response.json();
+    },
+    onSuccess: () => {
+      localStorage.removeItem(GENERATION_STATUS_KEY);
+      setGenerationStatus(null);
+      toast({
+        title: "Generacion cancelada",
+        description: "La generacion de la guia fue cancelada",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
   });
 
   const generateMutation = useMutation({
@@ -363,11 +385,26 @@ export default function GenerateSeriesGuidePage() {
                 Puedes cambiar de pantalla, el progreso se mantendrá.
                 {generationStatus.autoGenerateBookGuides && (
                   <span className="block mt-1">
-                    La generación de {generationStatus.bookCount} guías puede tomar varios minutos.
+                    La generacion de {generationStatus.bookCount} guías puede tomar varios minutos.
                   </span>
                 )}
               </p>
             </div>
+            
+            <Button
+              variant="destructive"
+              onClick={() => cancelMutation.mutate()}
+              disabled={cancelMutation.isPending}
+              className="w-full"
+              data-testid="button-cancel-generation"
+            >
+              {cancelMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <XCircle className="h-4 w-4 mr-2" />
+              )}
+              Cancelar Generacion
+            </Button>
           </CardContent>
         </Card>
       ) : !generatedGuide ? (
