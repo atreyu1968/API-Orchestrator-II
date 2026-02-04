@@ -15,7 +15,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, ExternalLink, Loader2, BookOpen, Crosshair } from "lucide-react";
+import { Play, FileText, Clock, CheckCircle, Download, Archive, Copy, Trash2, ClipboardCheck, RefreshCw, Ban, CheckCheck, Plus, Upload, Database, Info, ExternalLink, Loader2, BookOpen, Crosshair, Merge } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useProject } from "@/lib/project-context";
 import { Link } from "wouter";
@@ -914,6 +914,17 @@ export default function Dashboard() {
                       Escena {sceneProgress.sceneNumber}/{sceneProgress.totalScenes} - Cap. {sceneProgress.chapterNumber}
                     </Badge>
                   )}
+                  {chapters && chapters.filter(c => c.chapterNumber >= 0 && c.chapterNumber < 998).length >= 2 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowMergeChaptersDialog(true)}
+                      data-testid="button-merge-chapters-global"
+                    >
+                      <Merge className="h-4 w-4 mr-2" />
+                      Fusionar Capítulos
+                    </Button>
+                  )}
                   {chaptersBeingCorrected && chaptersBeingCorrected.chapterNumbers.length > 0 && (
                     <Badge variant="outline" className="animate-pulse border-orange-500 text-orange-600 dark:text-orange-400" data-testid="badge-chapters-correcting">
                       Corrigiendo Cap. {chaptersBeingCorrected.chapterNumbers.join(', ')} (Ciclo {chaptersBeingCorrected.revisionCycle})
@@ -1017,16 +1028,6 @@ export default function Dashboard() {
                         <Download className="h-4 w-4 mr-2" />
                         Exportar Word
                       </Button>
-                      {chapters && chapters.filter(c => c.chapterNumber > 0 && c.chapterNumber < 998).length >= 2 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setShowMergeChaptersDialog(true)}
-                          data-testid="button-merge-chapters-manuscript"
-                        >
-                          Fusionar
-                        </Button>
-                      )}
                     </>
                   )}
                 </div>

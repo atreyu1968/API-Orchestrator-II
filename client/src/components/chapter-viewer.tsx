@@ -416,7 +416,13 @@ export function ChapterViewer({ chapter, projectId }: ChapterViewerProps) {
               ref={textareaRef}
               value={editedContent}
               onChange={(e) => setEditedContent(e.target.value)}
-              className="min-h-[500px] font-serif text-base leading-7 resize-none"
+              className="min-h-[500px] font-serif text-base leading-8 resize-none whitespace-pre-wrap"
+              style={{ 
+                lineHeight: '2rem',
+                paddingTop: '1rem',
+                paddingBottom: '1rem',
+              }}
+              placeholder="Escribe el contenido del capítulo aquí. Usa doble salto de línea para separar párrafos."
               data-testid="textarea-edit-chapter"
             />
           ) : (
