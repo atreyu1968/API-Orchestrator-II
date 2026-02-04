@@ -11234,6 +11234,7 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
   // Start correction process from audit
   app.post("/api/audits/:id/start-correction", async (req: Request, res: Response) => {
     const auditId = parseInt(req.params.id);
+    console.log(`[DeepSeek Corrector] Starting correction for audit ${auditId}`);
     
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -11241,23 +11242,28 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
     res.setHeader('X-Accel-Buffering', 'no');
 
     const sendEvent = (event: string, data: any) => {
+      console.log(`[DeepSeek Corrector] Sending event: ${event}`, data);
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     };
 
     try {
+      console.log(`[DeepSeek Corrector] Importing deepseek-corrector module...`);
       const { startCorrectionProcess } = await import('./deepseek-corrector');
+      console.log(`[DeepSeek Corrector] Module imported, starting process...`);
       
       const result = await startCorrectionProcess(auditId, (progress) => {
         sendEvent('progress', progress);
       });
 
+      console.log(`[DeepSeek Corrector] Process finished:`, result);
       if (result.success) {
         sendEvent('completed', { manuscriptId: result.manuscriptId });
       } else {
         sendEvent('error', { message: result.error });
       }
     } catch (error: any) {
-      sendEvent('error', { message: error.message });
+      console.error(`[DeepSeek Corrector] Error:`, error);
+      sendEvent('error', { message: error.message || 'Error desconocido en corrección' });
     }
 
     res.end();
