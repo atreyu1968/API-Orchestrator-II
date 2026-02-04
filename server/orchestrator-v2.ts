@@ -5257,34 +5257,22 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         await this.runSeriesThreadFixer(project);
       }
 
-      // After all chapters are written, check if we need to run FinalReviewer
-      // Get fresh project data to check current score
-      const freshProject = await storage.getProject(project.id);
-      const currentScore = freshProject?.finalScore || 0;
+      // After all chapters are written, mark as completed WITHOUT auto-correction
+      // v2.9.6: Per user request, do NOT run Detect & Fix or FinalReviewer automatically
+      // The user will manually trigger corrections if needed
+      console.log(`[OrchestratorV2] Novel generation complete. Marking as completed WITHOUT auto-correction.`);
       
-      if (currentScore >= 9) {
-        // Already has a passing score, mark as completed
-        console.log(`[OrchestratorV2] Project already has score ${currentScore}/10, marking as completed`);
-        await this.extractSeriesWorldBibleOnComplete(project.id);
-        await storage.updateProject(project.id, { status: "completed" });
-        this.callbacks.onProjectComplete();
-      } else {
-        // Need to run FinalReviewer to get/improve score
-        // CRITICAL: Set status to final_review_in_progress to prevent auto-recovery from interrupting
-        // LitAgents 2.9.4: Check global correction system preference
-        const getCorrectionSystem = (global as any).getCorrectionSystem;
-        const correctionSystem = getCorrectionSystem ? getCorrectionSystem() : 'detect-fix';
-        
-        if (correctionSystem === 'detect-fix') {
-          console.log(`[OrchestratorV2] Project has score ${currentScore}/10 (< 9), running Detect & Fix (v2.9.4)...`);
-          await storage.updateProject(project.id, { status: "final_review_in_progress" });
-          await this.detectAndFixStrategy(project);
-        } else {
-          console.log(`[OrchestratorV2] Project has score ${currentScore}/10 (< 9), running Legacy FinalReviewer...`);
-          await storage.updateProject(project.id, { status: "final_review_in_progress" });
-          await this.runFinalReviewOnly(project, 15);
-        }
-      }
+      await this.extractSeriesWorldBibleOnComplete(project.id);
+      await storage.updateProject(project.id, { status: "completed" });
+      
+      await storage.createActivityLog({
+        projectId: project.id,
+        level: "success",
+        message: `✅ Manuscrito completado. Puedes ejecutar "Detect & Fix" manualmente si deseas revisar y corregir.`,
+        agentRole: "orchestrator",
+      });
+      
+      this.callbacks.onProjectComplete();
 
     } catch (error) {
       console.error(`[OrchestratorV2] Error:`, error);
