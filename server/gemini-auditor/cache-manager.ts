@@ -7,7 +7,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GoogleAICacheManager, CachedContent } from "@google/generative-ai/server";
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY!;
-const MODEL_NAME = "models/gemini-1.5-pro-002";
+const MODEL_NAME = "models/gemini-1.5-flash-001";
 const CACHE_TTL_SECONDS = 3600; // 1 hour
 
 export interface CacheResult {
