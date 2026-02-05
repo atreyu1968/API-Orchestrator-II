@@ -4877,7 +4877,20 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
 
         // 2b: Ghostwriter - Write scene by scene
         let fullChapterText = "";
+        
+        // LitAgents 2.9.9: Initialize lastContext with end of previous chapter for seamless transitions
         let lastContext = "";
+        if (chapterNumber > 1) {
+          const allChapters = await storage.getChaptersByProject(project.id);
+          const prevChapter = allChapters.find(c => c.chapterNumber === chapterNumber - 1);
+          if (prevChapter?.content) {
+            const prevContent = prevChapter.content;
+            // Get last ~1200 chars (approx. 2-3 paragraphs) of previous chapter
+            const lastParagraphs = prevContent.slice(-1200);
+            lastContext = `[FINAL DEL CAPÍTULO ${chapterNumber - 1} - Tu texto debe continuar desde aquí con transición natural]\n${lastParagraphs}`;
+            console.log(`[OrchestratorV2] Loaded ${lastParagraphs.length} chars from end of Chapter ${chapterNumber - 1} for seamless transition`);
+          }
+        }
 
         // LitAgents 2.2: Get recent chapters text for vocabulary anti-repetition
         const previousChaptersText = await this.getRecentChaptersText(project.id, chapterNumber, 2);

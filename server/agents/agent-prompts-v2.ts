@@ -1176,6 +1176,17 @@ ${worldBibleSection}
     5. Usa guion largo (—) para diálogos en español.
     6. PROHIBIDO: usar clichés de IA como "crucial", "fascinante", "torbellino de emociones".
 ${prohibitedVocab ? `    7. VOCABULARIO PROHIBIDO (NO USAR): ${prohibitedVocab}` : ''}
+    
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ 🔗 TRANSICIONES ENTRE CAPÍTULOS (v2.9.9)                         │
+    └──────────────────────────────────────────────────────────────────┘
+    Si el "CONTEXTO INMEDIATO" muestra el FINAL DEL CAPÍTULO ANTERIOR:
+    - Tu apertura DEBE conectar naturalmente con ese cierre
+    - Si hay cambio de ubicación/tiempo: ORIENTA al lector sutilmente
+    - Usa técnicas de transición: paso del tiempo, reflexión breve, 
+      descripción sensorial del nuevo entorno, acción continua
+    - NO saltes bruscamente a una nueva escena sin conexión
+    - Evita clichés: "Mientras tanto", "Al día siguiente", "En otro lugar"
 
     ╔══════════════════════════════════════════════════════════════════╗
     ║ ERRORES FATALES - TOLERANCIA CERO (REESCRITURA AUTOMÁTICA)      ║
