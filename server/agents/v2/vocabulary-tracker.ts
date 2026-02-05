@@ -42,8 +42,9 @@ function normalizeText(text: string): string {
     .toLowerCase();
 }
 
-// AI cliche patterns to detect
+// AI cliche patterns to detect - LitAgents 2.9.9+ expanded list
 const AI_CLICHES = [
+  // Classic AI clichés
   /torbellino de emociones?/i,
   /el peso (de .+)? sobre sus hombros/i,
   /silencio (era )?ensordecedor/i,
@@ -65,7 +66,37 @@ const AI_CLICHES = [
   /l[aá]grimas rodaron por sus mejillas/i,
   /apret[oó] los pu[nñ]os/i,
   /la sangre se le hel[oó]/i,
-  /sinti[oó] un vac[ií]o/i
+  /sinti[oó] un vac[ií]o/i,
+  // New expressions to avoid (v2.9.9+)
+  /no pudo evitar (pensar|sentir|notar)/i,
+  /algo en su interior/i,
+  /antes de que pudiera reaccionar/i,
+  /todo cambi[oó] en un instante/i,
+  /una oleada de .+ lo\/la inund[oó]/i,
+  /sin poder evitarlo/i,
+  /con el coraz[oó]n en un pu[nñ]o/i,
+  /un mar de dudas/i,
+  /el aire se volvi[oó] denso/i,
+  /como por arte de magia/i,
+  /justo a tiempo/i,
+  /en el momento preciso/i,
+  /una extra[nñ]a sensaci[oó]n/i,
+  /algo no cuadraba/i,
+  /un presentimiento/i,
+  /su instinto le dec[ií]a/i,
+  /la respuesta lleg[oó] de improviso/i,
+  /como si hubiera le[ií]do su mente/i,
+  /todo encaj[oó] de repente/i,
+  /las piezas del puzzle/i,
+  /un escalofrío le recorri[oó]/i,
+  /se qued[oó] sin palabras/i,
+  /el silencio lo\/la dec[ií]a todo/i,
+  /sus miradas se cruzaron/i,
+  /una tensi[oó]n palpable/i,
+  /el ambiente se enrareci[oó]/i,
+  /algo indefinible/i,
+  /por alguna raz[oó]n/i,
+  /sin saber por qu[eé]/i
 ];
 
 export class VocabularyTracker {

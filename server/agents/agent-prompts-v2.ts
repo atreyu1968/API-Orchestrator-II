@@ -1133,6 +1133,36 @@ ${fullObjectIndex}
     ⚠️ USA esta información EXACTAMENTE. NO inventes detalles que contradigan lo anterior.
     ⚠️ CONSULTA el índice completo antes de mencionar cualquier personaje, lugar u objeto.
 
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ 🔒 VERIFICACIÓN OBLIGATORIA DE PERSONAJES SECUNDARIOS (v2.9.9+) │
+    └──────────────────────────────────────────────────────────────────┘
+    Antes de escribir CUALQUIER personaje que no sea el protagonista:
+    1. BUSCA su nombre EXACTO en el índice de personajes arriba
+    2. VERIFICA sus atributos físicos (ojos, cabello, edad) - NO inventes otros
+    3. CONFIRMA su relación establecida con otros personajes
+    4. USA su voz característica si está definida
+    
+    ERRORES COMUNES A EVITAR:
+    ❌ Cambiar "María" por "Mari" o "Mariela" sin autorización
+    ❌ Describir ojos azules cuando la Biblia dice marrones
+    ❌ Inventar parentesco o relaciones no establecidas
+    ❌ Dar habilidades que no están en el backstory del personaje
+
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ ⏰ VERIFICACIÓN CRONOLÓGICA OBLIGATORIA (v2.9.9+)               │
+    └──────────────────────────────────────────────────────────────────┘
+    La cronología temporal es SAGRADA e INMUTABLE:
+    1. CONSULTA el contexto temporal arriba antes de usar fechas
+    2. Las referencias temporales ("hace X días", "ayer") DEBEN cuadrar
+    3. Si un evento ocurrió el "día 5", no puede mencionarse el "día 3"
+    4. Los flashbacks deben ubicarse correctamente en la línea temporal
+    
+    ERRORES COMUNES A EVITAR:
+    ❌ "Hace una semana" cuando solo han pasado 2 días en la trama
+    ❌ Personajes recordando eventos que aún no han ocurrido
+    ❌ Confundir el orden de eventos entre capítulos
+    ❌ Anacronismos tecnológicos (smartphones en época sin ellos)
+
 `;
     }
     
