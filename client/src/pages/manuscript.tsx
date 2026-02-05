@@ -11,11 +11,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Type } from "lucide-react";
+import { Download, BookOpen, MessageSquare, PenTool, ChevronDown, Wand2, Loader2, Type, ShieldCheck } from "lucide-react";
 import { useProject } from "@/lib/project-context";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { Project, Chapter } from "@shared/schema";
+
+interface CorrectedManuscript {
+  id: number;
+  projectId: number;
+  status: 'pending' | 'correcting' | 'approved' | 'finalized';
+  correctedChapters: any;
+}
 
 function sortChaptersForDisplay<T extends { chapterNumber: number }>(chapters: T[]): T[] {
   return [...chapters].sort((a, b) => {
@@ -128,6 +135,16 @@ export default function ManuscriptPage() {
     enabled: !!currentProject?.id,
   });
 
+  // LitAgents 2.9.9: Check for approved corrected manuscript
+  const { data: correctedManuscripts = [] } = useQuery<CorrectedManuscript[]>({
+    queryKey: ['/api/corrected-manuscripts'],
+    enabled: !!currentProject?.id,
+  });
+  
+  const approvedManuscript = correctedManuscripts.find(
+    m => m.projectId === currentProject?.id && (m.status === 'approved' || m.status === 'finalized')
+  );
+
   const handleDownload = () => {
     if (!currentProject || chapters.length === 0) return;
 
@@ -238,6 +255,12 @@ export default function ManuscriptPage() {
           <div className="flex items-center gap-3 mt-2 flex-wrap">
             <Badge variant="secondary">{currentProject.genre}</Badge>
             <Badge variant="outline">{currentProject.tone}</Badge>
+            {approvedManuscript && (
+              <Badge variant="default" className="bg-green-600 hover:bg-green-700 text-white">
+                <ShieldCheck className="h-3 w-3 mr-1" />
+                Auditado y Aprobado
+              </Badge>
+            )}
             <span className="text-sm text-muted-foreground">
               {completedChapters.length}/{currentProject.chapterCount} capítulos
             </span>
@@ -306,12 +329,18 @@ export default function ManuscriptPage() {
           </Button>
           <Button 
             variant="outline"
-            onClick={handleDownload}
+            onClick={() => {
+              if (approvedManuscript) {
+                window.open(`/api/corrected-manuscripts/${approvedManuscript.id}/download`, '_blank');
+              } else {
+                handleDownload();
+              }
+            }}
             disabled={completedChapters.length === 0}
             data-testid="button-download-manuscript"
           >
             <Download className="h-4 w-4 mr-2" />
-            Descargar MD
+            {approvedManuscript ? 'Descargar MD (Corregido)' : 'Descargar MD'}
           </Button>
           {currentProject.status === "completed" && (
             <Button
