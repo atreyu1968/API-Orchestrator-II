@@ -2075,6 +2075,94 @@ export async function startCorrectionProcess(
         }
       }
 
+      const issueOcurrencias = (issue as any).ocurrencias as Array<{capitulo: number; frase_exacta: string}> | undefined;
+      
+      if (issueOcurrencias && issueOcurrencias.length > 0) {
+        console.log(`[DeepSeek] Issue tiene ${issueOcurrencias.length} ocurrencias pre-identificadas`);
+        
+        onProgress?.({
+          phase: 'analyzing',
+          current: i + 1,
+          total: allIssues.length,
+          message: `Procesando ${issueOcurrencias.length} ocurrencias identificadas por la auditoría...`
+        });
+        
+        let foundCount = 0;
+        for (let j = 0; j < issueOcurrencias.length; j++) {
+          const occ = issueOcurrencias[j];
+          const chapterRef = occ.capitulo === 0 ? 'prólogo' as const : occ.capitulo;
+          const chapterData = extractChapterContent2(correctedContent, chapterRef);
+          
+          if (chapterData && occ.frase_exacta) {
+            console.log(`[DeepSeek Ocurrencia] Cap ${occ.capitulo}: buscando "${occ.frase_exacta.substring(0, 50)}..."`);
+            
+            const phraseIndex = chapterData.content.indexOf(occ.frase_exacta);
+            let sentence = occ.frase_exacta;
+            let context = '';
+            
+            if (phraseIndex !== -1) {
+              const contextStart = Math.max(0, phraseIndex - 200);
+              const contextEnd = Math.min(chapterData.content.length, phraseIndex + occ.frase_exacta.length + 200);
+              context = chapterData.content.substring(contextStart, contextEnd);
+            } else {
+              const lines = chapterData.content.split('\n');
+              for (const line of lines) {
+                if (line.toLowerCase().includes(occ.frase_exacta.toLowerCase().substring(0, 30))) {
+                  sentence = line.trim();
+                  const idx = chapterData.content.indexOf(line);
+                  context = chapterData.content.substring(Math.max(0, idx - 200), Math.min(chapterData.content.length, idx + line.length + 200));
+                  break;
+                }
+              }
+            }
+            
+            onProgress?.({
+              phase: 'correcting',
+              current: i + 1,
+              total: allIssues.length,
+              message: `Corrigiendo ocurrencia ${j + 1}/${issueOcurrencias.length} en ${occ.capitulo === 0 ? 'Prólogo' : 'Cap. ' + occ.capitulo}...`
+            });
+            
+            const alternative = await generateVariedAlternative(
+              sentence,
+              context,
+              occ.frase_exacta,
+              issue.description,
+              chapterRef,
+              j
+            );
+            
+            const correctionRecord: CorrectionRecord = {
+              id: `correction-${Date.now()}-${i}-occ-${j}`,
+              issueId: `issue-${i}`,
+              location: occ.capitulo === 0 ? 'Prólogo' : `Capítulo ${occ.capitulo}`,
+              chapterNumber: occ.capitulo,
+              originalText: sentence,
+              correctedText: alternative,
+              instruction: `[OCURRENCIA-AUDITORÍA] ${issue.description}`,
+              severity: issue.severity,
+              status: alternative !== sentence ? 'pending' : 'rejected',
+              diffStats: calculateDiffStats(sentence, alternative),
+              createdAt: new Date().toISOString()
+            };
+            
+            pendingCorrections.push(correctionRecord);
+            
+            if (alternative !== sentence) {
+              successCount++;
+              foundCount++;
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 400));
+          }
+        }
+        
+        totalOccurrences += Math.max(foundCount, 1);
+        if (foundCount > 0) {
+          continue;
+        }
+      }
+
       console.log(`[DeepSeek] Checking multi-chapter for location: "${issue.location.substring(0, 80)}..."`);
       const hasMultiChapter = hasExplicitChapterList(issue.location);
       console.log(`[DeepSeek] hasExplicitChapterList: ${hasMultiChapter}`);

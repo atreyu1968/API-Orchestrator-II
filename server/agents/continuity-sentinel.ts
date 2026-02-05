@@ -13,11 +13,17 @@ interface ContinuitySentinelInput {
   previousCheckpointIssues?: string[];
 }
 
+export interface ContinuityOccurrence {
+  capitulo: number;
+  frase_exacta: string;
+}
+
 export interface ContinuityIssue {
   tipo: "timeline" | "ubicacion" | "estado_personaje" | "objeto_perdido" | "muerte_resucitada";
   capitulos_afectados: number[];
   descripcion: string;
   evidencia_textual: string;
+  ocurrencias?: ContinuityOccurrence[];
   severidad: "critica" | "mayor" | "menor";
   elementos_a_preservar: string;
   fix_sugerido: string;
@@ -95,6 +101,9 @@ APROBACIÓN:
 SALIDA OBLIGATORIA (JSON)
 ═══════════════════════════════════════════════════════════════════
 
+IMPORTANTE: Para cada capítulo afectado, DEBES incluir la FRASE EXACTA del manuscrito en "ocurrencias".
+Esto permite corrección automática. Sin la frase exacta, el problema no puede corregirse.
+
 {
   "checkpoint_aprobado": boolean,
   "puntuacion": (1-10),
@@ -105,6 +114,10 @@ SALIDA OBLIGATORIA (JSON)
       "capitulos_afectados": [5, 6],
       "descripcion": "Elena termina en el aeropuerto (cap 5) pero aparece en su oficina sin transición (cap 6)",
       "evidencia_textual": "Cap 5: 'Elena atravesó las puertas del aeropuerto...' / Cap 6: 'Desde su escritorio, Elena observaba...'",
+      "ocurrencias": [
+        {"capitulo": 5, "frase_exacta": "Elena atravesó las puertas del aeropuerto"},
+        {"capitulo": 6, "frase_exacta": "Desde su escritorio, Elena observaba"}
+      ],
       "severidad": "mayor",
       "elementos_a_preservar": "El resto del capítulo 6 está perfecto. Solo modificar las primeras 2-3 líneas para añadir la transición.",
       "fix_sugerido": "SOLO añadir 1-2 oraciones al inicio del cap 6 mencionando el viaje de regreso. Ej: 'Tras el vuelo de regreso, Elena se dejó caer en su silla de oficina.' El resto del capítulo permanece INTACTO."

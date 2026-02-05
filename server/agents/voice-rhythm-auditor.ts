@@ -14,11 +14,17 @@ interface VoiceRhythmAuditorInput {
   expectedPOV?: string;
 }
 
+export interface VoiceRhythmOccurrence {
+  capitulo: number;
+  frase_exacta: string;
+}
+
 export interface VoiceRhythmIssue {
   tipo: "deriva_tonal" | "pov_inconsistente" | "pacing_irregular" | "voz_narrativa" | "registro_linguistico";
   capitulos_afectados: number[];
   descripcion: string;
   evidencia_textual: string;
+  ocurrencias?: VoiceRhythmOccurrence[];
   severidad: "mayor" | "menor";
   elementos_a_preservar: string;
   fix_sugerido: string;
@@ -95,6 +101,9 @@ APROBACIÓN (ESTRICTA):
 SALIDA OBLIGATORIA (JSON)
 ═══════════════════════════════════════════════════════════════════
 
+IMPORTANTE: Para cada capítulo afectado, DEBES incluir la FRASE EXACTA del manuscrito en "ocurrencias".
+Cuando hay MÚLTIPLES capítulos con el mismo problema, cada uno necesita su propia entrada.
+
 {
   "tranche_aprobado": boolean,
   "puntuacion_voz": (1-10),
@@ -107,6 +116,9 @@ SALIDA OBLIGATORIA (JSON)
       "capitulos_afectados": [7],
       "descripcion": "El capítulo 7 adopta un tono humorístico que contrasta con el thriller oscuro del resto",
       "evidencia_textual": "'—Vaya, qué oportuno —rio Pedro, ajustándose la corbata con gesto teatral.'",
+      "ocurrencias": [
+        {"capitulo": 7, "frase_exacta": "—Vaya, qué oportuno —rio Pedro, ajustándose la corbata con gesto teatral."}
+      ],
       "severidad": "mayor",
       "elementos_a_preservar": "La estructura del diálogo está bien. La información que se revela es correcta. Solo cambiar el TONO de las líneas marcadas.",
       "fix_sugerido": "SOLO modificar la línea citada. Cambiar '—rio Pedro, ajustándose la corbata con gesto teatral' a algo más tenso como '—murmuró Pedro, sin apartar la mirada de la puerta'. El resto del capítulo permanece INTACTO."

@@ -11,11 +11,17 @@ interface SemanticRepetitionDetectorInput {
   foreshadowingExpected?: string[];
 }
 
+export interface RepetitionOccurrence {
+  capitulo: number;
+  frase_exacta: string;
+}
+
 export interface RepetitionCluster {
   tipo: "idea_repetida" | "metafora_repetida" | "estructura_repetida" | "foreshadowing_sin_payoff" | "payoff_sin_foreshadowing";
   capitulos_afectados: number[];
   descripcion: string;
-  ejemplos: string[];
+  ejemplos?: string[];
+  ocurrencias?: RepetitionOccurrence[];
   severidad: "mayor" | "menor";
   elementos_a_preservar: string;
   fix_sugerido: string;
@@ -102,6 +108,9 @@ PUNTUACIÓN FORESHADOWING (1-10):
 SALIDA OBLIGATORIA (JSON)
 ═══════════════════════════════════════════════════════════════════
 
+IMPORTANTE: Para cada capítulo afectado, DEBES incluir la FRASE EXACTA del manuscrito.
+Esto permite corrección automática. Sin la frase exacta, el problema no puede corregirse.
+
 {
   "puntuacion_originalidad": (1-10),
   "puntuacion_foreshadowing": (1-10),
@@ -110,10 +119,13 @@ SALIDA OBLIGATORIA (JSON)
       "tipo": "idea_repetida",
       "capitulos_afectados": [2, 5],
       "descripcion": "Descripción del patrón repetido",
-      "ejemplos": ["Cap 2: 'ejemplo'", "Cap 5: 'ejemplo'"],
+      "ocurrencias": [
+        {"capitulo": 2, "frase_exacta": "La frase EXACTA copiada del Cap 2 que debe cambiarse"},
+        {"capitulo": 5, "frase_exacta": "La frase EXACTA copiada del Cap 5 que debe cambiarse"}
+      ],
       "severidad": "menor",
       "elementos_a_preservar": "Mantener la instancia del Cap 2",
-      "fix_sugerido": "Cambiar la oración en Cap 5"
+      "fix_sugerido": "Variar las frases en los demás capítulos"
     }
   ],
   "foreshadowing_detectado": [
@@ -127,6 +139,9 @@ SALIDA OBLIGATORIA (JSON)
   ],
   "capitulos_para_revision": [5]
 }
+
+REGLA CRÍTICA: El campo "ocurrencias" es OBLIGATORIO para cada cluster.
+Cada ocurrencia DEBE contener la frase_exacta copiada literalmente del manuscrito.
 `;
 
 const CHAPTERS_PER_TRANCHE = 10;
