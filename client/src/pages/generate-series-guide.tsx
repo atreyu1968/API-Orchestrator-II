@@ -24,8 +24,7 @@ interface GenerationStatus {
   startedAt: number;
   seriesTitle: string;
   bookCount: number;
-  autoGenerateBookGuides: boolean;
-  currentStep: "guide" | "books" | "complete";
+  currentStep: "guide" | "complete";
 }
 
 interface Pseudonym {
@@ -34,6 +33,12 @@ interface Pseudonym {
   defaultGenre?: string;
   defaultTone?: string;
 }
+
+const predefinedVolumeSchema = z.object({
+  number: z.number(),
+  title: z.string().optional(),
+  argument: z.string().optional(),
+});
 
 const formSchema = z.object({
   seriesTitle: z.string().min(1, "El título de la serie es requerido"),
@@ -44,11 +49,8 @@ const formSchema = z.object({
   workType: z.enum(["series", "trilogy"]).default("trilogy"),
   pseudonymId: z.string().optional(),
   createSeries: z.boolean().default(true),
-  autoGenerateBookGuides: z.boolean().default(false),
-  chapterCountPerBook: z.number().min(10).max(50).default(30),
-  hasPrologue: z.boolean().default(true),
-  hasEpilogue: z.boolean().default(true),
   styleGuideId: z.string().optional(),
+  predefinedVolumes: z.array(predefinedVolumeSchema).optional(),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -138,11 +140,8 @@ export default function GenerateSeriesGuidePage() {
       workType: "trilogy",
       pseudonymId: "",
       createSeries: true,
-      autoGenerateBookGuides: false,
-      chapterCountPerBook: 30,
-      hasPrologue: true,
-      hasEpilogue: true,
       styleGuideId: "",
+      predefinedVolumes: [],
     },
   });
 
@@ -204,7 +203,6 @@ export default function GenerateSeriesGuidePage() {
         startedAt: Date.now(),
         seriesTitle: data.seriesTitle,
         bookCount: Number(data.bookCount),
-        autoGenerateBookGuides: data.autoGenerateBookGuides,
         currentStep: "guide",
       };
       localStorage.setItem(GENERATION_STATUS_KEY, JSON.stringify(status));
@@ -214,7 +212,6 @@ export default function GenerateSeriesGuidePage() {
       const response = await apiRequest("POST", "/api/generate-series-guide", {
         ...data,
         bookCount: Number(data.bookCount),
-        chapterCountPerBook: Number(data.chapterCountPerBook),
         pseudonymId: data.pseudonymId && data.pseudonymId !== "none" ? parseInt(data.pseudonymId) : undefined,
         styleGuideId: data.styleGuideId && data.styleGuideId !== "none" ? parseInt(data.styleGuideId) : undefined,
       });
@@ -224,10 +221,6 @@ export default function GenerateSeriesGuidePage() {
       setGeneratedGuide(data.guideContent);
       setCreatedSeriesId(data.seriesId);
       queryClient.invalidateQueries({ queryKey: ["/api/series"] });
-      if (data.generatedBooks?.length > 0) {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-        queryClient.invalidateQueries({ queryKey: ["/api/extended-guides"] });
-      }
       // Clear generation status and form data, save result
       localStorage.removeItem(FORM_STORAGE_KEY);
       localStorage.removeItem(GENERATION_STATUS_KEY);
@@ -235,15 +228,11 @@ export default function GenerateSeriesGuidePage() {
       localStorage.setItem(RESULT_STORAGE_KEY, JSON.stringify({
         guide: data.guideContent,
         seriesId: data.seriesId,
-        generatedBooks: data.generatedBooks,
       }));
       
-      const booksCount = data.generatedBooks?.length || 0;
       toast({
         title: "Guía de serie generada exitosamente",
-        description: booksCount > 0 
-          ? `${data.message}. Se crearon ${booksCount} guías de libros.`
-          : data.message,
+        description: data.message,
         duration: 10000,
       });
     },
@@ -290,10 +279,6 @@ export default function GenerateSeriesGuidePage() {
       workType: "trilogy",
       pseudonymId: "",
       createSeries: true,
-      autoGenerateBookGuides: false,
-      chapterCountPerBook: 30,
-      hasPrologue: true,
-      hasEpilogue: true,
       styleGuideId: "",
     });
   };
@@ -332,7 +317,7 @@ export default function GenerateSeriesGuidePage() {
               Generando Serie: {generationStatus.seriesTitle}
             </CardTitle>
             <CardDescription>
-              Por favor espera mientras se genera la guía de serie y los libros
+              Por favor espera mientras se genera la guía de serie
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -362,41 +347,11 @@ export default function GenerateSeriesGuidePage() {
                 </div>
               </div>
               
-              {generationStatus.autoGenerateBookGuides && (
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                    generationStatus.currentStep === "books" 
-                      ? "bg-primary text-primary-foreground animate-pulse" 
-                      : generationStatus.currentStep === "complete"
-                        ? "bg-green-500 text-white"
-                        : "bg-muted text-muted-foreground"
-                  }`}>
-                    {generationStatus.currentStep === "books" ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : generationStatus.currentStep === "complete" ? (
-                      <CheckCircle className="h-4 w-4" />
-                    ) : (
-                      <span className="text-sm">2</span>
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-medium">2. Generando guías de {generationStatus.bookCount} libros</p>
-                    <p className="text-sm text-muted-foreground">
-                      Guías individuales y proyectos para cada volumen
-                    </p>
-                  </div>
-                </div>
-              )}
             </div>
             
             <div className="bg-muted/50 p-4 rounded-lg">
               <p className="text-sm text-muted-foreground text-center">
                 Puedes cambiar de pantalla, el progreso se mantendrá.
-                {generationStatus.autoGenerateBookGuides && (
-                  <span className="block mt-1">
-                    La generacion de {generationStatus.bookCount} guías puede tomar varios minutos.
-                  </span>
-                )}
               </p>
             </div>
             
@@ -692,90 +647,57 @@ export default function GenerateSeriesGuidePage() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="autoGenerateBookGuides"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center space-x-2 pt-2">
-                      <FormControl>
-                        <Switch
-                          data-testid="switch-auto-generate-books"
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                          disabled={!form.watch("createSeries")}
-                        />
-                      </FormControl>
-                      <FormLabel className="!mt-0">
-                        Generar guías de todos los libros automáticamente
-                      </FormLabel>
-                      <FormDescription className="text-xs">
-                        Crea automáticamente las guías y proyectos para cada volumen de la serie
-                      </FormDescription>
-                    </FormItem>
-                  )}
-                />
+              </CardContent>
+            </Card>
 
-                {form.watch("autoGenerateBookGuides") && (
-                  <div className="space-y-4 pt-4 border-t mt-4">
-                    <p className="text-sm font-medium text-muted-foreground">Configuración de libros</p>
-                    
-                    <FormField
-                      control={form.control}
-                      name="chapterCountPerBook"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Capítulos por libro</FormLabel>
-                          <FormControl>
-                            <Input
-                              type="number"
-                              min={10}
-                              max={50}
-                              data-testid="input-chapters-per-book"
-                              {...field}
-                              onChange={(e) => field.onChange(parseInt(e.target.value) || 30)}
-                            />
-                          </FormControl>
-                        </FormItem>
-                      )}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BookMarked className="h-5 w-5" />
+                  Volúmenes Predefinidos (Opcional)
+                </CardTitle>
+                <CardDescription>
+                  Si ya tienes títulos y argumentos para los volúmenes, ingrésalos aquí y serán respetados en la guía
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {Array.from({ length: form.watch("bookCount") || 3 }, (_, i) => (
+                  <div key={i} className="space-y-2 p-4 border rounded-lg">
+                    <p className="font-medium text-sm">Volumen {i + 1}</p>
+                    <Input
+                      placeholder={`Título del volumen ${i + 1} (opcional)`}
+                      data-testid={`input-volume-${i + 1}-title`}
+                      value={form.watch(`predefinedVolumes.${i}.title`) || ""}
+                      onChange={(e) => {
+                        const current = form.getValues("predefinedVolumes") || [];
+                        const updated = [...current];
+                        if (!updated[i]) {
+                          updated[i] = { number: i + 1, title: "", argument: "" };
+                        }
+                        updated[i] = { ...updated[i], number: i + 1, title: e.target.value };
+                        form.setValue("predefinedVolumes", updated);
+                      }}
                     />
-
-                    <div className="flex gap-6">
-                      <FormField
-                        control={form.control}
-                        name="hasPrologue"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center space-x-2">
-                            <FormControl>
-                              <Switch
-                                data-testid="switch-prologue"
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <FormLabel className="!mt-0">Prólogo</FormLabel>
-                          </FormItem>
-                        )}
-                      />
-
-                      <FormField
-                        control={form.control}
-                        name="hasEpilogue"
-                        render={({ field }) => (
-                          <FormItem className="flex items-center space-x-2">
-                            <FormControl>
-                              <Switch
-                                data-testid="switch-epilogue"
-                                checked={field.value}
-                                onCheckedChange={field.onChange}
-                              />
-                            </FormControl>
-                            <FormLabel className="!mt-0">Epílogo</FormLabel>
-                          </FormItem>
-                        )}
-                      />
-                    </div>
+                    <Textarea
+                      placeholder={`Argumento del volumen ${i + 1} (opcional)`}
+                      data-testid={`input-volume-${i + 1}-argument`}
+                      className="min-h-[80px]"
+                      value={form.watch(`predefinedVolumes.${i}.argument`) || ""}
+                      onChange={(e) => {
+                        const current = form.getValues("predefinedVolumes") || [];
+                        const updated = [...current];
+                        if (!updated[i]) {
+                          updated[i] = { number: i + 1, title: "", argument: "" };
+                        }
+                        updated[i] = { ...updated[i], number: i + 1, argument: e.target.value };
+                        form.setValue("predefinedVolumes", updated);
+                      }}
+                    />
                   </div>
-                )}
+                ))}
+                <p className="text-xs text-muted-foreground">
+                  Los campos vacíos serán generados automáticamente por la IA
+                </p>
               </CardContent>
             </Card>
 

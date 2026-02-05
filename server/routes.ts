@@ -10247,11 +10247,13 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         workType: z.enum(["series", "trilogy"]).default("trilogy"),
         pseudonymId: z.number().optional(),
         createSeries: z.boolean().default(true),
-        autoGenerateBookGuides: z.boolean().default(false),
-        chapterCountPerBook: z.number().min(10).max(50).default(30),
-        hasPrologue: z.boolean().default(true),
-        hasEpilogue: z.boolean().default(true),
         styleGuideId: z.number().optional(),
+        // Predefined volumes with optional title and argument - these will be respected in generation
+        predefinedVolumes: z.array(z.object({
+          number: z.number(),
+          title: z.string().optional(),
+          argument: z.string().optional(),
+        })).optional(),
       });
       
       const params = schema.parse(req.body);
@@ -10287,9 +10289,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         success: true,
         started: true,
         message: `Generación de la guía de serie "${params.seriesTitle}" iniciada. Consulta /api/generation-status para ver el progreso.`,
-        estimatedTime: params.autoGenerateBookGuides 
-          ? `${params.bookCount * 3}-${params.bookCount * 5} minutos (incluye ${params.bookCount} guías de libro)`
-          : "2-5 minutos (solo guía de serie)"
+        estimatedTime: "2-5 minutos"
       });
       
       // BACKGROUND GENERATION - runs after response is sent
@@ -10313,6 +10313,8 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
               workType: params.workType,
               pseudonymName,
               pseudonymStyleGuide,
+              // Filter out empty predefined volumes (only use when title or argument is provided)
+              predefinedVolumes: params.predefinedVolumes?.filter(v => v.title?.trim() || v.argument?.trim()),
             },
             (progress) => {
               console.log(`[SeriesGuideGenerator] Progress: phase=${progress.phase}, volume=${progress.currentVolume || 0}/${progress.totalVolumes || 0}, completed=${progress.completedVolumes.length}`);
@@ -10351,160 +10353,9 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
               seriesGuideFileName: `guia_serie_${params.seriesTitle.toLowerCase().replace(/\s+/g, '_')}.md`,
             });
             
-            console.log(`[SeriesGuideGenerator] Series created (ID: ${series.id})`);
-            
-            // Auto-generate book guides if requested
-            if (params.autoGenerateBookGuides && series) {
-              const { guideGeneratorAgent } = await import("./agents/guide-generator");
-              
-              // Parse volumes from the series guide - try multiple patterns
-              const volumes: Array<{number: number, title: string, argument: string}> = [];
-              
-              // Pattern 1: ### Volumen N: Título
-              const volumeRegex1 = /###\s*Volumen\s*(\d+):\s*([^\n]+)\n(?:.*?\n)*?-\s*\*\*Argumento:\*\*\s*([^\n]+(?:\n(?![-#])[^\n]*)*)/gi;
-              // Pattern 2: ## Volumen N: Título (alternative format)
-              const volumeRegex2 = /##\s*Volumen\s*(\d+)[:\s]+([^\n]+)\n(?:.*?\n)*?(?:\*\*)?Argumento(?:\*\*)?:\s*([^\n]+(?:\n(?![-#*])[^\n]*)*)/gi;
-              // Pattern 3: More relaxed pattern for "Arquitectura de la Serie" section
-              const volumeRegex3 = /###\s*Volumen\s*(\d+):\s*(.+?)(?:\n|\r\n)[\s\S]*?-\s*\*\*Argumento:\*\*\s*(.+?)(?=\n-\s*\*\*|\n###|\n##|$)/gi;
-              
-              let match;
-              
-              // Try Pattern 1 first
-              while ((match = volumeRegex1.exec(guideContent)) !== null) {
-                volumes.push({
-                  number: parseInt(match[1]),
-                  title: match[2].trim(),
-                  argument: match[3].trim().replace(/\n/g, ' ').substring(0, 1000)
-                });
-              }
-              
-              // If no matches, try Pattern 3 (more specific for the expected format)
-              if (volumes.length === 0) {
-                while ((match = volumeRegex3.exec(guideContent)) !== null) {
-                  volumes.push({
-                    number: parseInt(match[1]),
-                    title: match[2].trim(),
-                    argument: match[3].trim().replace(/\n/g, ' ').substring(0, 1000)
-                  });
-                }
-              }
-              
-              // If still no matches, create placeholder volumes based on bookCount
-              if (volumes.length === 0) {
-                console.log(`[SeriesGuideGenerator] No volumes found in guide, creating placeholders for ${params.bookCount} books`);
-                for (let i = 1; i <= params.bookCount; i++) {
-                  volumes.push({
-                    number: i,
-                    title: `${params.seriesTitle} - Volumen ${i}`,
-                    argument: `Volumen ${i} de la serie "${params.seriesTitle}". ${params.concept.substring(0, 500)}`
-                  });
-                }
-              }
-              
-              console.log(`[SeriesGuideGenerator] Found ${volumes.length} volumes to generate guides for`);
-              
-              // Log first volume for debugging
-              if (volumes.length > 0) {
-                console.log(`[SeriesGuideGenerator] First volume: "${volumes[0].title}" - Argument: ${volumes[0].argument.substring(0, 100)}...`);
-              }
-              
-              // Get style guide content if provided
-              let styleGuideContent: string | undefined;
-              if (params.styleGuideId) {
-                const styleGuide = await storage.getStyleGuide(params.styleGuideId);
-                if (styleGuide) {
-                  styleGuideContent = styleGuide.content;
-                }
-              } else if (pseudonymStyleGuide) {
-                styleGuideContent = pseudonymStyleGuide;
-              }
-              
-              // Generate guides for each volume (sequentially to avoid rate limits)
-              const generatedBooks: Array<{title: string, projectId: number}> = [];
-              
-              for (const volume of volumes) {
-                // LitAgents 2.9.6: Check for cancellation before each volume
-                if (isGuideGenerationCancelled()) {
-                  console.log(`[SeriesGuideGenerator] Generation cancelled by user after ${generatedBooks.length} volumes`);
-                  break;
-                }
-                
-                try {
-                  console.log(`[SeriesGuideGenerator] Generating guide for Volume ${volume.number}: "${volume.title}"...`);
-                  
-                  // Build series context for this book
-                  const seriesContext = `
-## Contexto de la Serie: ${params.seriesTitle}
-
-Este es el **Volumen ${volume.number}** de ${params.bookCount} en la serie.
-
-### Información de la Serie:
-${guideContent.substring(0, 3000)}
-
-### Hitos específicos de este volumen:
-Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.number}.
-                  `.trim();
-                  
-                  const bookGuideResponse = await guideGeneratorAgent.generateWritingGuide({
-                    argument: volume.argument,
-                    title: volume.title,
-                    genre: params.genre,
-                    tone: params.tone,
-                    chapterCount: params.chapterCountPerBook,
-                    hasPrologue: params.hasPrologue,
-                    hasEpilogue: params.hasEpilogue,
-                    styleGuideContent,
-                    seriesContext,
-                    kindleUnlimited: false,
-                  });
-                  
-                  const bookGuideContent = bookGuideResponse.content;
-                  console.log(`[SeriesGuideGenerator] Book guide generated for "${volume.title}" (${bookGuideContent.length} chars)`);
-                  
-                  // Validate book guide content - skip if empty or too short
-                  if (!bookGuideContent || bookGuideContent.length < 500) {
-                    console.error(`[SeriesGuideGenerator] Book guide content too short for volume ${volume.number} (${bookGuideContent?.length || 0} chars) - skipping`);
-                    continue;
-                  }
-                  
-                  // Create extended guide
-                  const extendedGuide = await storage.createExtendedGuide({
-                    title: `Guía de Escritura: ${volume.title}`,
-                    originalFileName: `guia_${volume.title.toLowerCase().replace(/\s+/g, '_')}.md`,
-                    description: `Guía para Volumen ${volume.number} de la serie "${params.seriesTitle}"`,
-                    content: bookGuideContent,
-                  });
-                  
-                  // Create project
-                  const project = await storage.createProject({
-                    title: volume.title,
-                    premise: volume.argument,
-                    genre: params.genre,
-                    tone: params.tone,
-                    chapterCount: params.chapterCountPerBook,
-                    hasPrologue: params.hasPrologue,
-                    hasEpilogue: params.hasEpilogue,
-                    hasAuthorNote: false,
-                    pseudonymId: params.pseudonymId || null,
-                    styleGuideId: params.styleGuideId || null,
-                    extendedGuideId: extendedGuide.id,
-                    workType: "series",
-                    seriesId: series.id,
-                    seriesOrder: volume.number,
-                  });
-                  
-                  generatedBooks.push({ title: volume.title, projectId: project.id });
-                  console.log(`[SeriesGuideGenerator] Created project for "${volume.title}" (ID: ${project.id})`);
-                  
-                } catch (bookError: any) {
-                  console.error(`[SeriesGuideGenerator] Error generating guide for Volume ${volume.number}:`, bookError.message);
-                }
-              }
-              
-              console.log(`[SeriesGuideGenerator] COMPLETED: Successfully generated ${generatedBooks.length} book guides for series "${params.seriesTitle}"`);
-            } else {
-              console.log(`[SeriesGuideGenerator] COMPLETED: Series "${params.seriesTitle}" created (no auto-generation of book guides)`);
-            }
+            console.log(`[SeriesGuideGenerator] COMPLETED: Series "${params.seriesTitle}" created (ID: ${series.id})`);
+            // Note: Book guides are now included directly in the series guide content.
+            // Individual book guide generation has been removed as it was not reliable.
           } else {
             console.log(`[SeriesGuideGenerator] COMPLETED: Guide generated for "${params.seriesTitle}" (no series created)`);
           }

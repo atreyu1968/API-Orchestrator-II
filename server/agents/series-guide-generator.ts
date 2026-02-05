@@ -228,6 +228,8 @@ Recuerda: NO incluyas las secciones 7 y 8 (hitos y arquitectura por volumen). Es
     genre: string;
     tone: string;
     previousVolumeSummary?: string;
+    predefinedTitle?: string;
+    predefinedArgument?: string;
   }): Promise<AgentResponse> {
     console.log(`[SeriesGuideGenerator] Phase 2: Generating milestones for Volume ${params.volumeNumber}/${params.totalVolumes}...`);
     
@@ -245,6 +247,8 @@ ${params.seriesBible.substring(0, 8000)}
 - **Tono:** ${params.tone}
 - **Es primer libro:** ${isFirst ? "Si - debe establecer el mundo y presentar al protagonista" : "No"}
 - **Es ultimo libro:** ${isLast ? "Si - debe resolver el misterio central y cerrar arcos" : "No"}
+${params.predefinedTitle ? `- **Titulo del volumen (OBLIGATORIO RESPETAR):** ${params.predefinedTitle}` : ''}
+${params.predefinedArgument ? `- **Argumento predefinido (OBLIGATORIO RESPETAR):** ${params.predefinedArgument}` : ''}
 `;
 
     if (params.previousVolumeSummary) {
@@ -292,6 +296,7 @@ Genera ahora los HITOS Y ARQUITECTURA para el Volumen ${params.volumeNumber} sig
       workType: "series" | "trilogy";
       pseudonymName?: string;
       pseudonymStyleGuide?: string;
+      predefinedVolumes?: Array<{ number: number; title?: string; argument?: string }>;
     },
     onProgress?: (progress: SeriesGuideProgress) => void,
     checkCancellation?: () => boolean
@@ -339,6 +344,9 @@ Genera ahora los HITOS Y ARQUITECTURA para el Volumen ${params.volumeNumber} sig
       progress.currentVolume = vol;
       onProgress?.(progress);
       
+      // Check for predefined title/argument for this volume
+      const predefinedVol = params.predefinedVolumes?.find(v => v.number === vol);
+      
       const volumeResponse = await this.generateVolumeMilestones({
         volumeNumber: vol,
         totalVolumes: params.bookCount,
@@ -346,7 +354,9 @@ Genera ahora los HITOS Y ARQUITECTURA para el Volumen ${params.volumeNumber} sig
         seriesBible: bibleResponse.content,
         genre: params.genre,
         tone: params.tone,
-        previousVolumeSummary
+        previousVolumeSummary,
+        predefinedTitle: predefinedVol?.title,
+        predefinedArgument: predefinedVol?.argument
       });
       
       if (volumeResponse.content && volumeResponse.content.length > 100) {
