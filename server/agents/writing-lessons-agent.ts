@@ -1,5 +1,8 @@
 import { BaseAgent } from "./base-agent";
 import { storage } from "../storage";
+import { db } from "../db";
+import { manuscriptAudits, reeditAuditReports, reeditProjects } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import type { WritingLesson, InsertWritingLesson } from "@shared/schema";
 
 interface AuditIssue {
@@ -79,17 +82,23 @@ export class WritingLessonsAgent extends BaseAgent {
     return this.refreshLessons();
   }
 
+  private severityMap(sev: string): string {
+    const s = sev?.toLowerCase() || "menor";
+    if (s === "critical" || s === "critica" || s === "crítica") return "critica";
+    if (s === "high" || s === "mayor") return "mayor";
+    if (s === "medium" || s === "media") return "media";
+    return "menor";
+  }
+
   async analyzeAndExtractLessons(): Promise<{ lessons: ExtractedLesson[]; projectsAnalyzed: number }> {
     const allProjects = await storage.getAllProjects();
     const auditData: ProjectAuditData[] = [];
 
     console.log(`[WritingLessonsAgent] Scanning ${allProjects.length} total projects for audit data...`);
 
+    // === SOURCE 1: finalReviewResult from projects ===
     for (const project of allProjects) {
-      if (!project.finalReviewResult) {
-        console.log(`[WritingLessonsAgent] Project ${project.id} "${project.title}": no finalReviewResult, skipping`);
-        continue;
-      }
+      if (!project.finalReviewResult) continue;
       const review = project.finalReviewResult as any;
       const issues: AuditIssue[] = [];
 
@@ -102,11 +111,7 @@ export class WritingLessonsAgent extends BaseAgent {
         for (const d of debilidades) {
           const alreadyCovered = issues.some(i => i.descripcion && d.includes(i.descripcion.substring(0, 30)));
           if (!alreadyCovered) {
-            issues.push({
-              categoria: "calidad_general",
-              severidad: "menor",
-              descripcion: d,
-            });
+            issues.push({ categoria: "calidad_general", severidad: "menor", descripcion: d });
           }
         }
       }
@@ -114,31 +119,127 @@ export class WritingLessonsAgent extends BaseAgent {
       if (review.justificacion_puntuacion?.recomendaciones_proceso) {
         const recs = review.justificacion_puntuacion.recomendaciones_proceso as string[];
         for (const r of recs) {
-          issues.push({
-            categoria: "proceso",
-            severidad: "menor",
-            descripcion: r,
-          });
+          issues.push({ categoria: "proceso", severidad: "menor", descripcion: r });
         }
       }
 
-      if (issues.length === 0) {
-        console.log(`[WritingLessonsAgent] Project ${project.id} "${project.title}": finalReviewResult exists but no issues/debilidades found (keys: ${Object.keys(review).join(", ")})`);
-        continue;
+      if (issues.length > 0) {
+        console.log(`[WritingLessonsAgent] Project ${project.id} "${project.title}" (finalReview): ${issues.length} issues`);
+        auditData.push({
+          projectId: project.id, title: project.title, genre: project.genre,
+          issues, puntuacion_global: review.puntuacion_global || 0,
+        });
       }
-
-      console.log(`[WritingLessonsAgent] Project ${project.id} "${project.title}": found ${issues.length} issues/insights`);
-      auditData.push({
-        projectId: project.id,
-        title: project.title,
-        genre: project.genre,
-        issues,
-        puntuacion_global: review.puntuacion_global || 0,
-      });
     }
 
-    if (auditData.length === 0) {
-      console.log("[WritingLessonsAgent] No audit data found to analyze across any projects");
+    // === SOURCE 2: manuscript_audits (Auditor Literario) ===
+    try {
+      const audits = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.status, "completed"));
+      console.log(`[WritingLessonsAgent] Found ${audits.length} completed manuscript audits`);
+
+      for (const audit of audits) {
+        const project = allProjects.find(p => p.id === audit.projectId);
+        const title = project?.title || `Project ${audit.projectId}`;
+        const genre = project?.genre || "unknown";
+        const existingEntry = auditData.find(d => d.projectId === audit.projectId);
+        const issues: AuditIssue[] = existingEntry?.issues || [];
+
+        for (const reportField of [audit.continuityReport, audit.characterReport, audit.styleReport] as any[]) {
+          if (!reportField) continue;
+          const report = reportField as any;
+          if (report.issues && Array.isArray(report.issues)) {
+            for (const issue of report.issues) {
+              issues.push({
+                categoria: issue.location || report.agentType?.toLowerCase() || "continuidad",
+                severidad: this.severityMap(issue.severity),
+                descripcion: issue.description || issue.descripcion || "",
+                instrucciones_correccion: issue.suggestion || issue.instrucciones_correccion || "",
+              });
+            }
+          }
+          if (report.analysis && typeof report.analysis === "string" && report.overallScore && report.overallScore < 7) {
+            issues.push({
+              categoria: report.agentType?.toLowerCase() || "calidad_general",
+              severidad: "media",
+              descripcion: report.analysis.substring(0, 500),
+            });
+          }
+        }
+
+        if (audit.finalAudit) {
+          const fa = audit.finalAudit as any;
+          if (fa.reports && Array.isArray(fa.reports)) {
+            for (const report of fa.reports) {
+              if (report.issues && Array.isArray(report.issues)) {
+                for (const issue of report.issues) {
+                  issues.push({
+                    categoria: report.agentType?.toLowerCase() || "continuidad",
+                    severidad: this.severityMap(issue.severity),
+                    descripcion: issue.description || "",
+                    instrucciones_correccion: issue.suggestion || "",
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        if (issues.length > 0 && !existingEntry) {
+          console.log(`[WritingLessonsAgent] Audit ${audit.id} for "${title}": ${issues.length} issues from manuscript auditor`);
+          auditData.push({
+            projectId: audit.projectId, title, genre,
+            issues, puntuacion_global: audit.overallScore || 0,
+          });
+        } else if (existingEntry) {
+          existingEntry.issues = issues;
+          console.log(`[WritingLessonsAgent] Audit ${audit.id} merged into "${title}": now ${issues.length} total issues`);
+        }
+      }
+    } catch (e: any) {
+      console.log(`[WritingLessonsAgent] Could not query manuscript_audits: ${e.message}`);
+    }
+
+    // === SOURCE 3: reedit_audit_reports (Re-editor) ===
+    try {
+      const reeditReports = await db.select().from(reeditAuditReports);
+      console.log(`[WritingLessonsAgent] Found ${reeditReports.length} re-edit audit reports`);
+
+      for (const report of reeditReports) {
+        if (!report.findings) continue;
+        const findings = report.findings as any;
+        const findingsArray = Array.isArray(findings) ? findings : (findings.issues || findings.findings || []);
+
+        if (findingsArray.length === 0) continue;
+
+        let reeditProject: any = null;
+        try {
+          const [rp] = await db.select().from(reeditProjects).where(eq(reeditProjects.id, report.projectId));
+          reeditProject = rp;
+        } catch {}
+
+        const title = reeditProject?.title || `ReEdit ${report.projectId}`;
+        const issues: AuditIssue[] = findingsArray.map((f: any) => ({
+          categoria: report.auditType || "calidad_general",
+          severidad: this.severityMap(f.severity || "medium"),
+          descripcion: f.description || f.finding || f.issue || JSON.stringify(f).substring(0, 300),
+          instrucciones_correccion: f.suggestion || f.recommendation || "",
+        }));
+
+        console.log(`[WritingLessonsAgent] ReEdit report ${report.id} "${title}" (${report.auditType}): ${issues.length} findings`);
+        auditData.push({
+          projectId: report.projectId, title, genre: "reedit",
+          issues, puntuacion_global: report.score || 0,
+        });
+      }
+    } catch (e: any) {
+      console.log(`[WritingLessonsAgent] Could not query reedit_audit_reports: ${e.message}`);
+    }
+
+    const totalSources = auditData.length;
+    console.log(`[WritingLessonsAgent] Total audit sources collected: ${totalSources}`);
+
+    if (totalSources === 0) {
+      console.log("[WritingLessonsAgent] No audit data found to analyze across any source");
       return { lessons: [], projectsAnalyzed: 0 };
     }
 
@@ -204,15 +305,21 @@ Responde SOLO con JSON válido.`;
     }
 
     const allProjects = await storage.getAllProjects();
-    const projectsWithAudits = allProjects
-      .filter(p => {
-        if (!p.finalReviewResult) return false;
-        const r = p.finalReviewResult as any;
-        return (r.issues?.length > 0) || 
-               (r.justificacion_puntuacion?.debilidades_principales?.length > 0) ||
-               (r.justificacion_puntuacion?.recomendaciones_proceso?.length > 0);
-      })
-      .map(p => p.id);
+    const projectIdsSet = new Set<number>();
+    for (const p of allProjects) {
+      if (!p.finalReviewResult) continue;
+      const r = p.finalReviewResult as any;
+      if ((r.issues?.length > 0) || 
+          (r.justificacion_puntuacion?.debilidades_principales?.length > 0) ||
+          (r.justificacion_puntuacion?.recomendaciones_proceso?.length > 0)) {
+        projectIdsSet.add(p.id);
+      }
+    }
+    try {
+      const audits = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.status, "completed"));
+      for (const a of audits) projectIdsSet.add(a.projectId);
+    } catch {}
+    const projectsWithAudits = Array.from(projectIdsSet);
 
     await storage.deleteAllWritingLessons();
 

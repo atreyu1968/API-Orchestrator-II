@@ -7652,30 +7652,77 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
 
   app.get("/api/writing-lessons/diagnose", async (req: Request, res: Response) => {
     try {
+      const { manuscriptAudits, reeditAuditReports } = await import("@shared/schema");
+
       const allProjects = await storage.getAllProjects();
-      const diagnosis = allProjects.map(p => {
+      const projectDiagnosis = allProjects.map(p => {
         const review = p.finalReviewResult as any;
         return {
           id: p.id,
           title: p.title,
           status: p.status,
           hasFinalReviewResult: !!p.finalReviewResult,
-          finalReviewResultType: p.finalReviewResult === null ? "null" : typeof p.finalReviewResult,
           finalReviewResultKeys: review ? Object.keys(review) : [],
-          hasIssues: !!(review?.issues && Array.isArray(review.issues)),
           issuesCount: review?.issues?.length || 0,
-          hasDebilidades: !!(review?.justificacion_puntuacion?.debilidades_principales?.length),
           debilidadesCount: review?.justificacion_puntuacion?.debilidades_principales?.length || 0,
-          hasRecomendaciones: !!(review?.justificacion_puntuacion?.recomendaciones_proceso?.length),
           recomendacionesCount: review?.justificacion_puntuacion?.recomendaciones_proceso?.length || 0,
           puntuacionGlobal: review?.puntuacion_global || null,
           veredicto: review?.veredicto || null,
         };
       });
+
+      let manuscriptAuditsDiag: any[] = [];
+      try {
+        const fullAudits = await db.select().from(manuscriptAudits);
+        manuscriptAuditsDiag = fullAudits.map(a => {
+          const contReport = a.continuityReport as any;
+          const charReport = a.characterReport as any;
+          const styleReport = a.styleReport as any;
+          const finalAudit = a.finalAudit as any;
+          return {
+            id: a.id,
+            projectId: a.projectId,
+            projectTitle: allProjects.find(p => p.id === a.projectId)?.title || "unknown",
+            status: a.status,
+            overallScore: a.overallScore,
+            criticalFlags: a.criticalFlags,
+            hasContinuityReport: !!contReport,
+            continuityIssuesCount: contReport?.issues?.length || 0,
+            hasCharacterReport: !!charReport,
+            characterIssuesCount: charReport?.issues?.length || 0,
+            hasStyleReport: !!styleReport,
+            styleIssuesCount: styleReport?.issues?.length || 0,
+            hasFinalAudit: !!finalAudit,
+            finalAuditReportsCount: finalAudit?.reports?.length || 0,
+          };
+        });
+      } catch (e: any) {
+        manuscriptAuditsDiag = [{ error: e.message }];
+      }
+
+      let reeditDiag: any[] = [];
+      try {
+        const reports = await db.select().from(reeditAuditReports);
+        reeditDiag = reports.map(r => ({
+          id: r.id,
+          projectId: r.projectId,
+          auditType: r.auditType,
+          score: r.score,
+          hasFindingsArray: Array.isArray(r.findings),
+          findingsCount: Array.isArray(r.findings) ? (r.findings as any[]).length : (r.findings ? Object.keys(r.findings as any).length : 0),
+        }));
+      } catch (e: any) {
+        reeditDiag = [{ error: e.message }];
+      }
+
       res.json({
         totalProjects: allProjects.length,
-        projectsWithAuditData: diagnosis.filter(d => d.issuesCount > 0 || d.debilidadesCount > 0 || d.recomendacionesCount > 0).length,
-        projects: diagnosis,
+        projectsWithFinalReview: projectDiagnosis.filter(d => d.issuesCount > 0 || d.debilidadesCount > 0).length,
+        manuscriptAuditsCount: manuscriptAuditsDiag.length,
+        reeditReportsCount: reeditDiag.length,
+        projects: projectDiagnosis,
+        manuscriptAudits: manuscriptAuditsDiag,
+        reeditAuditReports: reeditDiag,
       });
     } catch (error: any) {
       res.status(500).json({ error: error.message });
