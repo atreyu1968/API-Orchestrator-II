@@ -197,10 +197,10 @@ function CorrectionCard({
   };
 
   return (
-    <Card className={`mb-3 ${isStructural ? 'border-amber-500 dark:border-amber-600' : ''}`} data-testid={`card-correction-${correction.id}`}>
+    <Card className={`mb-3 overflow-hidden ${isStructural ? 'border-amber-500 dark:border-amber-600' : ''}`} data-testid={`card-correction-${correction.id}`}>
       <CardHeader className="py-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
             <Badge variant={getSeverityColor(correction.severity)} data-testid={`badge-severity-${correction.id}`}>
               {correction.severity}
             </Badge>
@@ -209,11 +209,11 @@ function CorrectionCard({
                 <Layers className="h-3 w-3 mr-1" />Estructural
               </Badge>
             )}
-            <span className="text-sm text-muted-foreground truncate" data-testid={`text-location-${correction.id}`}>
+            <span className="text-sm text-muted-foreground truncate min-w-0" data-testid={`text-location-${correction.id}`}>
               {correction.location}
             </span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             {correction.status === 'approved' && (
               <Badge className="bg-green-600" data-testid={`badge-approved-${correction.id}`}>
                 <CheckCircle2 className="h-3 w-3 mr-1" />Aprobada
@@ -239,7 +239,7 @@ function CorrectionCard({
             </Button>
           </div>
         </div>
-        <CardDescription className="text-xs mt-1" data-testid={`text-instruction-${correction.id}`}>
+        <CardDescription className="text-xs mt-1 break-words" data-testid={`text-instruction-${correction.id}`}>
           {correction.instruction}
         </CardDescription>
       </CardHeader>
@@ -531,12 +531,12 @@ function ManuscriptDetail({ manuscript, onBack }: { manuscript: CorrectedManuscr
   });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-4">
+    <div className="space-y-4 overflow-hidden">
+      <div className="flex items-center gap-4 flex-wrap">
         <Button variant="ghost" size="sm" onClick={onBack} data-testid="button-back">
           <ArrowLeft className="h-4 w-4 mr-1" /> Volver
         </Button>
-        <h2 className="text-xl font-bold" data-testid="text-manuscript-title">{manuscript.projectTitle || 'Manuscrito'}</h2>
+        <h2 className="text-xl font-bold truncate" data-testid="text-manuscript-title">{manuscript.projectTitle || 'Manuscrito'}</h2>
         {getStatusBadge(manuscript.status)}
       </div>
 
