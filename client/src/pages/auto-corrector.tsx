@@ -171,13 +171,14 @@ export default function AutoCorrectorPage() {
   const startMutation = useMutation({
     mutationFn: async () => {
       if (!currentProject?.id) throw new Error('No project selected');
-      return apiRequest(`/api/projects/${currentProject.id}/auto-correct`, 'POST', {
+      return apiRequest('POST', `/api/projects/${currentProject.id}/auto-correct`, {
         maxCycles,
         targetScore,
         maxCriticalIssues: 0,
       });
     },
-    onSuccess: async (data: any) => {
+    onSuccess: async (res: Response) => {
+      const data = await res.json();
       toast({ title: "Auto-corrector iniciado", description: `Run #${data.runId} en progreso` });
       setActiveRunId(data.runId);
       queryClient.invalidateQueries({ queryKey: ['/api/projects', currentProject?.id, 'auto-correct/runs'] });
@@ -189,7 +190,7 @@ export default function AutoCorrectorPage() {
 
   const cancelMutation = useMutation({
     mutationFn: async (runId: number) => {
-      return apiRequest(`/api/auto-correct/runs/${runId}/cancel`, 'POST');
+      return apiRequest('POST', `/api/auto-correct/runs/${runId}/cancel`);
     },
     onSuccess: () => {
       toast({ title: "Cancelando...", description: "Se solicitó la cancelación" });
@@ -199,7 +200,7 @@ export default function AutoCorrectorPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async (runId: number) => {
-      return apiRequest(`/api/auto-correct/runs/${runId}`, 'DELETE');
+      return apiRequest('DELETE', `/api/auto-correct/runs/${runId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/projects', currentProject?.id, 'auto-correct/runs'] });
