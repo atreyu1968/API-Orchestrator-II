@@ -49,6 +49,20 @@ Si un personaje secundario aparece en la escena:
 - NO inventes apodos o variaciones del nombre
 
 ══════════════════════════════════════════════════════════════════════
+COHERENCIA TEMPORAL OBLIGATORIA (v2.9.9+)
+══════════════════════════════════════════════════════════════════════
+La cronología es MATEMÁTICA - las cuentas DEBEN cuadrar:
+1. Si la LÍNEA TEMPORAL ACUMULADA dice que el Cap anterior fue "Día 3, noche",
+   este capítulo NO puede empezar en "Día 2" ni saltar a "Día 10" sin transición
+2. "Hace X días/semanas" se calcula desde el día actual de la trama, NO desde hoy
+3. Si un personaje estaba en Ciudad A al final del capítulo anterior,
+   NO puede aparecer en Ciudad B (a 500km) sin viaje explícito o elipsis
+4. Las heridas tienen tiempo de curación: un brazo roto NO se cura en 2 días
+5. Los eventos recordados DEBEN haber ocurrido en capítulos ANTERIORES
+6. Si hay una LÍNEA TEMPORAL ACUMULADA en el contexto, CONSULTARLA antes de
+   usar cualquier referencia temporal relativa ("ayer", "hace una semana", etc)
+
+══════════════════════════════════════════════════════════════════════
 PROHIBIDO ABSOLUTAMENTE:
 ══════════════════════════════════════════════════════════════════════
 • Clichés de IA: "crucial", "fascinante", "torbellino de emociones", "enigmático"

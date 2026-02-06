@@ -2102,6 +2102,71 @@ Capítulos a condensar: ${affectedChapters.join(", ")}
   }
 
   /**
+   * LitAgents 2.9.9+: Extract narrative time from chapter content and World Bible
+   * Used to build rolling narrative timeline for temporal consistency
+   */
+  private extractNarrativeTimeFromChapter(
+    chapterText: string,
+    chapterNumber: number,
+    worldBible: any
+  ): { chapter: number; narrativeTime: string; location?: string } | null {
+    const timelineInfo = this.extractTimelineInfo(worldBible, chapterNumber);
+    
+    if (timelineInfo?.current_chapter) {
+      return {
+        chapter: chapterNumber,
+        narrativeTime: `${timelineInfo.current_chapter.day}, ${timelineInfo.current_chapter.time_of_day}`,
+        location: timelineInfo.current_chapter.location
+      };
+    }
+    
+    const firstParagraph = chapterText.substring(0, 2000).toLowerCase();
+    
+    const timePatterns = [
+      /(?:era|fue|hacía|amaneció|al\s+amanecer)/i,
+      /(?:por\s+la\s+mañana|por\s+la\s+tarde|por\s+la\s+noche|al\s+mediodía|al\s+atardecer|al\s+anochecer)/i,
+      /(?:lunes|martes|miércoles|jueves|viernes|sábado|domingo)/i,
+      /(?:día\s+\d+|el\s+\d+\s+de\s+\w+)/i,
+      /(?:tres\s+días\s+después|al\s+día\s+siguiente|dos\s+semanas|una\s+semana)/i,
+    ];
+    
+    let detectedTime = "";
+    for (const pattern of timePatterns) {
+      const match = firstParagraph.match(pattern);
+      if (match) {
+        detectedTime = match[0].trim();
+        break;
+      }
+    }
+    
+    const locationPatterns = [
+      /(?:en\s+(?:el|la|los|las)\s+)([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+(?:de|del|los|las|el|la)\s+[A-ZÁÉÍÓÚÑ]?[a-záéíóúñ]+)*)/i,
+    ];
+    
+    let detectedLocation = "";
+    for (const pattern of locationPatterns) {
+      const match = firstParagraph.match(pattern);
+      if (match && match[1]) {
+        detectedLocation = match[1].trim();
+        break;
+      }
+    }
+    
+    if (detectedTime || detectedLocation) {
+      return {
+        chapter: chapterNumber,
+        narrativeTime: detectedTime || `Capítulo ${chapterNumber}`,
+        location: detectedLocation || undefined
+      };
+    }
+    
+    return {
+      chapter: chapterNumber,
+      narrativeTime: `Capítulo ${chapterNumber} (tiempo no especificado)`,
+    };
+  }
+
+  /**
    * Extract character states for the current chapter from worldBible
    * Includes location, physical state, injuries, and possessions
    */
@@ -3774,7 +3839,9 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
     projectId: number,
     chapterNumber: number,
     chapterText: string,
-    genre: string
+    genre: string,
+    worldBible?: any,
+    narrativeTimeline?: Array<{ chapter: number; narrativeTime: string; location?: string }>
   ): Promise<{ isValid: boolean; error?: string }> {
     const context = await this.getConsistencyContext(projectId);
     
@@ -3785,13 +3852,17 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
 
     this.callbacks.onAgentStatus("universal-consistency", "active", "Validating continuity...");
     
+    const timelineInfo = worldBible ? this.extractTimelineInfo(worldBible, chapterNumber) : undefined;
+    
     const result = await universalConsistencyAgent.validateChapter(
       chapterText,
       genre,
       context.entities,
       context.rules,
       context.relationships,
-      chapterNumber
+      chapterNumber,
+      timelineInfo,
+      narrativeTimeline
     );
 
     if (!result.isValid && result.criticalError) {
@@ -4658,6 +4729,8 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
       // Phase 2: Generate each chapter
       let rollingSummary = "Inicio de la novela.";
       const chapterSummaries: string[] = [];
+      
+      const narrativeTimeline: Array<{ chapter: number; narrativeTime: string; location?: string }> = [];
 
       // Check for existing chapters to resume from
       const existingChapters = await storage.getChaptersByProject(project.id);
@@ -4722,6 +4795,18 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
             chapterSummaries.push(chapter.summary);
             rollingSummary = chapter.summary;
           }
+          
+          // LitAgents 2.9.9+: Backfill narrative timeline from existing chapters on resume
+          if (chapter.content) {
+            const timelineEntry = this.extractNarrativeTimeFromChapter(chapter.content, chapter.chapterNumber, worldBible);
+            if (timelineEntry) {
+              narrativeTimeline.push(timelineEntry);
+            }
+          }
+        }
+        
+        if (narrativeTimeline.length > 0) {
+          console.log(`[OrchestratorV2] Backfilled narrative timeline from ${narrativeTimeline.length} existing chapters`);
         }
       }
 
@@ -4901,6 +4986,21 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         // LitAgents 2.9: Get error history to avoid past mistakes
         const errorHistory = await this.getErrorHistoryForWriting(project.id);
 
+        // LitAgents 2.9.9+: Inject accumulated narrative timeline into constraints for Ghostwriter
+        if (narrativeTimeline.length > 0) {
+          let timelineBlock = "\n═══════════════════════════════════════════════════════════════════\n";
+          timelineBlock += "⏰ LÍNEA TEMPORAL ACUMULADA (OBLIGATORIO RESPETAR)\n";
+          timelineBlock += "═══════════════════════════════════════════════════════════════════\n";
+          narrativeTimeline.forEach(entry => {
+            timelineBlock += `  Cap ${entry.chapter}: ${entry.narrativeTime}${entry.location ? ` → ${entry.location}` : ''}\n`;
+          });
+          timelineBlock += `\nEste capítulo (${chapterNumber}) DEBE continuar cronológicamente desde el punto anterior.\n`;
+          timelineBlock += "Las referencias temporales ('hace X días', 'ayer') DEBEN cuadrar con esta línea temporal.\n";
+          timelineBlock += "═══════════════════════════════════════════════════════════════════\n";
+          enrichedConstraints = timelineBlock + enrichedConstraints;
+          console.log(`[OrchestratorV2] Injected narrative timeline (${narrativeTimeline.length} entries) into Ghostwriter constraints`);
+        }
+
         for (const scene of sceneBreakdown.scenes) {
           if (await this.shouldStopProcessing(project.id)) {
             console.log(`[OrchestratorV2] Project ${project.id} was cancelled during scene writing`);
@@ -5022,7 +5122,9 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           project.id,
           chapterNumber,
           finalText,
-          project.genre
+          project.genre,
+          worldBible,
+          narrativeTimeline
         );
 
         while (!consistencyResult.isValid && consistencyResult.error && consistencyAttempt < MAX_CONSISTENCY_ATTEMPTS) {
@@ -5085,7 +5187,9 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
             project.id,
             chapterNumber,
             finalText,
-            project.genre
+            project.genre,
+            worldBible,
+            narrativeTimeline
           );
           
           if (consistencyResult.isValid) {
@@ -5195,6 +5299,17 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
 
         await storage.updateProject(project.id, { currentChapter: chapterNumber });
         this.callbacks.onChapterComplete(chapterNumber, wordCount, chapterOutline.title);
+
+        // LitAgents 2.9.9+: Accumulate narrative timeline from chapter content
+        try {
+          const timelineEntry = this.extractNarrativeTimeFromChapter(finalText, chapterNumber, worldBible);
+          if (timelineEntry) {
+            narrativeTimeline.push(timelineEntry);
+            console.log(`[OrchestratorV2] Timeline updated: Cap ${chapterNumber} = ${timelineEntry.narrativeTime}${timelineEntry.location ? ` in ${timelineEntry.location}` : ''}`);
+          }
+        } catch (timelineError) {
+          console.error(`[OrchestratorV2] Error extracting timeline from Chapter ${chapterNumber}:`, timelineError);
+        }
 
         // LitAgents 2.1: Extract injuries from chapter content and save to World Bible
         try {

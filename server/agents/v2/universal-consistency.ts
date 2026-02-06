@@ -554,6 +554,16 @@ REGLAS DE CONSISTENCIA NARRATIVA:
 - Los estados emocionales persisten - transiciones realistas
 - Las promesas y mentiras deben ser consistentes
 - Los objetos no aparecen magicamente - tracking de posesiones
+
+REGLAS DE COHERENCIA TEMPORAL (BLOQUEANTES si se violan):
+- Las referencias temporales relativas ("hace X días", "ayer") se calculan desde
+  el día narrativo ACTUAL, no desde la perspectiva del lector
+- Si la cronología dice Día 3, "hace una semana" es IMPOSIBLE si la trama empezó hace 3 días
+- Los desplazamientos entre ciudades requieren tiempo proporcional a la distancia
+- Las heridas graves (fracturas, quemaduras) NO se curan de un capítulo a otro sin elipsis
+- Un capítulo que termina "de noche" no puede ser seguido por uno que empieza "esa misma mañana"
+- Los eventos que un personaje recuerda DEBEN haber ocurrido en capítulos ANTERIORES
+- Las estaciones del año deben ser coherentes con el paso del tiempo narrativo
 ===================================================================
 `;
   }
@@ -564,12 +574,52 @@ REGLAS DE CONSISTENCIA NARRATIVA:
     entities: EntityForPrompt[],
     rules: RuleForPrompt[],
     relationships: RelationshipForPrompt[],
-    chapterNumber: number
+    chapterNumber: number,
+    timelineInfo?: {
+      chapter_timeline?: Array<{ chapter: number; day: string; time_of_day: string; duration?: string; location?: string }>;
+      previous_chapter?: { day: string; time_of_day: string; location?: string };
+      current_chapter?: { day: string; time_of_day: string; location?: string };
+      travel_times?: Array<{ from: string; to: string; by_car?: string; by_plane?: string; by_train?: string }>;
+    },
+    narrativeTimeline?: Array<{ chapter: number; narrativeTime: string; location?: string }>
   ): Promise<ValidationResult> {
     const config = getGenreConfig(genre);
 
-    const prompt = `Actúa como un Supervisor de Continuidad PERMISIVO experto en ${genre}.
-Tu trabajo es detectar SOLO errores GRAVES Y EVIDENTES, NO interpretaciones ambiguas.
+    let timelineValidationBlock = "";
+    if (timelineInfo || narrativeTimeline) {
+      timelineValidationBlock = `
+═══════════════════════════════════════════════════════════════════
+LÍNEA TEMPORAL ACUMULADA (VERIFICACIÓN OBLIGATORIA):
+═══════════════════════════════════════════════════════════════════
+`;
+      if (narrativeTimeline && narrativeTimeline.length > 0) {
+        timelineValidationBlock += `CRONOLOGÍA REAL DE LA NOVELA:\n`;
+        narrativeTimeline.forEach(entry => {
+          timelineValidationBlock += `  Cap ${entry.chapter}: ${entry.narrativeTime}${entry.location ? ` en ${entry.location}` : ''}\n`;
+        });
+        timelineValidationBlock += `\n`;
+      }
+      if (timelineInfo?.current_chapter) {
+        timelineValidationBlock += `ESTE CAPÍTULO (${chapterNumber}) DEBERÍA SER: ${timelineInfo.current_chapter.day}, ${timelineInfo.current_chapter.time_of_day}${timelineInfo.current_chapter.location ? ` en ${timelineInfo.current_chapter.location}` : ''}\n`;
+      }
+      if (timelineInfo?.previous_chapter) {
+        timelineValidationBlock += `CAPÍTULO ANTERIOR FUE: ${timelineInfo.previous_chapter.day}, ${timelineInfo.previous_chapter.time_of_day}${timelineInfo.previous_chapter.location ? ` en ${timelineInfo.previous_chapter.location}` : ''}\n`;
+      }
+      if (timelineInfo?.travel_times && timelineInfo.travel_times.length > 0) {
+        timelineValidationBlock += `\nTIEMPOS DE VIAJE CANÓNICOS:\n`;
+        timelineInfo.travel_times.forEach(t => {
+          const times = [t.by_car && `coche: ${t.by_car}`, t.by_plane && `avión: ${t.by_plane}`, t.by_train && `tren: ${t.by_train}`].filter(Boolean).join(', ');
+          timelineValidationBlock += `  ${t.from} → ${t.to}: ${times}\n`;
+        });
+      }
+      timelineValidationBlock += `
+VERIFICA que el texto del capítulo NO contradiga esta cronología.
+═══════════════════════════════════════════════════════════════════
+`;
+    }
+
+    const prompt = `Actúa como un Supervisor de Continuidad experto en ${genre}.
+Tu trabajo es detectar errores GRAVES Y EVIDENTES, incluyendo VIOLACIONES TEMPORALES.
 
 PRINCIPIO FUNDAMENTAL: EN CASO DE DUDA, APROBAR. Solo rechazar por errores INEQUÍVOCOS.
 
@@ -583,7 +633,7 @@ ${JSON.stringify(rules, null, 2)}
 
 RELACIONES:
 ${JSON.stringify(relationships, null, 2)}
-
+${timelineValidationBlock}
 ═══════════════════════════════════════════════════════════════════
 
 CAPÍTULO ${chapterNumber} A EVALUAR:
@@ -594,15 +644,22 @@ ${chapterText.length > 12000 ? '... (truncado)' : ''}
 
 ═══════════════════════════════════════════════════════════════════
 
-CRITERIOS DE ERROR CRÍTICO (SOLO estos bloquean):
+CRITERIOS DE ERROR CRÍTICO (estos bloquean):
 
 1. MUERTO QUE ACTÚA: Un personaje explícitamente muerto aparece vivo y actuando
 2. BILOCACIÓN: El mismo personaje en DOS lugares FÍSICAMENTE al MISMO tiempo
 3. CAMBIO FISICO IMPOSIBLE: Ojos azules a verdes, pelo rubio a negro (sin explicacion magica/tinte)
 4. CONTRADICCIÓN DIRECTA DE TEXTO: El texto dice "A" y luego dice "no-A" sin justificación
-5. INCONSISTENCIA DE EDAD: Edad del personaje no coincide con lo establecido (ej: tenía 10 años en prólogo, ahora tiene 25 sin time skip explícito)
-6. OBJETO PERSONAL INCONSISTENTE: Joya/anillo/reloj que estaba presente ahora no lo está sin explicación (o viceversa)
+5. INCONSISTENCIA DE EDAD: Edad del personaje no coincide con lo establecido
+6. OBJETO PERSONAL INCONSISTENTE: Joya/anillo/reloj que estaba presente ahora no lo está sin explicación
 7. CONOCIMIENTO IMPOSIBLE: Personaje sabe información que no ha obtenido en ninguna escena anterior
+8. VIOLACIÓN TEMPORAL GRAVE: El texto contradice la línea temporal establecida:
+   - "Hace una semana" cuando según la cronología solo han pasado 2 días
+   - Mencionar que es "lunes por la mañana" cuando el capítulo anterior terminó en "miércoles por la noche" sin time skip
+   - Eventos que ocurren ANTES de que hayan sucedido en la cronología
+   - Personaje viajando 500km instantáneamente sin transición temporal
+   - Confusión de orden día/noche dentro del mismo capítulo
+9. RUPTURA DE HILO NARRATIVO: Un evento clave del capítulo anterior (promesa, peligro, herida, descubrimiento) es completamente ignorado sin justificación
 
 IMPORTANTE - NO SON ERRORES CRÍTICOS:
 - Variaciones de voz/habla (susurros, ronquera, afonía temporal)
@@ -611,6 +668,7 @@ IMPORTANTE - NO SON ERRORES CRÍTICOS:
 - Interpretaciones ambiguas de reglas
 - Evolución natural de personajes
 - Diferencias estilísticas en descripciones
+- Pequeñas imprecisiones temporales ("amanecer" vs "primera hora")
 
 TAMBIÉN EXTRAE (siempre, incluso si el capítulo es válido):
 - Nuevos hechos importantes para futuros capítulos
