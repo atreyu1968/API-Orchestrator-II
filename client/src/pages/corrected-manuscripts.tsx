@@ -668,7 +668,7 @@ export default function CorrectedManuscriptsPage() {
 
   if (selectedManuscript) {
     return (
-      <div className="p-6">
+      <div className="p-6 min-w-0 w-full overflow-hidden">
         <ManuscriptDetail 
           manuscript={selectedManuscript} 
           onBack={() => setSelectedId(null)} 
