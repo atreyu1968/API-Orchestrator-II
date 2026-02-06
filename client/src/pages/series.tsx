@@ -389,6 +389,8 @@ export default function SeriesPage() {
   
   const [linkingSeriesId, setLinkingSeriesId] = useState<number | null>(null);
   const [linkManuscriptId, setLinkManuscriptId] = useState<string>("");
+  const [linkProjectId, setLinkProjectId] = useState<string>("");
+  const [linkType, setLinkType] = useState<"manuscript" | "project">("manuscript");
   const [linkSeriesOrder, setLinkSeriesOrder] = useState<number>(1);
   
   const [uploadingVolumeSeriesId, setUploadingVolumeSeriesId] = useState<number | null>(null);
@@ -411,6 +413,10 @@ export default function SeriesPage() {
   
   const { data: allManuscripts = [] } = useQuery<ImportedManuscript[]>({
     queryKey: ["/api/imported-manuscripts"],
+  });
+
+  const { data: allProjects = [] } = useQuery<Project[]>({
+    queryKey: ["/api/projects"],
   });
 
   const createSeriesMutation = useMutation({
@@ -592,6 +598,31 @@ export default function SeriesPage() {
     },
   });
 
+  const linkProjectMutation = useMutation({
+    mutationFn: async ({ seriesId, projectId, seriesOrder }: { seriesId: number; projectId: number; seriesOrder: number }) => {
+      const response = await apiRequest("POST", `/api/series/${seriesId}/link-project`, { projectId, seriesOrder });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/series/registry"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      setLinkingSeriesId(null);
+      setLinkProjectId("");
+      setLinkSeriesOrder(1);
+      toast({ title: "Proyecto vinculado", description: "El proyecto ha sido añadido a la serie" });
+    },
+    onError: async (error: any) => {
+      let details = "No se pudo vincular el proyecto";
+      try {
+        if (error?.response) {
+          const data = await error.response.json();
+          details = data.error || details;
+        }
+      } catch { /* ignore */ }
+      toast({ title: "Error", description: details, variant: "destructive" });
+    },
+  });
+
   const uploadVolumeMutation = useMutation({
     mutationFn: async ({ seriesId, file }: { seriesId: number; file: File }) => {
       const formData = new FormData();
@@ -689,18 +720,30 @@ export default function SeriesPage() {
     },
   });
 
-  const handleLinkManuscript = () => {
-    if (!linkingSeriesId || !linkManuscriptId) return;
-    linkManuscriptMutation.mutate({
-      seriesId: linkingSeriesId,
-      manuscriptId: parseInt(linkManuscriptId),
-      seriesOrder: linkSeriesOrder,
-    });
+  const handleLinkVolume = () => {
+    if (!linkingSeriesId) return;
+    if (linkType === "manuscript") {
+      if (!linkManuscriptId) return;
+      linkManuscriptMutation.mutate({
+        seriesId: linkingSeriesId,
+        manuscriptId: parseInt(linkManuscriptId),
+        seriesOrder: linkSeriesOrder,
+      });
+    } else {
+      if (!linkProjectId) return;
+      linkProjectMutation.mutate({
+        seriesId: linkingSeriesId,
+        projectId: parseInt(linkProjectId),
+        seriesOrder: linkSeriesOrder,
+      });
+    }
   };
 
   const openLinkModal = async (seriesId: number) => {
     setLinkingSeriesId(seriesId);
     setLinkManuscriptId("");
+    setLinkProjectId("");
+    setLinkType("manuscript");
     
     try {
       const response = await fetch(`/api/series/${seriesId}/volumes`, { credentials: "include" });
@@ -716,6 +759,7 @@ export default function SeriesPage() {
   };
 
   const availableManuscriptsForLinking = allManuscripts.filter(m => !m.seriesId);
+  const availableProjectsForLinking = allProjects.filter(p => !p.seriesId);
 
   const handleCreateSeries = () => {
     if (!newTitle.trim()) return;
@@ -1327,25 +1371,60 @@ export default function SeriesPage() {
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="space-y-2">
-              <Label>Manuscrito Importado</Label>
-              <Select value={linkManuscriptId} onValueChange={setLinkManuscriptId}>
-                <SelectTrigger data-testid="select-link-manuscript">
-                  <SelectValue placeholder="Seleccionar manuscrito..." />
+              <Label>Tipo de Volumen</Label>
+              <Select value={linkType} onValueChange={(v) => { setLinkType(v as "manuscript" | "project"); setLinkManuscriptId(""); setLinkProjectId(""); }}>
+                <SelectTrigger data-testid="select-link-type">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {availableManuscriptsForLinking.map((m) => (
-                    <SelectItem key={m.id} value={m.id.toString()}>
-                      {m.title} ({m.totalChapters} caps.)
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="manuscript">Manuscrito Importado</SelectItem>
+                  <SelectItem value="project">Proyecto Generado</SelectItem>
                 </SelectContent>
               </Select>
-              {availableManuscriptsForLinking.length === 0 && (
-                <p className="text-sm text-muted-foreground">
-                  No hay manuscritos disponibles. Importa un manuscrito primero desde la seccion "Edicion".
-                </p>
-              )}
             </div>
+            {linkType === "manuscript" ? (
+              <div className="space-y-2">
+                <Label>Manuscrito Importado</Label>
+                <Select value={linkManuscriptId} onValueChange={setLinkManuscriptId}>
+                  <SelectTrigger data-testid="select-link-manuscript">
+                    <SelectValue placeholder="Seleccionar manuscrito..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableManuscriptsForLinking.map((m) => (
+                      <SelectItem key={m.id} value={m.id.toString()}>
+                        {m.title} ({m.totalChapters} caps.)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {availableManuscriptsForLinking.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No hay manuscritos disponibles. Importa un manuscrito primero desde la seccion "Edicion".
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Proyecto Generado</Label>
+                <Select value={linkProjectId} onValueChange={setLinkProjectId}>
+                  <SelectTrigger data-testid="select-link-project">
+                    <SelectValue placeholder="Seleccionar proyecto..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableProjectsForLinking.map((p) => (
+                      <SelectItem key={p.id} value={p.id.toString()}>
+                        {p.title} ({p.status})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {availableProjectsForLinking.length === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    No hay proyectos disponibles para vincular.
+                  </p>
+                )}
+              </div>
+            )}
             <div className="space-y-2">
               <Label>Numero de Volumen</Label>
               <Input
@@ -1362,11 +1441,11 @@ export default function SeriesPage() {
             </div>
             <div className="flex gap-2 pt-2">
               <Button
-                onClick={handleLinkManuscript}
-                disabled={!linkManuscriptId || linkManuscriptMutation.isPending}
+                onClick={handleLinkVolume}
+                disabled={(linkType === "manuscript" ? !linkManuscriptId : !linkProjectId) || linkManuscriptMutation.isPending || linkProjectMutation.isPending}
                 data-testid="button-confirm-link"
               >
-                {linkManuscriptMutation.isPending ? (
+                {(linkManuscriptMutation.isPending || linkProjectMutation.isPending) ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-2" />
                 ) : (
                   <Link2 className="h-4 w-4 mr-2" />

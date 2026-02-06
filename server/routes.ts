@@ -2675,6 +2675,69 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/series/:id/link-project", async (req: Request, res: Response) => {
+    try {
+      const seriesId = parseInt(req.params.id);
+      const { projectId, seriesOrder } = req.body;
+      
+      if (!projectId || !seriesOrder) {
+        return res.status(400).json({ error: "projectId and seriesOrder are required" });
+      }
+      
+      const series = await storage.getSeries(seriesId);
+      if (!series) {
+        return res.status(404).json({ error: "Series not found" });
+      }
+      
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+      
+      const existingProjects = await storage.getProjectsBySeries(seriesId);
+      const existingManuscripts = await storage.getImportedManuscriptsBySeries(seriesId);
+      
+      const orderConflict = [
+        ...existingProjects.filter(p => p.id !== projectId).map(p => p.seriesOrder),
+        ...existingManuscripts.map(m => m.seriesOrder)
+      ].includes(seriesOrder);
+      
+      if (orderConflict) {
+        return res.status(400).json({ error: `Volume number ${seriesOrder} is already used in this series` });
+      }
+      
+      const updated = await storage.updateProject(projectId, {
+        seriesId,
+        seriesOrder,
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error linking project to series:", error);
+      res.status(500).json({ error: "Failed to link project to series" });
+    }
+  });
+
+  app.post("/api/series/:id/unlink-project", async (req: Request, res: Response) => {
+    try {
+      const { projectId } = req.body;
+      
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+      
+      const updated = await storage.updateProject(projectId, {
+        seriesId: null,
+        seriesOrder: null,
+      });
+      
+      res.json(updated);
+    } catch (error) {
+      console.error("Error unlinking project from series:", error);
+      res.status(500).json({ error: "Failed to unlink project from series" });
+    }
+  });
+
   app.post("/api/series/:id/upload-volume", upload.single('file'), async (req: Request, res: Response) => {
     try {
       const seriesId = parseInt(req.params.id);
