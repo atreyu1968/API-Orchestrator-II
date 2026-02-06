@@ -103,10 +103,21 @@ export default function ConfigPage() {
         description: `"${project.title}" ha sido actualizado correctamente`,
       });
     },
-    onError: () => {
+    onError: (error: Error) => {
+      let description = "No se pudo actualizar el proyecto";
+      try {
+        const msg = error.message || "";
+        const jsonPart = msg.includes("{") ? msg.substring(msg.indexOf("{")) : "";
+        if (jsonPart) {
+          const parsed = JSON.parse(jsonPart);
+          if (parsed.error) description = parsed.error;
+        } else if (msg.includes(":")) {
+          description = msg.substring(msg.indexOf(":") + 1).trim();
+        }
+      } catch {}
       toast({
         title: "Error",
-        description: "No se pudo actualizar el proyecto",
+        description,
         variant: "destructive",
       });
     },

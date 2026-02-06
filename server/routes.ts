@@ -542,9 +542,10 @@ export async function registerRoutes(
 
       const updated = await storage.updateProject(id, updateData);
       res.json(updated);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating project:", error);
-      res.status(500).json({ error: "Failed to update project" });
+      const message = error?.message || "Failed to update project";
+      res.status(500).json({ error: message });
     }
   });
 
