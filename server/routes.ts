@@ -525,19 +525,6 @@ export async function registerRoutes(
           updateData.seriesOrder = null;
         }
         
-        // LitAgents 2.9.9: Only approved manuscripts can be added to a series
-        if (updateData.seriesId && updateData.seriesId !== project.seriesId) {
-          const [approvedManuscript] = await db.select()
-            .from(correctedManuscripts)
-            .where(eq(correctedManuscripts.projectId, id))
-            .limit(1);
-          
-          if (!approvedManuscript || approvedManuscript.status !== 'approved') {
-            return res.status(400).json({ 
-              error: "Solo los proyectos con manuscrito auditado y aprobado pueden añadirse a una serie. Por favor, ejecuta primero el auditor y aprueba las correcciones." 
-            });
-          }
-        }
       }
 
       const updated = await storage.updateProject(id, updateData);
