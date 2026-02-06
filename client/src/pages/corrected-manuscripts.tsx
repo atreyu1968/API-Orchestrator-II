@@ -197,10 +197,10 @@ function CorrectionCard({
   };
 
   return (
-    <Card className={`mb-3 overflow-hidden ${isStructural ? 'border-amber-500 dark:border-amber-600' : ''}`} data-testid={`card-correction-${correction.id}`}>
-      <CardHeader className="py-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
+    <Card className={`mb-3 overflow-hidden ${isStructural ? 'border-amber-500 dark:border-amber-600' : ''}`} style={{ maxWidth: '100%' }} data-testid={`card-correction-${correction.id}`}>
+      <CardHeader className="py-3 overflow-hidden">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap flex-1">
             <Badge variant={getSeverityColor(correction.severity)} data-testid={`badge-severity-${correction.id}`}>
               {correction.severity}
             </Badge>
@@ -209,7 +209,7 @@ function CorrectionCard({
                 <Layers className="h-3 w-3 mr-1" />Estructural
               </Badge>
             )}
-            <span className="text-sm text-muted-foreground truncate min-w-0" data-testid={`text-location-${correction.id}`}>
+            <span className="text-sm text-muted-foreground" data-testid={`text-location-${correction.id}`}>
               {correction.location}
             </span>
           </div>
@@ -239,9 +239,9 @@ function CorrectionCard({
             </Button>
           </div>
         </div>
-        <CardDescription className="text-xs mt-1 break-words" data-testid={`text-instruction-${correction.id}`}>
+        <p className="text-xs text-muted-foreground mt-1" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} data-testid={`text-instruction-${correction.id}`}>
           {correction.instruction}
-        </CardDescription>
+        </p>
       </CardHeader>
       
       {expanded && (
@@ -587,14 +587,14 @@ function ManuscriptDetail({ manuscript, onBack }: { manuscript: CorrectedManuscr
         )}
       </div>
 
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
           <CardTitle>Correcciones</CardTitle>
           <CardDescription>
             Revisa y aprueba o rechaza cada corrección propuesta.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="min-w-0">
           <ScrollArea className="h-[500px]">
             {corrections.length === 0 ? (
               <p className="text-muted-foreground text-center py-8" data-testid="text-no-corrections">
