@@ -38,7 +38,9 @@ import {
   type ConsistencyViolation, type InsertConsistencyViolation,
   type ChapterVersion, type InsertChapterVersion,
   type EditingQueueItem, type InsertEditingQueue,
-  type ChapterBackup, type InsertChapterBackup
+  type ChapterBackup, type InsertChapterBackup,
+  writingLessons,
+  type WritingLesson, type InsertWritingLesson
 } from "@shared/schema";
 import { eq, desc, asc, and, lt, isNull, or, sql } from "drizzle-orm";
 
@@ -265,6 +267,14 @@ export interface IStorage {
   
   // Series World Bible
   getSeriesWorldBible(seriesId: number): Promise<any | null>;
+
+  // Writing Lessons
+  createWritingLesson(data: InsertWritingLesson): Promise<WritingLesson>;
+  getAllWritingLessons(): Promise<WritingLesson[]>;
+  getActiveWritingLessons(): Promise<WritingLesson[]>;
+  updateWritingLesson(id: number, data: Partial<WritingLesson>): Promise<WritingLesson | undefined>;
+  deleteWritingLesson(id: number): Promise<void>;
+  deleteAllWritingLessons(): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1595,6 +1605,38 @@ export class DatabaseStorage implements IStorage {
       secrets: ((data.secrets as any[]) || []).map(normalizeSecret),
       lastUpdatedVolume: data.lastUpdatedVolume,
     };
+  }
+
+  // ============================================
+  // WRITING LESSONS
+  // ============================================
+
+  async createWritingLesson(data: InsertWritingLesson): Promise<WritingLesson> {
+    const [lesson] = await db.insert(writingLessons).values(data).returning();
+    return lesson;
+  }
+
+  async getAllWritingLessons(): Promise<WritingLesson[]> {
+    return db.select().from(writingLessons).orderBy(desc(writingLessons.severityWeight));
+  }
+
+  async getActiveWritingLessons(): Promise<WritingLesson[]> {
+    return db.select().from(writingLessons)
+      .where(eq(writingLessons.isActive, true))
+      .orderBy(desc(writingLessons.severityWeight));
+  }
+
+  async updateWritingLesson(id: number, data: Partial<WritingLesson>): Promise<WritingLesson | undefined> {
+    const [updated] = await db.update(writingLessons).set(data).where(eq(writingLessons.id, id)).returning();
+    return updated;
+  }
+
+  async deleteWritingLesson(id: number): Promise<void> {
+    await db.delete(writingLessons).where(eq(writingLessons.id, id));
+  }
+
+  async deleteAllWritingLessons(): Promise<void> {
+    await db.delete(writingLessons);
   }
 }
 

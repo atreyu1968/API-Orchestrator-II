@@ -7618,6 +7618,79 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
   const activeReeditStreams = new Map<number, Set<Response>>();
   const activeReeditOrchestrators = new Map<number, ReeditOrchestrator>();
   
+  // ============================================
+  // WRITING LESSONS (Cross-project learning)
+  // ============================================
+
+  app.get("/api/writing-lessons", async (req: Request, res: Response) => {
+    try {
+      const lessons = await storage.getAllWritingLessons();
+      res.json(lessons);
+    } catch (error: any) {
+      console.error("Error fetching writing lessons:", error);
+      res.status(500).json({ error: error.message || "Failed to fetch writing lessons" });
+    }
+  });
+
+  app.post("/api/writing-lessons/refresh", async (req: Request, res: Response) => {
+    try {
+      const { WritingLessonsAgent } = await import("./agents/writing-lessons-agent");
+      const agent = new WritingLessonsAgent();
+      
+      res.json({ status: "started", message: "Analizando auditorías para extraer lecciones..." });
+
+      agent.refreshLessons().then(result => {
+        console.log(`[WritingLessons] Refresh complete: ${result.created} lessons from ${result.projectsAnalyzed} projects`);
+      }).catch(err => {
+        console.error("[WritingLessons] Refresh failed:", err);
+      });
+    } catch (error: any) {
+      console.error("Error refreshing writing lessons:", error);
+      res.status(500).json({ error: error.message || "Failed to refresh writing lessons" });
+    }
+  });
+
+  app.post("/api/writing-lessons/refresh-sync", async (req: Request, res: Response) => {
+    try {
+      const { WritingLessonsAgent } = await import("./agents/writing-lessons-agent");
+      const agent = new WritingLessonsAgent();
+      const result = await agent.refreshLessons();
+      res.json({ status: "completed", ...result });
+    } catch (error: any) {
+      console.error("Error refreshing writing lessons:", error);
+      res.status(500).json({ error: error.message || "Failed to refresh writing lessons" });
+    }
+  });
+
+  app.patch("/api/writing-lessons/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const { isActive } = req.body;
+      if (typeof isActive !== "boolean") {
+        return res.status(400).json({ error: "isActive must be a boolean" });
+      }
+      const updated = await storage.updateWritingLesson(id, { isActive });
+      if (!updated) {
+        return res.status(404).json({ error: "Lesson not found" });
+      }
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error updating writing lesson:", error);
+      res.status(500).json({ error: error.message || "Failed to update writing lesson" });
+    }
+  });
+
+  app.delete("/api/writing-lessons/:id", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.deleteWritingLesson(id);
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Error deleting writing lesson:", error);
+      res.status(500).json({ error: error.message || "Failed to delete writing lesson" });
+    }
+  });
+
   // Helper to create and register a reedit orchestrator with generation token
   async function createReeditOrchestratorWithToken(projectId: number): Promise<ReeditOrchestrator> {
     const generationToken = `reedit_${projectId}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

@@ -39,6 +39,7 @@ import {
   Palette,
   Microscope,
   Scissors,
+  GraduationCap,
 } from "lucide-react";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -66,6 +67,7 @@ const settingsNavItems = [
   { title: "Pseudónimos", url: "/pseudonyms", icon: User },
   { title: "Series", url: "/series", icon: Library },
   { title: "Cola de Proyectos", url: "/queue", icon: ListOrdered },
+  { title: "Lecciones de Escritura", url: "/writing-lessons", icon: GraduationCap },
   { title: "Historial de Costos", url: "/costs-history", icon: DollarSign },
   { title: "Configuración", url: "/config", icon: Settings },
 ];

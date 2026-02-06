@@ -1099,4 +1099,24 @@ export interface CorrectionRecord {
   reviewedAt?: string;
 }
 
+// Writing Lessons - Cross-project learning from audit results
+export const writingLessons = pgTable("writing_lessons", {
+  id: serial("id").primaryKey(),
+  category: text("category").notNull(), // repeticion_lexica, continuidad, estructura, personajes, ritmo, atmosfera, trama, dialogo, temporal
+  lesson: text("lesson").notNull(),
+  rationale: text("rationale").notNull(),
+  badExample: text("bad_example"),
+  goodExample: text("good_example"),
+  severityWeight: integer("severity_weight").notNull().default(5), // 1-10 importance
+  evidenceCount: integer("evidence_count").notNull().default(1),
+  sourceProjectIds: jsonb("source_project_ids").$type<number[]>().default([]),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+  lastRefreshedAt: timestamp("last_refreshed_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
+});
+
+export const insertWritingLessonSchema = createInsertSchema(writingLessons).omit({ id: true, createdAt: true, lastRefreshedAt: true });
+export type InsertWritingLesson = z.infer<typeof insertWritingLessonSchema>;
+export type WritingLesson = typeof writingLessons.$inferSelect;
+
 export * from "./models/chat";

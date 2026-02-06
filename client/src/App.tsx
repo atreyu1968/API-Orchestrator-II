@@ -31,6 +31,7 @@ import GenerateSeriesGuidePage from "@/pages/generate-series-guide";
 import CorrectedManuscriptsPage from "@/pages/corrected-manuscripts";
 import StyleGuidesPage from "@/pages/style-guides";
 import AuditorPage from "@/pages/auditor";
+import WritingLessonsPage from "@/pages/writing-lessons";
 import asdLogo from "@assets/ASD_1766442257801.png";
 
 interface AuthStatus {
@@ -59,6 +60,7 @@ function Router() {
       <Route path="/style-guides" component={StyleGuidesPage} />
       <Route path="/auditor" component={AuditorPage} />
       <Route path="/corrected-manuscripts" component={CorrectedManuscriptsPage} />
+      <Route path="/writing-lessons" component={WritingLessonsPage} />
       <Route path="/config" component={ConfigPage} />
       <Route component={NotFound} />
     </Switch>

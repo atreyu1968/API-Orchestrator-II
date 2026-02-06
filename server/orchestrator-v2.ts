@@ -3835,6 +3835,21 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
     }
   }
 
+  private async getGlobalWritingLessons(): Promise<string> {
+    try {
+      const lessons = await storage.getActiveWritingLessons();
+      if (!lessons || lessons.length === 0) return "";
+      
+      const { WritingLessonsAgent } = await import("./agents/writing-lessons-agent");
+      const formatted = WritingLessonsAgent.formatLessonsForGhostwriter(lessons);
+      console.log(`[OrchestratorV2] Injected ${lessons.length} global writing lessons`);
+      return formatted;
+    } catch (err) {
+      console.error(`[OrchestratorV2] Failed to get global writing lessons:`, err);
+      return "";
+    }
+  }
+
   private async validateAndUpdateConsistency(
     projectId: number,
     chapterNumber: number,
@@ -4984,7 +4999,11 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         }
 
         // LitAgents 2.9: Get error history to avoid past mistakes
-        const errorHistory = await this.getErrorHistoryForWriting(project.id);
+        const projectErrorHistory = await this.getErrorHistoryForWriting(project.id);
+        
+        // LitAgents 2.9.9+: Inject global writing lessons learned from past audits
+        const globalLessons = await this.getGlobalWritingLessons();
+        const errorHistory = globalLessons + (globalLessons && projectErrorHistory ? "\n\n" : "") + projectErrorHistory;
 
         // LitAgents 2.9.9+: Inject accumulated narrative timeline into constraints for Ghostwriter
         if (narrativeTimeline.length > 0) {
