@@ -7650,6 +7650,38 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
     }
   });
 
+  app.get("/api/writing-lessons/diagnose", async (req: Request, res: Response) => {
+    try {
+      const allProjects = await storage.getAllProjects();
+      const diagnosis = allProjects.map(p => {
+        const review = p.finalReviewResult as any;
+        return {
+          id: p.id,
+          title: p.title,
+          status: p.status,
+          hasFinalReviewResult: !!p.finalReviewResult,
+          finalReviewResultType: p.finalReviewResult === null ? "null" : typeof p.finalReviewResult,
+          finalReviewResultKeys: review ? Object.keys(review) : [],
+          hasIssues: !!(review?.issues && Array.isArray(review.issues)),
+          issuesCount: review?.issues?.length || 0,
+          hasDebilidades: !!(review?.justificacion_puntuacion?.debilidades_principales?.length),
+          debilidadesCount: review?.justificacion_puntuacion?.debilidades_principales?.length || 0,
+          hasRecomendaciones: !!(review?.justificacion_puntuacion?.recomendaciones_proceso?.length),
+          recomendacionesCount: review?.justificacion_puntuacion?.recomendaciones_proceso?.length || 0,
+          puntuacionGlobal: review?.puntuacion_global || null,
+          veredicto: review?.veredicto || null,
+        };
+      });
+      res.json({
+        totalProjects: allProjects.length,
+        projectsWithAuditData: diagnosis.filter(d => d.issuesCount > 0 || d.debilidadesCount > 0 || d.recomendacionesCount > 0).length,
+        projects: diagnosis,
+      });
+    } catch (error: any) {
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.post("/api/writing-lessons/refresh-sync", async (req: Request, res: Response) => {
     try {
       const { WritingLessonsAgent } = await import("./agents/writing-lessons-agent");
