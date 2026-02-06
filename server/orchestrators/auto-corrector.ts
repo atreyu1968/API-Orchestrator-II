@@ -121,6 +121,8 @@ export async function startAutoCorrectionRun(
     const runControl = { cancelled: false };
     activeRuns.set(run.id, runControl);
 
+    console.log(`[AutoCorrector] Starting run #${run.id} for project ${projectId} (${project.title})`);
+
     executeAutoCorrectionLoop(run.id, projectId, runControl, onProgress).catch(async (err) => {
       console.error(`[AutoCorrector] Fatal error in run ${run.id}:`, err);
       await updateRunStatus(run.id, 'failed', { errorMessage: String(err) });
@@ -141,6 +143,7 @@ async function executeAutoCorrectionLoop(
   onProgress?: AutoCorrectorProgressCallback
 ) {
   try {
+    console.log(`[AutoCorrector] executeAutoCorrectionLoop started for run #${runId}, project ${projectId}`);
     const [run] = await db.select().from(autoCorrectionRuns).where(eq(autoCorrectionRuns.id, runId));
     if (!run) throw new Error('Run not found');
 
@@ -169,12 +172,14 @@ async function executeAutoCorrectionLoop(
       });
       await addLog(runId, 'auditing', `Ciclo ${cycle}: Iniciando auditoría`);
 
-      // PHASE 1: Build novel content
+      console.log(`[AutoCorrector] Run #${runId} Cycle ${cycle}: Building novel content...`);
       const novelContent = await buildNovelContent(projectId);
+      console.log(`[AutoCorrector] Run #${runId} Cycle ${cycle}: Novel content built (${novelContent.length} chars)`);
       const bibleContent = await buildBibleContent(projectId);
+      console.log(`[AutoCorrector] Run #${runId} Cycle ${cycle}: Bible content built (${bibleContent?.length || 0} chars). Starting audit...`);
 
-      // PHASE 2: Run audit
       const auditResult = await runAudit(runId, projectId, novelContent, bibleContent, cycle, onProgress);
+      console.log(`[AutoCorrector] Run #${runId} Cycle ${cycle}: Audit result:`, JSON.stringify({ success: auditResult.success, score: auditResult.overallScore, critical: auditResult.criticalIssues, total: auditResult.totalIssues, error: auditResult.error }));
 
       if (await isCancelled(runId, control)) {
         await finishCancelled(runId, cycle, cycleStart, auditResult);
@@ -457,6 +462,7 @@ async function runAudit(
   try {
     const project = await storage.getProject(projectId);
     const novelTitle = project?.title || 'Untitled';
+    console.log(`[AutoCorrector] runAudit cycle ${cycle}: Creating audit record for "${novelTitle}"...`);
 
     const [audit] = await db.insert(manuscriptAudits).values({
       projectId,
@@ -465,12 +471,16 @@ async function runAudit(
       bibleContent,
     }).returning();
 
+    console.log(`[AutoCorrector] runAudit cycle ${cycle}: Audit record #${audit.id} created. Importing gemini-auditor...`);
+
     const {
       initializeNovelContext,
       runAllAgentsWithProgress,
       countCriticalIssues,
       calculateOverallScore,
     } = await import('../gemini-auditor');
+
+    console.log(`[AutoCorrector] runAudit cycle ${cycle}: gemini-auditor imported. Initializing context...`);
 
     await db.update(manuscriptAudits)
       .set({ status: 'caching' })
@@ -483,6 +493,7 @@ async function runAudit(
     });
 
     const contextResult = await initializeNovelContext(novelContent, bibleContent, novelTitle);
+    console.log(`[AutoCorrector] runAudit cycle ${cycle}: Context initialized: ${contextResult.success ? 'OK' : 'FAILED'}`);
 
     if (!contextResult.success) {
       await db.update(manuscriptAudits)
@@ -501,6 +512,7 @@ async function runAudit(
       cycle,
     });
 
+    console.log(`[AutoCorrector] runAudit cycle ${cycle}: Running 3 agents in parallel...`);
     const reports = await runAllAgentsWithProgress(async (report) => {
       const updateData: Record<string, any> = {};
       if (report.agentType === 'CONTINUITY') updateData.continuityReport = report;
