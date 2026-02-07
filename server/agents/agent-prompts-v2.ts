@@ -632,7 +632,35 @@ export const PROMPTS_V2 = {
     - Nombre de la serie: ${seriesName || 'No especificado'}
     - Este es el libro #${seriesOrder || 1} de la serie
     ${previousBooksContext ? `- Contexto de libros anteriores: ${previousBooksContext}` : ''}
-    IMPORTANTE: Mantén coherencia con los libros anteriores. Los personajes recurrentes deben mantener sus características establecidas.
+    
+    ╔══════════════════════════════════════════════════════════════════╗
+    ║ ⚠️ PROTECCIÓN DE PERSONAJES DE SERIE (INVIOLABLE)               ║
+    ╠══════════════════════════════════════════════════════════════════╣
+    ║                                                                  ║
+    ║ Los personajes definidos en la guía de la serie son SAGRADOS.   ║
+    ║ ESTÁ ABSOLUTAMENTE PROHIBIDO:                                   ║
+    ║                                                                  ║
+    ║ 1. CAMBIAR NOMBRES: Si la guía dice "Elena Voss", NO puedes    ║
+    ║    renombrarla como "Helena", "Elisa", ni ningún otro nombre.   ║
+    ║    Usa el nombre EXACTO tal como aparece en la guía.            ║
+    ║                                                                  ║
+    ║ 2. CAMBIAR SEXO/GÉNERO: Si un personaje es mujer en la guía,   ║
+    ║    DEBE ser mujer en la biblia del mundo. Si es hombre, DEBE    ║
+    ║    ser hombre. NUNCA cambiar el género de un personaje.         ║
+    ║                                                                  ║
+    ║ 3. CAMBIAR ROL: Si la guía define un personaje como             ║
+    ║    protagonista/antagonista/aliado, MANTÉN ese mismo rol.       ║
+    ║                                                                  ║
+    ║ 4. INVENTAR REEMPLAZOS: NO sustituyas personajes de la guía    ║
+    ║    por personajes nuevos con funciones similares.               ║
+    ║                                                                  ║
+    ║ 5. ALTERAR ATRIBUTOS FÍSICOS: Ojos, cabello, edad, rasgos      ║
+    ║    distintivos definidos en la guía son INMUTABLES.             ║
+    ║                                                                  ║
+    ║ REGLA: Copia los personajes de la guía de serie TAL CUAL.      ║
+    ║ Puedes AÑADIR personajes nuevos secundarios, pero NUNCA        ║
+    ║ modificar los existentes de la guía.                            ║
+    ╚══════════════════════════════════════════════════════════════════╝
     ` : ''}
     ${extendedGuide ? `
     === GUÍA DE ESCRITURA EXTENDIDA (SEGUIR OBLIGATORIAMENTE) ===
@@ -641,6 +669,10 @@ export const PROMPTS_V2 = {
     ${extendedGuide}
     
     IMPORTANTE: Usa EXACTAMENTE los personajes, nombres, ubicaciones y estructura definidos en esta guía. NO inventes personajes nuevos a menos que la guía lo permita.
+    ${workType === 'series' ? `
+    ⚠️ RECORDATORIO SERIE: Los nombres y géneros de los personajes en esta guía son INMUTABLES.
+    Si la guía dice "Inspector García" (hombre), NO lo conviertas en "Inspectora García" ni en "Inspector Gómez".
+    Copia EXACTAMENTE cada nombre, sexo y rol tal como aparece arriba.` : ''}
     ` : ''}
     ${styleGuide ? `
     === GUÍA DE ESTILO ===

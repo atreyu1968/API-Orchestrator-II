@@ -269,6 +269,18 @@ INSTRUCCIONES CRÍTICAS PARA NOVELA DE SERIE:
 3. Incluye referencias explícitas a eventos de libros anteriores si los hay.
 4. Prepara hilos para futuras entregas según los hitos del siguiente volumen.
 5. En la sección "Registro de Chekhov's Gun" incluye los objetos/pistas de la serie.
+
+⚠️ PROTECCIÓN ABSOLUTA DE PERSONAJES DE SERIE:
+6. Los NOMBRES de los personajes definidos en la guía de serie son INMUTABLES.
+   - NO cambies, modifiques ni "mejores" ningún nombre de personaje.
+   - Usa el nombre EXACTO tal como aparece en la guía de la serie.
+7. El SEXO/GÉNERO de los personajes es INMUTABLE.
+   - Si la guía define un personaje masculino, DEBE ser masculino en tu guía.
+   - Si la guía define un personaje femenino, DEBE ser femenino en tu guía.
+   - NUNCA cambies el género de ningún personaje de la serie.
+8. Los ROLES de los personajes son INMUTABLES (protagonista, antagonista, aliado, etc.)
+9. NO sustituyas personajes de la serie por personajes nuevos inventados.
+10. Puedes AÑADIR personajes secundarios nuevos, pero los personajes de la serie deben aparecer TAL CUAL.
 `;
     }
 

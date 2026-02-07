@@ -1182,6 +1182,300 @@ Las siguientes tramas DEBEN ser avanzadas en este capítulo. Cada escena debe co
   }
 
   /**
+   * LitAgents 2.9.10: Validate and auto-correct series character consistency.
+   * Compares World Bible characters against series guide characters to detect
+   * name changes, gender swaps, or role modifications.
+   */
+  private validateSeriesCharacterConsistency(
+    worldBibleCharacters: any[],
+    extendedGuide: string,
+    projectId: number
+  ): { corrections: Array<{ wbIndex: number; field: string; from: string; to: string }>; warnings: string[] } {
+    const corrections: Array<{ wbIndex: number; field: string; from: string; to: string }> = [];
+    const warnings: string[] = [];
+    
+    if (!extendedGuide || !worldBibleCharacters || worldBibleCharacters.length === 0) {
+      return { corrections, warnings };
+    }
+    
+    const guideCharacters = this.extractCharactersFromExtendedGuide(extendedGuide);
+    if (guideCharacters.length === 0) return { corrections, warnings };
+    
+    const guideGenders = this.extractGendersFromGuide(extendedGuide);
+    
+    for (const guideChar of guideCharacters) {
+      const guideName = (guideChar.name || '').trim();
+      if (!guideName) continue;
+      
+      const guideNameLower = guideName.toLowerCase();
+      const guideFirstName = guideName.split(/\s+/)[0].toLowerCase();
+      
+      const exactMatch = worldBibleCharacters.findIndex((wbChar: any) => {
+        const wbName = (wbChar.name || wbChar.nombre || '').toLowerCase().trim();
+        return wbName === guideNameLower;
+      });
+      
+      if (exactMatch >= 0) {
+        const wbChar = worldBibleCharacters[exactMatch];
+        const guideGender = guideGenders[guideNameLower] || guideGenders[guideFirstName];
+        if (guideGender) {
+          const wbProfile = (wbChar.profile || wbChar.description || '').toLowerCase();
+          const wbName = (wbChar.name || wbChar.nombre || '').toLowerCase();
+          
+          const isFemaleGuide = guideGender === 'female';
+          const isMaleGuide = guideGender === 'male';
+          
+          const femaleIndicators = /\b(inspectora|detective\s+femenin|ella|heroína|madre|esposa|novia|hermana|hija|abuela|tía|señora|dama|reina|princesa|doctora|profesora|comisaria|agente\s+femenin)\b/i;
+          const maleIndicators = /\b(inspector\b|detective\s+masculin|él\b|héroe|padre|esposo|novio|hermano|hijo|abuelo|tío|señor|rey|príncipe|doctor\b|profesor\b|comisario|agente\s+masculin)\b/i;
+          
+          if (isFemaleGuide && maleIndicators.test(wbProfile) && !femaleIndicators.test(wbProfile)) {
+            warnings.push(`⚠️ ALERTA DE GÉNERO: "${wbChar.name || wbChar.nombre}" parece haber cambiado de género. En la guía de serie es FEMENINO pero la biblia usa indicadores masculinos. Se corregirá.`);
+            corrections.push({
+              wbIndex: exactMatch,
+              field: 'gender',
+              from: 'male',
+              to: 'female'
+            });
+          } else if (isMaleGuide && femaleIndicators.test(wbProfile) && !maleIndicators.test(wbProfile)) {
+            warnings.push(`⚠️ ALERTA DE GÉNERO: "${wbChar.name || wbChar.nombre}" parece haber cambiado de género. En la guía de serie es MASCULINO pero la biblia usa indicadores femeninos. Se corregirá.`);
+            corrections.push({
+              wbIndex: exactMatch,
+              field: 'gender',
+              from: 'female',
+              to: 'male'
+            });
+          }
+        }
+        continue;
+      }
+      
+      const similarMatch = worldBibleCharacters.findIndex((wbChar: any) => {
+        const wbName = (wbChar.name || wbChar.nombre || '').toLowerCase().trim();
+        const wbFirstName = wbName.split(/\s+/)[0];
+        const wbRole = (wbChar.role || wbChar.rol || '').toLowerCase();
+        const guideRole = (guideChar.role || '').toLowerCase();
+        
+        if (wbFirstName === guideFirstName && wbName !== guideNameLower) return true;
+        
+        if (guideRole && guideRole !== 'supporting' && wbRole === guideRole) {
+          const nameSimilarity = this.calculateNameSimilarity(guideName, wbChar.name || wbChar.nombre || '');
+          if (nameSimilarity > 0.4) return true;
+        }
+        
+        return false;
+      });
+      
+      if (similarMatch >= 0) {
+        const wbChar = worldBibleCharacters[similarMatch];
+        const wbName = wbChar.name || wbChar.nombre || '';
+        
+        warnings.push(`⚠️ NOMBRE CAMBIADO: La guía de serie define "${guideName}" (${guideChar.role}) pero la biblia del mundo usa "${wbName}". Se corregirá automáticamente.`);
+        
+        corrections.push({
+          wbIndex: similarMatch,
+          field: 'name',
+          from: wbName,
+          to: guideName
+        });
+      } else {
+        if (guideChar.role === 'protagonist' || guideChar.role === 'antagonist') {
+          warnings.push(`⚠️ PERSONAJE FALTANTE: "${guideName}" (${guideChar.role}) está definido en la guía de serie pero NO aparece en la biblia del mundo generada.`);
+        }
+      }
+    }
+    
+    return { corrections, warnings };
+  }
+  
+  private extractGendersFromGuide(guide: string): Record<string, 'male' | 'female'> {
+    const genders: Record<string, 'male' | 'female'> = {};
+    
+    const femalePatterns = [
+      /\*\*Nombre(?:\s+completo)?:\*\*\s*([^\n]+)/gi,
+      /(?:protagonista|detective|inspectora|heroína|agente)\s+(?:femenin[ao])?[:\s]*([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)*)/gi,
+    ];
+    
+    const nameGenderPatterns = [
+      { pattern: /\*\*Nombre(?:\s+completo)?:\*\*\s*([^\n]+)/gi, context: 200 },
+      { pattern: /###?\s+(?:El|La)\s+(Detective|Protagonista|Inspector[a]?)\b[^\n]*\n[\s\S]*?\*\*Nombre(?:\s+completo)?:\*\*\s*([^\n]+)/gi, context: 0 },
+    ];
+    
+    for (const { pattern } of nameGenderPatterns) {
+      let match;
+      while ((match = pattern.exec(guide)) !== null) {
+        const nameStr = (match[2] || match[1] || '').trim().replace(/\*+/g, '');
+        if (!nameStr || nameStr.length < 2) continue;
+        
+        const contextStart = Math.max(0, match.index - 100);
+        const contextEnd = Math.min(guide.length, match.index + match[0].length + 200);
+        const context = guide.substring(contextStart, contextEnd);
+        
+        const isFemale = /\b(inspectora|heroína|ella|madre|esposa|mujer|femenin|señora|detective\s+femenin|comisaria|doctora|profesora)\b/i.test(context);
+        const isMale = /\b(inspector\b|héroe\b|él\b|padre|esposo|hombre|masculin|señor|comisario|doctor\b|profesor\b)\b/i.test(context);
+        
+        const nameLower = nameStr.toLowerCase();
+        const firstName = nameLower.split(/\s+/)[0];
+        
+        if (isFemale && !isMale) {
+          genders[nameLower] = 'female';
+          genders[firstName] = 'female';
+        } else if (isMale && !isFemale) {
+          genders[nameLower] = 'male';
+          genders[firstName] = 'male';
+        }
+      }
+    }
+    
+    const sectionGenders: Array<{ header: RegExp; gender: 'female' | 'male' }> = [
+      { header: /##\s*\d+\.\s*(?:LA\s+)?(?:DETECTIVE|PROTAGONISTA|INSPECTORA|HEROÍNA)/gi, gender: 'female' },
+      { header: /##\s*\d+\.\s*(?:EL\s+)?(?:DETECTIVE|PROTAGONISTA|INSPECTOR\b|HÉROE)/gi, gender: 'male' },
+    ];
+    
+    for (const { header, gender } of sectionGenders) {
+      let headerMatch;
+      while ((headerMatch = header.exec(guide)) !== null) {
+        const sectionStart = headerMatch.index;
+        const sectionEnd = guide.indexOf('\n## ', sectionStart + 1);
+        const section = guide.substring(sectionStart, sectionEnd > 0 ? sectionEnd : sectionStart + 500);
+        
+        const nameMatch = section.match(/\*\*Nombre(?:\s+completo)?:\*\*\s*([^\n]+)/i);
+        if (nameMatch) {
+          const name = nameMatch[1].trim().replace(/\*+/g, '').toLowerCase();
+          const firstName = name.split(/\s+/)[0];
+          genders[name] = gender;
+          genders[firstName] = gender;
+        }
+      }
+    }
+    
+    return genders;
+  }
+  
+  /**
+   * LitAgents 2.9.10: Extract volume-specific context from the series guide.
+   * Looks for sections like "HITOS DEL VOLUMEN N", "ARQUITECTURA DEL VOLUMEN N",
+   * and any volume-specific character/plot information.
+   */
+  private extractVolumeContextFromGuide(guide: string, volumeNumber: number): string | null {
+    if (!guide || volumeNumber <= 0) return null;
+    
+    const sections: string[] = [];
+    
+    const hitosPatterns = [
+      new RegExp(`##\\s*HITOS\\s+DEL\\s+VOLUMEN\\s+${volumeNumber}[:\\s]*[^\\n]*\\n([\\s\\S]*?)(?=##\\s*(?:HITOS\\s+DEL\\s+VOLUMEN|ARQUITECTURA\\s+DEL\\s+VOLUMEN)\\s+(?!${volumeNumber}\\b)|$)`, 'i'),
+      new RegExp(`##\\s*HITOS\\s+(?:VOLUMEN|VOL\\.?)\\s*${volumeNumber}[:\\s]*[^\\n]*\\n([\\s\\S]*?)(?=##\\s|$)`, 'i'),
+    ];
+    
+    for (const pattern of hitosPatterns) {
+      const match = guide.match(pattern);
+      if (match) {
+        const content = match[0].trim();
+        if (content.length > 30) {
+          sections.push(content);
+          break;
+        }
+      }
+    }
+    
+    const arqPatterns = [
+      new RegExp(`##\\s*ARQUITECTURA\\s+DEL\\s+VOLUMEN\\s+${volumeNumber}[:\\s]*[^\\n]*\\n([\\s\\S]*?)(?=##\\s*(?:HITOS\\s+DEL\\s+VOLUMEN|ARQUITECTURA\\s+DEL\\s+VOLUMEN)\\s+(?!${volumeNumber}\\b)|$)`, 'i'),
+      new RegExp(`##\\s*ARQUITECTURA\\s+(?:VOLUMEN|VOL\\.?)\\s*${volumeNumber}[:\\s]*[^\\n]*\\n([\\s\\S]*?)(?=##\\s|$)`, 'i'),
+    ];
+    
+    for (const pattern of arqPatterns) {
+      const match = guide.match(pattern);
+      if (match) {
+        const content = match[0].trim();
+        if (content.length > 30 && !sections.some(s => s.includes(content.substring(0, 50)))) {
+          sections.push(content);
+          break;
+        }
+      }
+    }
+    
+    const volTitlePattern = new RegExp(`\\*\\*(?:Título|Titulo)\\s*(?:del\\s+)?(?:volumen|vol\\.?)\\s*${volumeNumber}[^*]*\\*\\*[:\\s]*([^\\n]+)`, 'i');
+    const volArgPattern = new RegExp(`\\*\\*Argumento(?:\\s+del\\s+volumen\\s+${volumeNumber})?\\*\\*[:\\s]*([^\\n](?:[\\s\\S]*?)?)(?=\\n\\*\\*|\\n##|$)`, 'i');
+    
+    const volRefPattern = new RegExp(`(?:volumen|vol\\.?|libro)\\s*${volumeNumber}[:\\s]+["\u201C]([^"\u201D\\n]+)["\u201D]`, 'gi');
+    let refMatch;
+    while ((refMatch = volRefPattern.exec(guide)) !== null) {
+      const contextStart = Math.max(0, refMatch.index - 20);
+      const contextEnd = Math.min(guide.length, refMatch.index + 500);
+      const nearbyText = guide.substring(contextStart, contextEnd);
+      
+      const argInContext = nearbyText.match(/\*\*Argumento:\*\*\s*([\s\S]*?)(?=\n\*\*|\n##|$)/i);
+      if (argInContext && !sections.some(s => s.includes(argInContext[1].substring(0, 40)))) {
+        sections.push(`Argumento del Volumen ${volumeNumber}: ${argInContext[1].trim()}`);
+      }
+    }
+    
+    const protagonistSection = guide.match(/##\s*\d+\.\s*(?:EL|LA)\s+(?:DETECTIVE|PROTAGONISTA)[^\n]*\n([\s\S]*?)(?=\n##\s*\d+)/i);
+    if (protagonistSection) {
+      const protContent = protagonistSection[0].trim();
+      if (protContent.length > 50 && !sections.some(s => s.includes(protContent.substring(0, 50)))) {
+        sections.push(protContent);
+      }
+    }
+    
+    const recurringCharsSection = guide.match(/##\s*\d+\.\s*PERSONAJES\s+RECURRENTES[^\n]*\n([\s\S]*?)(?=\n##\s*\d+)/i);
+    if (recurringCharsSection) {
+      const charsContent = recurringCharsSection[0].trim();
+      if (charsContent.length > 50 && !sections.some(s => s.includes(charsContent.substring(0, 50)))) {
+        sections.push(charsContent);
+      }
+    }
+    
+    const worldRulesSection = guide.match(/##\s*\d+\.\s*REGLAS\s+DEL\s+MUNDO[^\n]*\n([\s\S]*?)(?=\n##\s*\d+)/i);
+    if (worldRulesSection) {
+      const rulesContent = worldRulesSection[0].trim();
+      if (rulesContent.length > 50 && !sections.some(s => s.includes(rulesContent.substring(0, 50)))) {
+        sections.push(rulesContent);
+      }
+    }
+    
+    const metaplotSection = guide.match(/##\s*\d+\.\s*(?:EL\s+)?HILO\s+CONDUCTOR[^\n]*\n([\s\S]*?)(?=\n##\s*\d+)/i);
+    if (metaplotSection) {
+      const metaContent = metaplotSection[0].trim();
+      if (metaContent.length > 50 && !sections.some(s => s.includes(metaContent.substring(0, 50)))) {
+        sections.push(metaContent);
+      }
+    }
+    
+    const continuitySection = guide.match(/##\s*\d+\.\s*(?:PREVENCIÓN\s+DE\s+)?ERRORES?\s+DE\s+CONTINUIDAD[^\n]*\n([\s\S]*?)(?=\n##\s*\d+|$)/i);
+    if (continuitySection) {
+      const contContent = continuitySection[0].trim();
+      if (contContent.length > 50 && !sections.some(s => s.includes(contContent.substring(0, 50)))) {
+        sections.push(contContent);
+      }
+    }
+    
+    if (sections.length === 0) return null;
+    
+    return sections.join('\n\n');
+  }
+
+  private calculateNameSimilarity(name1: string, name2: string): number {
+    const a = name1.toLowerCase();
+    const b = name2.toLowerCase();
+    if (a === b) return 1.0;
+    
+    const aFirst = a.split(/\s+/)[0];
+    const bFirst = b.split(/\s+/)[0];
+    if (aFirst === bFirst) return 0.7;
+    
+    const maxLen = Math.max(a.length, b.length);
+    if (maxLen === 0) return 0;
+    
+    let matches = 0;
+    const minLen = Math.min(a.length, b.length);
+    for (let i = 0; i < minLen; i++) {
+      if (a[i] === b[i]) matches++;
+    }
+    
+    return matches / maxLen;
+  }
+
+  /**
    * LitAgents 2.9.6: Build corrective instructions for Global Architect regeneration
    * Now includes character consistency requirements
    */
@@ -4265,7 +4559,18 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         const series = await storage.getSeries(project.seriesId);
         if (series) {
           seriesName = series.title;
-          console.log(`[OrchestratorV2] Part of series: ${series.title}, Book #${project.seriesOrder}`);
+          const volumeNumber = project.seriesOrder || 1;
+          console.log(`[OrchestratorV2] Part of series: ${series.title}, Book #${volumeNumber}`);
+          
+          // LitAgents 2.9.10: Extract volume-specific information from the series guide
+          // This ensures the Global Architect receives the milestones, architecture, and character details for THIS volume
+          if (extendedGuideContent && volumeNumber > 0) {
+            const volumeContext = this.extractVolumeContextFromGuide(extendedGuideContent, volumeNumber);
+            if (volumeContext) {
+              console.log(`[OrchestratorV2] Extracted volume ${volumeNumber} context from series guide (${volumeContext.length} chars)`);
+              previousBooksContext = `\n=== INFORMACIÓN OBLIGATORIA PARA ESTE VOLUMEN (${volumeNumber}) ===\n${volumeContext}\n\nDEBES incorporar TODA esta información del volumen ${volumeNumber} en la biblia del mundo y la estructura de capítulos. Los hitos, la arquitectura y los personajes definidos aquí son OBLIGATORIOS.\n`;
+            }
+          }
           
           // Get context from previous books in the series
           if (project.seriesOrder && project.seriesOrder > 1) {
@@ -4280,10 +4585,20 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
                 const prevWorldBible = await storage.getWorldBibleByProject(prevBook.id);
                 if (prevWorldBible && prevWorldBible.characters) {
                   const chars = Array.isArray(prevWorldBible.characters) ? prevWorldBible.characters : [];
-                  contexts.push(`Libro ${prevBook.seriesOrder}: "${prevBook.title}" - Personajes: ${JSON.stringify(chars.slice(0, 5))}`);
+                  const charSummaries = chars.slice(0, 8).map((c: any) => {
+                    const name = c.name || c.nombre || 'Desconocido';
+                    const role = c.role || c.rol || '';
+                    const appearance = c.appearance || {};
+                    const details: string[] = [`"${name}" (${role})`];
+                    if (appearance.eyes) details.push(`ojos: ${appearance.eyes}`);
+                    if (appearance.hair) details.push(`cabello: ${appearance.hair}`);
+                    return details.join(', ');
+                  });
+                  contexts.push(`Libro ${prevBook.seriesOrder}: "${prevBook.title}"\n  Personajes INMUTABLES: ${charSummaries.join('; ')}`);
                 }
               }
-              previousBooksContext = contexts.join('\n');
+              const prevContext = contexts.join('\n');
+              previousBooksContext = (previousBooksContext || '') + '\n\n=== LIBROS ANTERIORES DE LA SERIE ===\n' + prevContext;
               console.log(`[OrchestratorV2] Loaded context from ${previousBooks.length} previous books`);
             }
           }
@@ -4636,6 +4951,93 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         this.callbacks.onAgentStatus("global-architect", "completed", "Master structure complete");
 
         worldBible = globalResult.parsed.world_bible;
+        
+        const wbCharacters = worldBible?.characters || (worldBible as any)?.personajes;
+        if ((project.workType === 'series' || project.seriesId) && extendedGuideContent && wbCharacters) {
+          if (!worldBible.characters && (worldBible as any).personajes) {
+            worldBible.characters = (worldBible as any).personajes;
+          }
+          console.log(`[OrchestratorV2] 🛡️ Running series character consistency validation...`);
+          const charValidation = this.validateSeriesCharacterConsistency(
+            worldBible.characters,
+            extendedGuideContent,
+            project.id
+          );
+          
+          if (charValidation.corrections.length > 0) {
+            for (const correction of charValidation.corrections) {
+              const char = worldBible.characters[correction.wbIndex];
+              if (correction.field === 'name') {
+                console.log(`[OrchestratorV2] 🔧 Auto-correcting character name: "${correction.from}" → "${correction.to}"`);
+                if (char.name) char.name = correction.to;
+                if (char.nombre) char.nombre = correction.to;
+              } else if (correction.field === 'gender') {
+                console.log(`[OrchestratorV2] 🔧 Auto-correcting character gender for "${char.name || char.nombre}": ${correction.from} → ${correction.to}`);
+                if (char.gender) char.gender = correction.to === 'female' ? 'femenino' : 'masculino';
+                if (char.sexo) char.sexo = correction.to === 'female' ? 'femenino' : 'masculino';
+                if (char.sex) char.sex = correction.to;
+                
+                const profile = char.profile || char.description || '';
+                if (correction.to === 'female') {
+                  const corrected = profile
+                    .replace(/\bhéroe\b/gi, 'heroína')
+                    .replace(/\binspector\b(?!\w)/gi, 'inspectora')
+                    .replace(/\bdetective masculino\b/gi, 'detective femenina')
+                    .replace(/\bdoctor\b(?!\w)/gi, 'doctora')
+                    .replace(/\bprofesor\b(?!\w)/gi, 'profesora')
+                    .replace(/\bcomisario\b/gi, 'comisaria');
+                  if (char.profile) char.profile = corrected;
+                  if (char.description) char.description = corrected;
+                } else if (correction.to === 'male') {
+                  const corrected = profile
+                    .replace(/\bheroína\b/gi, 'héroe')
+                    .replace(/\binspectora\b/gi, 'inspector')
+                    .replace(/\bdetective femenin[ao]\b/gi, 'detective masculino')
+                    .replace(/\bdoctora\b/gi, 'doctor')
+                    .replace(/\bprofesora\b/gi, 'profesor')
+                    .replace(/\bcomisaria\b/gi, 'comisario');
+                  if (char.profile) char.profile = corrected;
+                  if (char.description) char.description = corrected;
+                }
+              }
+            }
+            
+            globalResult.parsed.world_bible = worldBible;
+            
+            const nameCorrections = charValidation.corrections.filter(c => c.field === 'name');
+            const genderCorrections = charValidation.corrections.filter(c => c.field === 'gender');
+            const parts: string[] = [];
+            if (nameCorrections.length > 0) {
+              parts.push(`${nameCorrections.length} nombre(s): ${nameCorrections.map(c => `"${c.from}" → "${c.to}"`).join(', ')}`);
+            }
+            if (genderCorrections.length > 0) {
+              parts.push(`${genderCorrections.length} género(s) corregido(s)`);
+            }
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "warn",
+              agentRole: "system",
+              message: `🛡️ PROTECCIÓN DE SERIE: Se corrigieron ${charValidation.corrections.length} inconsistencia(s) de personaje: ${parts.join('; ')}`,
+            });
+          }
+          
+          if (charValidation.warnings.length > 0) {
+            for (const warning of charValidation.warnings) {
+              console.log(`[OrchestratorV2] ${warning}`);
+              await storage.createActivityLog({
+                projectId: project.id,
+                level: "warn",
+                agentRole: "system",
+                message: warning,
+              });
+            }
+          }
+          
+          if (charValidation.corrections.length === 0 && charValidation.warnings.length === 0) {
+            console.log(`[OrchestratorV2] ✅ Series character consistency validation PASSED`);
+          }
+        }
         const rawOutline = globalResult.parsed.outline;
         const plotThreads = globalResult.parsed.plot_threads;
 

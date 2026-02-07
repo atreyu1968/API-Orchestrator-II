@@ -114,6 +114,7 @@ REGLAS CRÍTICAS:
 2. Los personajes secundarios deben tener sus propios arcos menores
 3. NUNCA crear deus ex machina - toda resolución debe estar preparada
 4. Mantener consistencia en la voz narrativa y el tono entre libros
+5. PROTECCIÓN DE IDENTIDAD: Si el usuario proporciona nombres de personajes en su concepto, DEBES usar EXACTAMENTE esos nombres. NO los modifiques, traduzcas ni "mejores". Los nombres y el sexo/género de cada personaje son INMUTABLES desde el momento en que se definen. Si el concepto dice "Elena es detective", Elena DEBE ser mujer y llamarse Elena en toda la biblia.
 
 Genera la biblia en español. Sé específico y detallado. NO incluyas las secciones 7 y 8 (hitos y arquitectura por volumen).`;
 
@@ -260,6 +261,11 @@ ${params.previousVolumeSummary}
 IMPORTANTE: Este volumen debe continuar los hilos del anterior y hacer referencias explicitas.
 `;
     }
+
+    prompt += `
+
+⚠️ PROTECCIÓN DE PERSONAJES: Los nombres y el sexo/género de TODOS los personajes definidos en la Biblia de Serie son INMUTABLES. NO cambies, renombres ni alteres el género de ningún personaje. Usa los nombres EXACTOS de la biblia.
+`;
 
     if (isLast) {
       prompt += `
