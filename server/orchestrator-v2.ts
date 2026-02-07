@@ -36,6 +36,10 @@ import { eq, and, desc } from "drizzle-orm";
 import { isProjectCancelledFromDb, generateGenerationToken, isGenerationTokenValid } from "./agents";
 import { calculateRealCost, formatCostForStorage } from "./cost-calculator";
 import { BaseAgent } from "./agents/base-agent";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.AI_INTEGRATIONS_GEMINI_API_KEY || "";
+const geminiForValidation = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 // ==================== QA AGENTS FOR LITAGENTS ====================
 
@@ -4722,6 +4726,97 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         // LitAgents 2.1: Initialize Universal Consistency Database
         this.callbacks.onAgentStatus("universal-consistency", "active", "Initializing consistency database...");
         await this.initializeConsistencyDatabase(project.id, worldBible, project.genre);
+        
+        // LitAgents 2.9.10: Validate World Bible with Gemini before writing
+        const MAX_BIBLE_VALIDATION_ATTEMPTS = 3;
+        let bibleValidationAttempt = 0;
+        let bibleValidation = await this.validateWorldBibleWithGemini(
+          project.id, worldBible, outline, plotThreads
+        );
+        
+        while (!bibleValidation.isValid && bibleValidationAttempt < MAX_BIBLE_VALIDATION_ATTEMPTS) {
+          bibleValidationAttempt++;
+          console.log(`[OrchestratorV2] Bible validation FAILED (attempt ${bibleValidationAttempt}/${MAX_BIBLE_VALIDATION_ATTEMPTS}). Applying corrections...`);
+          
+          if (bibleValidation.correctedBible) {
+            // Apply outline fixes if present (in-memory + persist to World Bible)
+            if (bibleValidation.correctedBible._outlineFixes && Array.isArray(bibleValidation.correctedBible._outlineFixes)) {
+              for (const fix of bibleValidation.correctedBible._outlineFixes) {
+                const outlineIdx = outline.findIndex((o: any) => o.chapter_num === fix.chapter_num);
+                if (outlineIdx >= 0 && fix.corrected_summary) {
+                  outline[outlineIdx].summary = fix.corrected_summary;
+                  console.log(`[OrchestratorV2] Outline fix applied: Chapter ${fix.chapter_num}`);
+                }
+              }
+              // Persist outline fixes to stored World Bible
+              try {
+                const storedWB = await storage.getWorldBibleByProject(project.id);
+                if (storedWB) {
+                  const plotOutlineData = (storedWB as any).plotOutline || {};
+                  if (plotOutlineData.chapters_outline && Array.isArray(plotOutlineData.chapters_outline)) {
+                    for (const fix of bibleValidation.correctedBible._outlineFixes) {
+                      const storedIdx = plotOutlineData.chapters_outline.findIndex((o: any) => o.chapter_num === fix.chapter_num);
+                      if (storedIdx >= 0 && fix.corrected_summary) {
+                        plotOutlineData.chapters_outline[storedIdx].summary = fix.corrected_summary;
+                      }
+                    }
+                    await storage.updateWorldBible(storedWB.id, { plotOutline: plotOutlineData } as any);
+                    console.log(`[OrchestratorV2] Outline fixes persisted to stored World Bible`);
+                  }
+                }
+              } catch (err) {
+                console.error("[OrchestratorV2] Failed to persist outline fixes:", err);
+              }
+              delete bibleValidation.correctedBible._outlineFixes;
+            }
+            
+            worldBible = bibleValidation.correctedBible;
+            
+            // Update the stored World Bible with corrections
+            const storedWB = await storage.getWorldBibleByProject(project.id);
+            if (storedWB) {
+              const updates: any = {};
+              if (bibleValidation.correctedBible.characters) {
+                updates.characters = bibleValidation.correctedBible.characters;
+              }
+              if (bibleValidation.correctedBible.rules) {
+                updates.worldRules = bibleValidation.correctedBible.rules;
+              }
+              await storage.updateWorldBible(storedWB.id, updates);
+              console.log(`[OrchestratorV2] World Bible updated with corrections from validation`);
+            }
+            
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "info",
+              agentRole: "bible-validator",
+              message: `Biblia del Mundo corregida (intento ${bibleValidationAttempt}). Re-validando...`,
+            });
+          }
+          
+          // Re-validate after corrections
+          bibleValidation = await this.validateWorldBibleWithGemini(
+            project.id, worldBible, outline, plotThreads
+          );
+        }
+        
+        if (bibleValidation.isValid) {
+          console.log(`[OrchestratorV2] Bible validation PASSED${bibleValidationAttempt > 0 ? ` after ${bibleValidationAttempt} correction(s)` : ''}`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "success",
+            agentRole: "bible-validator",
+            message: `Biblia del Mundo validada${bibleValidationAttempt > 0 ? ` después de ${bibleValidationAttempt} correccione(s)` : ''}. Lista para escribir.`,
+          });
+        } else {
+          console.warn(`[OrchestratorV2] Bible validation has remaining issues after ${MAX_BIBLE_VALIDATION_ATTEMPTS} attempts. Proceeding with best effort.`);
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warn",
+            agentRole: "bible-validator",
+            message: `Biblia del Mundo con ${bibleValidation.issues.length} advertencias menores pendientes. Continuando con la mejor versión disponible.`,
+          });
+        }
       }
 
       // Get style guide and analyze it for key writing instructions
@@ -5003,7 +5098,13 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         
         // LitAgents 2.9.9+: Inject global writing lessons learned from past audits
         const globalLessons = await this.getGlobalWritingLessons();
-        const errorHistory = globalLessons + (globalLessons && projectErrorHistory ? "\n\n" : "") + projectErrorHistory;
+        
+        // LitAgents 2.9.10: Inject accumulated lessons from Bible validation + structural checkpoints
+        const accumulatedLessons = await this.getAccumulatedLessons(project.id);
+        
+        const errorHistory = [globalLessons, projectErrorHistory, accumulatedLessons]
+          .filter(Boolean)
+          .join("\n\n");
 
         // LitAgents 2.9.9+: Inject accumulated narrative timeline into constraints for Ghostwriter
         if (narrativeTimeline.length > 0) {
@@ -5358,6 +5459,57 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           console.log(`[OrchestratorV2] Running Narrative Director: ${label}`);
           const directorResult = await this.runNarrativeDirector(project.id, chapterNumber, project.chapterCount, chapterSummaries);
           
+          // LitAgents 2.9.10: Run Structural Checkpoint alongside Narrative Director
+          if (isMultipleOfFive && !isEpilogue) {
+            console.log(`[OrchestratorV2] Running Structural Checkpoint at Chapter ${chapterNumber}`);
+            const checkpointResult = await this.runStructuralCheckpoint(
+              project.id, chapterNumber, worldBible, outline, narrativeTimeline
+            );
+            
+            // Rewrite deviated chapters
+            if (checkpointResult.deviatedChapters.length > 0) {
+              console.log(`[OrchestratorV2] ${checkpointResult.deviatedChapters.length} chapters need structural correction`);
+              
+              for (const deviatedChNum of checkpointResult.deviatedChapters) {
+                if (await this.shouldStopProcessing(project.id)) break;
+                
+                const deviationIssue = checkpointResult.issues.find(i => i.includes(`Cap ${deviatedChNum}`)) || 
+                  `Capítulo ${deviatedChNum} se desvió del plan original`;
+                
+                const rewritten = await this.rewriteDeviatedChapter(
+                  project.id, deviatedChNum, worldBible, outline, deviationIssue
+                );
+                
+                if (rewritten) {
+                  console.log(`[OrchestratorV2] Chapter ${deviatedChNum} successfully rewritten for structural adherence`);
+                  
+                  // Update the summary for the rewritten chapter
+                  const updatedChapters = await storage.getChaptersByProject(project.id);
+                  const updatedCh = updatedChapters.find(c => c.chapterNumber === deviatedChNum);
+                  if (updatedCh) {
+                    const summaryResult = await this.summarizer.execute({
+                      chapterContent: updatedCh.content || '',
+                      chapterNumber: deviatedChNum,
+                    });
+                    this.addTokenUsage(summaryResult.tokenUsage);
+                    
+                    if (summaryResult.content) {
+                      await storage.updateChapter(updatedCh.id, { summary: summaryResult.content });
+                      // Update in-memory summaries
+                      const summaryIdx = chapterSummaries.findIndex((_, idx) => {
+                        const chapNum = outline[idx]?.chapter_num;
+                        return chapNum === deviatedChNum;
+                      });
+                      if (summaryIdx >= 0) {
+                        chapterSummaries[summaryIdx] = summaryResult.content;
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+          
           // If epilogue needs rewrite due to unresolved threads or issues
           if (isEpilogue && directorResult.needsRewrite) {
             console.log(`[OrchestratorV2] Rewriting epilogue to resolve: ${directorResult.unresolvedThreads.join(", ")}`);
@@ -5676,6 +5828,485 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
       console.error(`[OrchestratorV2] SeriesThreadFixer error:`, error);
       this.callbacks.onAgentStatus("series-thread-fixer", "error", 
         error instanceof Error ? error.message : "Error desconocido");
+    }
+  }
+
+  // ============================================
+  // LitAgents 2.9.10: World Bible Validator (Gemini)
+  // Audits the Bible for structural weaknesses before writing begins
+  // ============================================
+  private async validateWorldBibleWithGemini(
+    projectId: number,
+    worldBible: any,
+    outline: any[],
+    plotThreads?: any[]
+  ): Promise<{ isValid: boolean; issues: Array<{ type: string; severity: string; description: string; fix: string }>; correctedBible?: any }> {
+    this.callbacks.onAgentStatus("bible-validator", "active", "Validando Biblia del Mundo con IA...");
+    
+    await storage.createActivityLog({
+      projectId,
+      level: "info",
+      agentRole: "bible-validator",
+      message: "Iniciando validación profunda de la Biblia del Mundo antes de escribir...",
+    });
+
+    const bibleContent = JSON.stringify({
+      characters: worldBible.characters || [],
+      rules: worldBible.rules || worldBible.worldRules || [],
+      settings: (worldBible as any).settings || [],
+      themes: (worldBible as any).themes || [],
+    }, null, 2);
+
+    const outlineContent = outline.map(ch => 
+      `Cap ${ch.chapter_num}: "${ch.title}" - ${ch.summary || 'Sin resumen'} [Evento clave: ${ch.key_event || 'N/A'}]`
+    ).join('\n');
+
+    const threadsContent = plotThreads ? plotThreads.map(t => 
+      `- ${t.name}: ${t.description || t.goal || 'Sin descripción'}`
+    ).join('\n') : 'No definidos';
+
+    const prompt = `Eres un editor literario experto. Analiza esta Biblia del Mundo y la escaleta de capítulos de una novela.
+Tu objetivo es encontrar FISURAS, INCONSISTENCIAS y DEBILIDADES ESTRUCTURALES que causarían problemas durante la escritura.
+
+=== BIBLIA DEL MUNDO ===
+${bibleContent.substring(0, 15000)}
+
+=== ESCALETA DE CAPÍTULOS (${outline.length} capítulos) ===
+${outlineContent}
+
+=== HILOS ARGUMENTALES ===
+${threadsContent}
+
+BUSCA ESTOS PROBLEMAS:
+1. PERSONAJES: Arcos incompletos, motivaciones contradictorias, relaciones sin definir, personajes mencionados en la escaleta pero ausentes de la biblia
+2. LÍNEA TEMPORAL: Eventos sin orden lógico, saltos temporales injustificados, eventos simultáneos imposibles
+3. REGLAS DEL MUNDO: Reglas que se contradicen entre sí, reglas demasiado vagas que causarán inconsistencias
+4. UBICACIONES: Descripciones inconsistentes, personajes en lugares imposibles según la escaleta
+5. SUBTRAMAS: Hilos huérfanos (se abren pero no se cierran), subtramas desconectadas de la trama principal
+6. ESTRUCTURA: Pacing desbalanceado, clímax mal ubicado, actos desproporcionados
+7. COHERENCIA ESCALETA-BIBLIA: Eventos en la escaleta que contradicen la biblia
+
+RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
+{
+  "isValid": true/false,
+  "overallScore": 1-10,
+  "issues": [
+    {
+      "type": "personaje|temporal|regla|ubicacion|subtrama|estructura|coherencia",
+      "severity": "critica|mayor|menor",
+      "description": "Descripción clara del problema",
+      "fix": "Corrección específica y concreta"
+    }
+  ],
+  "corrections": {
+    "characters": null o array corregido de personajes (solo si hay correcciones de personajes),
+    "rules": null o array corregido de reglas (solo si hay correcciones de reglas),
+    "outline_fixes": null o [{chapter_num: N, corrected_summary: "..."}] (solo si hay correcciones de escaleta)
+  },
+  "lessonsForWriter": ["Lección 1 que el escritor debe recordar", "Lección 2..."]
+}`;
+
+    try {
+      const model = geminiForValidation.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const result = await model.generateContent(prompt);
+      const response = result.response.text();
+
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        console.error("[BibleValidator] No JSON in Gemini response - treating as INVALID (fail closed)");
+        await storage.createActivityLog({
+          projectId,
+          level: "warn",
+          agentRole: "bible-validator",
+          message: "Respuesta de IA no contenía JSON válido. Se tratará como no válida para re-intentar.",
+        });
+        return { isValid: false, issues: [{ type: "formato", severity: "critica", description: "La IA no devolvió formato válido", fix: "Re-ejecutar validación" }] };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const issues = parsed.issues || [];
+      const criticalIssues = issues.filter((i: any) => i.severity === 'critica');
+      const majorIssues = issues.filter((i: any) => i.severity === 'mayor');
+
+      console.log(`[BibleValidator] Score: ${parsed.overallScore}/10, Issues: ${criticalIssues.length} critical, ${majorIssues.length} major, ${issues.length - criticalIssues.length - majorIssues.length} minor`);
+
+      for (const issue of issues) {
+        await storage.createActivityLog({
+          projectId,
+          level: issue.severity === 'critica' ? 'error' : issue.severity === 'mayor' ? 'warn' : 'info',
+          agentRole: "bible-validator",
+          message: `[${issue.type.toUpperCase()}] ${issue.description} → FIX: ${issue.fix}`,
+        });
+      }
+
+      // Store lessons for the Ghostwriter to learn from
+      if (parsed.lessonsForWriter && parsed.lessonsForWriter.length > 0) {
+        await this.storeBibleLessons(projectId, parsed.lessonsForWriter);
+      }
+
+      const isValid = criticalIssues.length === 0 && majorIssues.length <= 1;
+
+      let correctedBible: any = undefined;
+      if (!isValid && parsed.corrections) {
+        correctedBible = { ...worldBible };
+        if (parsed.corrections.characters && Array.isArray(parsed.corrections.characters)) {
+          correctedBible.characters = parsed.corrections.characters;
+        }
+        if (parsed.corrections.rules && Array.isArray(parsed.corrections.rules)) {
+          correctedBible.rules = parsed.corrections.rules;
+        }
+        if (parsed.corrections.outline_fixes && Array.isArray(parsed.corrections.outline_fixes)) {
+          correctedBible._outlineFixes = parsed.corrections.outline_fixes;
+        }
+      }
+
+      this.callbacks.onAgentStatus("bible-validator", isValid ? "completed" : "warning",
+        isValid ? `Biblia validada (${parsed.overallScore}/10)` : `${criticalIssues.length} problemas críticos detectados`);
+
+      return { isValid, issues, correctedBible };
+    } catch (error) {
+      console.error("[BibleValidator] Error:", error);
+      this.callbacks.onAgentStatus("bible-validator", "warning", "Error en validación - se tratará como no válida");
+      await storage.createActivityLog({
+        projectId,
+        level: "warn",
+        agentRole: "bible-validator",
+        message: `Error durante validación: ${error instanceof Error ? error.message : 'Error desconocido'}. Se tratará como no válida para re-intentar.`,
+      });
+      return { isValid: false, issues: [{ type: "error", severity: "critica", description: "Error al ejecutar validación", fix: "Re-ejecutar validación" }] };
+    }
+  }
+
+  // Store lessons from Bible validation for writer injection
+  private async storeBibleLessons(projectId: number, lessons: string[]): Promise<void> {
+    try {
+      const existingLogs = await storage.getActivityLogsByProject(projectId);
+      const existingLessons = existingLogs.filter(l => l.agentRole === 'bible-lessons').map(l => l.message);
+      
+      for (const lesson of lessons) {
+        if (!existingLessons.includes(lesson)) {
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            agentRole: "bible-lessons",
+            message: lesson,
+          });
+        }
+      }
+      console.log(`[BibleValidator] Stored ${lessons.length} lessons for writer`);
+    } catch (err) {
+      console.error("[BibleValidator] Failed to store lessons:", err);
+    }
+  }
+
+  // Get accumulated lessons from Bible validation + checkpoint corrections for writer injection
+  private async getAccumulatedLessons(projectId: number): Promise<string> {
+    try {
+      const logs = await storage.getActivityLogsByProject(projectId);
+      const lessonLogs = logs.filter(l => 
+        l.agentRole === 'bible-lessons' || 
+        l.agentRole === 'checkpoint-lessons' ||
+        l.agentRole === 'structural-checkpoint'
+      );
+      
+      if (lessonLogs.length === 0) return "";
+
+      const uniqueLessons = Array.from(new Set(lessonLogs.map(l => l.message)));
+      if (uniqueLessons.length === 0) return "";
+
+      const parts: string[] = [
+        "\n═══════════════════════════════════════════════════════════════════",
+        "LECCIONES APRENDIDAS EN ESTE PROYECTO (OBLIGATORIO APLICAR)",
+        "═══════════════════════════════════════════════════════════════════",
+      ];
+      
+      uniqueLessons.slice(0, 15).forEach((lesson, idx) => {
+        parts.push(`  ${idx + 1}. ${lesson}`);
+      });
+      
+      parts.push("Aplica TODAS estas lecciones en cada escena que escribas.");
+      parts.push("═══════════════════════════════════════════════════════════════════");
+
+      return parts.join("\n");
+    } catch (err) {
+      console.error("[OrchestratorV2] Failed to get accumulated lessons:", err);
+      return "";
+    }
+  }
+
+  // ============================================
+  // LitAgents 2.9.10: Structural Checkpoint (every 5 chapters)
+  // Verifies adherence to Bible structure, timeline, and character arcs
+  // ============================================
+  private async runStructuralCheckpoint(
+    projectId: number,
+    currentChapter: number,
+    worldBible: any,
+    outline: any[],
+    narrativeTimeline: Array<{ chapter: number; narrativeTime: string; location?: string }>
+  ): Promise<{ deviatedChapters: number[]; issues: string[]; lessonsLearned: string[] }> {
+    this.callbacks.onAgentStatus("structural-checkpoint", "active", `Verificación estructural (Cap 1-${currentChapter})...`);
+
+    await storage.createActivityLog({
+      projectId,
+      level: "info",
+      agentRole: "structural-checkpoint",
+      message: `Ejecutando checkpoint estructural después del capítulo ${currentChapter}`,
+    });
+
+    const chapters = await storage.getChaptersByProject(projectId);
+    const writtenChapters = chapters
+      .filter(ch => ch.content && ch.content.length > 100 && ch.chapterNumber <= currentChapter)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+    if (writtenChapters.length === 0) {
+      return { deviatedChapters: [], issues: [], lessonsLearned: [] };
+    }
+
+    const chapterSummaries = writtenChapters.map(ch => {
+      const outlineEntry = outline.find((o: any) => o.chapter_num === ch.chapterNumber);
+      const plannedSummary = outlineEntry?.summary || 'N/A';
+      const plannedEvent = outlineEntry?.key_event || 'N/A';
+      return `CAPÍTULO ${ch.chapterNumber} ("${ch.title || ''}"):\n  PLAN: ${plannedSummary} [Evento: ${plannedEvent}]\n  RESUMEN REAL: ${ch.summary || ch.content?.substring(0, 500) || 'Sin resumen'}`;
+    }).join('\n\n');
+
+    const timelineStr = narrativeTimeline.length > 0 
+      ? narrativeTimeline.map(t => `  Cap ${t.chapter}: ${t.narrativeTime}${t.location ? ` → ${t.location}` : ''}`).join('\n')
+      : 'No disponible';
+
+    const bibleCharacters = JSON.stringify(
+      (worldBible.characters || []).map((c: any) => ({
+        name: c.name || c.nombre,
+        role: c.role || c.rol,
+        arc: c.arc || c.arco,
+      })),
+      null, 2
+    ).substring(0, 5000);
+
+    const prompt = `Eres un director narrativo experto. Analiza si los capítulos escritos hasta ahora SIGUEN FIELMENTE la estructura planificada.
+
+=== PERSONAJES Y ARCOS PLANIFICADOS ===
+${bibleCharacters}
+
+=== LÍNEA TEMPORAL ACUMULADA ===
+${timelineStr}
+
+=== COMPARACIÓN PLAN vs REALIDAD (${writtenChapters.length} capítulos) ===
+${chapterSummaries.substring(0, 20000)}
+
+ANALIZA:
+1. ¿Cada capítulo cumple con su plan original? ¿Se ejecutaron los eventos clave?
+2. ¿La línea temporal es coherente y continua?
+3. ¿Los arcos de personajes progresan según lo planificado?
+4. ¿Hay desviaciones que comprometan la estructura de la novela?
+5. ¿Qué lecciones debe aprender el escritor para los próximos capítulos?
+
+RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
+{
+  "overallAdherence": 1-10,
+  "deviatedChapters": [números de capítulos con desviaciones graves],
+  "issues": [
+    {
+      "chapter": N,
+      "type": "estructura|temporal|arco_personaje|evento_omitido|coherencia",
+      "severity": "critica|mayor|menor",
+      "description": "Qué se desvió del plan",
+      "expectedVsActual": "Lo planeado vs lo escrito",
+      "correctionNeeded": "Qué se debe corregir"
+    }
+  ],
+  "timelineConsistency": true/false,
+  "timelineIssues": ["Problema temporal 1", "..."],
+  "lessonsForWriter": [
+    "Lección específica sobre qué evitar en los próximos capítulos",
+    "Patrón de error detectado que no debe repetirse"
+  ]
+}`;
+
+    const MAX_CHECKPOINT_RETRIES = 2;
+    for (let attempt = 0; attempt <= MAX_CHECKPOINT_RETRIES; attempt++) {
+    try {
+      const model = geminiForValidation.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const result = await model.generateContent(prompt);
+      const response = result.response.text();
+
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        if (attempt < MAX_CHECKPOINT_RETRIES) {
+          console.warn(`[StructuralCheckpoint] No JSON in response (attempt ${attempt + 1}/${MAX_CHECKPOINT_RETRIES + 1}), retrying...`);
+          continue;
+        }
+        console.error("[StructuralCheckpoint] No JSON in response after all retries - logging as warning");
+        await storage.createActivityLog({
+          projectId,
+          level: "warn",
+          agentRole: "structural-checkpoint",
+          message: `Checkpoint en cap ${currentChapter}: respuesta de IA sin formato válido tras ${MAX_CHECKPOINT_RETRIES + 1} intentos. Se omitirá este checkpoint.`,
+        });
+        return { deviatedChapters: [], issues: [], lessonsLearned: ["El checkpoint estructural no pudo ejecutarse correctamente - verificar en el siguiente punto de control"] };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      const deviatedChapters = parsed.deviatedChapters || [];
+      const issues = (parsed.issues || [])
+        .filter((i: any) => i.severity === 'critica' || i.severity === 'mayor')
+        .map((i: any) => `Cap ${i.chapter}: [${i.type}] ${i.description} → ${i.correctionNeeded}`);
+      const lessonsLearned = parsed.lessonsForWriter || [];
+
+      console.log(`[StructuralCheckpoint] Adherence: ${parsed.overallAdherence}/10, Deviations: ${deviatedChapters.length}, Lessons: ${lessonsLearned.length}`);
+
+      // Log issues
+      for (const issue of (parsed.issues || []).filter((i: any) => i.severity === 'critica' || i.severity === 'mayor')) {
+        await storage.createActivityLog({
+          projectId,
+          level: issue.severity === 'critica' ? 'error' : 'warn',
+          agentRole: "structural-checkpoint",
+          message: `Cap ${issue.chapter}: [${issue.type}] ${issue.description}`,
+          metadata: { correction: issue.correctionNeeded, expected: issue.expectedVsActual },
+        });
+      }
+
+      // Store lessons for future chapters
+      if (lessonsLearned.length > 0) {
+        for (const lesson of lessonsLearned) {
+          await storage.createActivityLog({
+            projectId,
+            level: "info",
+            agentRole: "checkpoint-lessons",
+            message: lesson,
+          });
+        }
+        console.log(`[StructuralCheckpoint] Stored ${lessonsLearned.length} lessons for future chapters`);
+      }
+
+      // Timeline issues
+      if (!parsed.timelineConsistency && parsed.timelineIssues?.length > 0) {
+        for (const ti of parsed.timelineIssues) {
+          await storage.createActivityLog({
+            projectId,
+            level: "warn",
+            agentRole: "structural-checkpoint",
+            message: `TEMPORAL: ${ti}`,
+          });
+        }
+      }
+
+      this.callbacks.onAgentStatus("structural-checkpoint", 
+        deviatedChapters.length > 0 ? "warning" : "completed",
+        deviatedChapters.length > 0 
+          ? `${deviatedChapters.length} capítulos desviados detectados`
+          : `Estructura verificada (${parsed.overallAdherence}/10)`
+      );
+
+      await storage.createActivityLog({
+        projectId,
+        level: deviatedChapters.length > 0 ? "warn" : "success",
+        agentRole: "structural-checkpoint",
+        message: deviatedChapters.length > 0 
+          ? `Checkpoint: ${deviatedChapters.length} capítulos con desviaciones graves (adherencia ${parsed.overallAdherence}/10). Capítulos: ${deviatedChapters.join(', ')}`
+          : `Checkpoint: Estructura correcta (adherencia ${parsed.overallAdherence}/10). ${lessonsLearned.length} lecciones registradas.`,
+      });
+
+      return { deviatedChapters, issues, lessonsLearned };
+    } catch (error) {
+      if (attempt < MAX_CHECKPOINT_RETRIES) {
+        console.warn(`[StructuralCheckpoint] Error on attempt ${attempt + 1}/${MAX_CHECKPOINT_RETRIES + 1}, retrying...`, error);
+        continue;
+      }
+      console.error("[StructuralCheckpoint] Error after all retries:", error);
+      this.callbacks.onAgentStatus("structural-checkpoint", "completed", "Checkpoint completado con advertencias");
+      return { deviatedChapters: [], issues: [], lessonsLearned: ["Error en checkpoint estructural - verificar en el siguiente punto de control"] };
+    }
+    } // end for loop
+    return { deviatedChapters: [], issues: [], lessonsLearned: [] };
+  }
+
+  // Rewrite a chapter that deviated from the plan
+  private async rewriteDeviatedChapter(
+    projectId: number,
+    chapterNumber: number,
+    worldBible: any,
+    outline: any[],
+    deviationDescription: string
+  ): Promise<boolean> {
+    try {
+      const chapters = await storage.getChaptersByProject(projectId);
+      const chapter = chapters.find(ch => ch.chapterNumber === chapterNumber);
+      if (!chapter || !chapter.content) return false;
+
+      const outlineEntry = outline.find((o: any) => o.chapter_num === chapterNumber);
+      if (!outlineEntry) return false;
+
+      this.callbacks.onAgentStatus("structural-checkpoint", "active", `Reescribiendo capítulo ${chapterNumber}...`);
+
+      const prevChapter = chapters.find(ch => ch.chapterNumber === chapterNumber - 1);
+      const nextChapter = chapters.find(ch => ch.chapterNumber === chapterNumber + 1);
+
+      const prompt = `CORRECCIÓN ESTRUCTURAL OBLIGATORIA - CAPÍTULO ${chapterNumber}
+
+PROBLEMA DETECTADO:
+${deviationDescription}
+
+PLAN ORIGINAL PARA ESTE CAPÍTULO:
+Título: ${outlineEntry.title}
+Resumen planificado: ${outlineEntry.summary}
+Evento clave: ${outlineEntry.key_event || 'N/A'}
+
+CONTEXTO ADYACENTE:
+${prevChapter ? `Capítulo anterior (${chapterNumber - 1}): ${prevChapter.summary || prevChapter.content?.substring(0, 500)}` : 'Es el primer capítulo'}
+${nextChapter ? `Capítulo siguiente (${chapterNumber + 1}): ${nextChapter.summary || nextChapter.content?.substring(0, 500)}` : 'Es el último capítulo escrito'}
+
+TEXTO ACTUAL DEL CAPÍTULO:
+${chapter.content}
+
+INSTRUCCIONES:
+1. Reescribe SOLO las partes que se desvían del plan original
+2. Mantén todo lo que ya está bien escrito
+3. Asegúrate de que el evento clave planificado OCURRA en el capítulo
+4. Preserva las transiciones con los capítulos adyacentes
+5. NO cambies el estilo ni la voz narrativa
+
+Devuelve SOLO el texto completo del capítulo reescrito, sin explicaciones ni marcadores.`;
+
+      const rewriteResult = await this.smartEditor.fullRewrite({
+        chapterContent: chapter.content,
+        errorDescription: prompt,
+        worldBible: {
+          characters: worldBible.characters as any[],
+          locations: [],
+          worldRules: worldBible.rules as any[],
+          persistentInjuries: [],
+          plotDecisions: [],
+        },
+      });
+
+      this.addTokenUsage(rewriteResult.tokenUsage);
+      await this.logAiUsage(projectId, "structural-checkpoint", "deepseek-chat", rewriteResult.tokenUsage, chapterNumber);
+
+      if (rewriteResult.rewrittenContent && rewriteResult.rewrittenContent.length > 200) {
+        const newWordCount = rewriteResult.rewrittenContent.split(/\s+/).length;
+        
+        await storage.updateChapter(chapter.id, {
+          originalContent: chapter.originalContent || chapter.content,
+          content: rewriteResult.rewrittenContent,
+          wordCount: newWordCount,
+        });
+
+        await storage.createActivityLog({
+          projectId,
+          level: "success",
+          agentRole: "structural-checkpoint",
+          message: `Capítulo ${chapterNumber} reescrito para corregir desviación estructural (${newWordCount} palabras)`,
+        });
+
+        console.log(`[StructuralCheckpoint] Chapter ${chapterNumber} rewritten (${newWordCount} words)`);
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      console.error(`[StructuralCheckpoint] Failed to rewrite chapter ${chapterNumber}:`, error);
+      return false;
     }
   }
 
