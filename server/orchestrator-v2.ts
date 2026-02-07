@@ -5667,6 +5667,48 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         await this.runSeriesThreadFixer(project);
       }
 
+      // LitAgents 2.9.10: Full-novel structural review before marking complete
+      if (await this.shouldStopProcessing(project.id) === false) {
+        console.log(`[OrchestratorV2] Running full-novel structural review...`);
+        this.callbacks.onAgentStatus("structural-checkpoint", "active", "Revisión estructural completa de toda la novela...");
+        
+        try {
+          const finalReviewResult = await this.runFinalStructuralReview(
+            project.id, worldBible, outline, narrativeTimeline, alreadyCorrectedChapters, chapterSummaries
+          );
+          
+          if (finalReviewResult.rewrittenCount > 0) {
+            console.log(`[OrchestratorV2] Final structural review: ${finalReviewResult.rewrittenCount} chapters corrected`);
+          }
+          
+          this.callbacks.onAgentStatus("structural-checkpoint", "completed", 
+            finalReviewResult.rewrittenCount > 0
+              ? `Revisión final: ${finalReviewResult.rewrittenCount} capítulos corregidos`
+              : `Revisión final: estructura correcta`
+          );
+        } catch (err) {
+          console.error("[OrchestratorV2] Final structural review error:", err);
+          // If Gemini key is missing, pause the project so user knows review didn't happen
+          if (!GEMINI_API_KEY) {
+            await storage.updateProject(project.id, { status: "paused" });
+            await storage.createActivityLog({
+              projectId: project.id,
+              level: "error",
+              agentRole: "structural-checkpoint",
+              message: `Revisión estructural final no pudo ejecutarse: falta la clave de Gemini. Configura GEMINI_API_KEY y presiona Continuar.`,
+            });
+            return;
+          }
+          // For other errors, log and continue (non-fatal)
+          await storage.createActivityLog({
+            projectId: project.id,
+            level: "warn",
+            agentRole: "structural-checkpoint",
+            message: `Revisión estructural final falló: ${err instanceof Error ? err.message : String(err)}. La novela se marcará como completada.`,
+          });
+        }
+      }
+
       // After all chapters are written, mark as completed WITHOUT auto-correction
       // v2.9.6: Per user request, do NOT run Detect & Fix or FinalReviewer automatically
       // The user will manually trigger corrections if needed
@@ -5678,7 +5720,7 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
       await storage.createActivityLog({
         projectId: project.id,
         level: "success",
-        message: `✅ Manuscrito completado. Puedes ejecutar "Detect & Fix" manualmente si deseas revisar y corregir.`,
+        message: `Manuscrito completado. Puedes ejecutar "Detect & Fix" manualmente si deseas revisar y corregir.`,
         agentRole: "orchestrator",
       });
       
@@ -6416,6 +6458,285 @@ Devuelve SOLO el texto completo del capítulo reescrito, sin explicaciones ni ma
       console.error(`[StructuralCheckpoint] Failed to rewrite chapter ${chapterNumber}:`, error);
       return false;
     }
+  }
+
+  // LitAgents 2.9.10: Full-novel structural review after all chapters are written
+  private async runFinalStructuralReview(
+    projectId: number,
+    worldBible: any,
+    outline: any[],
+    narrativeTimeline: Array<{ chapter: number; narrativeTime: string; location?: string }>,
+    alreadyCorrectedChapters: Set<number>,
+    chapterSummaries: string[]
+  ): Promise<{ rewrittenCount: number; issues: string[]; lessonsLearned: string[] }> {
+    console.log(`[FinalStructuralReview] Starting full-novel structural review for project ${projectId}`);
+    
+    if (!GEMINI_API_KEY) {
+      console.warn("[FinalStructuralReview] No GEMINI_API_KEY - cannot run final structural review");
+      await storage.createActivityLog({
+        projectId,
+        level: "warn",
+        agentRole: "structural-checkpoint",
+        message: `Revisión estructural final omitida: no hay clave de Gemini configurada.`,
+      });
+      return { rewrittenCount: 0, issues: [], lessonsLearned: ["Revisión final omitida por falta de clave Gemini"] };
+    }
+
+    await storage.createActivityLog({
+      projectId,
+      level: "info",
+      agentRole: "structural-checkpoint",
+      message: `Ejecutando revisión estructural FINAL de toda la novela`,
+      metadata: { type: 'final_review_started' },
+    });
+
+    const chapters = await storage.getChaptersByProject(projectId);
+    const writtenChapters = chapters
+      .filter(ch => ch.content && ch.content.length > 100)
+      .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+    if (writtenChapters.length === 0) {
+      return { rewrittenCount: 0, issues: [], lessonsLearned: [] };
+    }
+
+    // Use summaries (compact) rather than raw content to ensure ALL chapters fit in context
+    const chapterSummariesForReview = writtenChapters.map(ch => {
+      const outlineEntry = outline.find((o: any) => o.chapter_num === ch.chapterNumber);
+      const plannedSummary = outlineEntry?.summary || 'N/A';
+      const plannedEvent = outlineEntry?.key_event || 'N/A';
+      const actualWordCount = ch.content?.split(/\s+/).length || 0;
+      // Use existing summary (generated by Summarizer agent) - falls back to content excerpt only if no summary exists
+      const actualSummary = ch.summary || ch.content?.substring(0, 300) || 'Sin resumen';
+      return `CAPÍTULO ${ch.chapterNumber} ("${ch.title || ''}" - ${actualWordCount} palabras):\n  PLAN: ${plannedSummary} [Evento: ${plannedEvent}]\n  RESUMEN REAL: ${actualSummary}`;
+    }).join('\n\n');
+
+    const timelineStr = narrativeTimeline.length > 0
+      ? narrativeTimeline.map(t => `  Cap ${t.chapter}: ${t.narrativeTime}${t.location ? ` → ${t.location}` : ''}`).join('\n')
+      : 'No disponible';
+
+    const bibleCharacters = JSON.stringify(
+      (worldBible.characters || []).map((c: any) => ({
+        name: c.name || c.nombre,
+        role: c.role || c.rol,
+        arc: c.arc || c.arco,
+      })), null, 2
+    ).substring(0, 5000);
+
+    const plotOutline = worldBible.plotOutline || {};
+    const threeActStructure = plotOutline.three_act_structure || plotOutline.threeActStructure || {};
+
+    const prompt = `Eres un director editorial experto. Esta es la REVISIÓN FINAL de toda la novela completa (${writtenChapters.length} capítulos).
+Tu misión es detectar PROBLEMAS ESTRUCTURALES GRAVES que comprometan la calidad de la novela como obra terminada.
+
+=== ESTRUCTURA EN 3 ACTOS PLANIFICADA ===
+${JSON.stringify(threeActStructure, null, 2).substring(0, 3000)}
+
+=== PERSONAJES Y ARCOS PLANIFICADOS ===
+${bibleCharacters}
+
+=== LÍNEA TEMPORAL COMPLETA ===
+${timelineStr}
+
+=== COMPARACIÓN PLAN vs REALIDAD (TODOS LOS CAPÍTULOS) ===
+${chapterSummariesForReview.substring(0, 50000)}
+
+ANALIZA LA NOVELA COMPLETA COMO UNIDAD:
+
+1. ARCOS DE PERSONAJES: ¿Cada arco principal se inicia, desarrolla y cierra correctamente?
+2. HILOS NARRATIVOS: ¿Hay subtramas abandonadas, hilos sin resolver, o Chekhov's guns sin disparar?
+3. ESTRUCTURA DE 3 ACTOS: ¿Los puntos de giro, clímax y resolución están donde deben estar?
+4. EVENTOS CLAVE OMITIDOS: ¿Algún evento crucial del plan original NUNCA se ejecutó?
+5. COHERENCIA TEMPORAL: ¿La línea temporal global tiene saltos o contradicciones?
+6. RITMO GLOBAL: ¿Hay tramos excesivamente lentos o apresurados que afecten la experiencia lectora?
+7. PROTAGONISTA: ¿El protagonista tiene presencia suficiente y su arco es satisfactorio?
+
+IMPORTANTE: Solo reporta problemas GRAVES que un lector notaría. No reportes cuestiones estilísticas menores.
+
+RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
+{
+  "overallScore": 1-10,
+  "novelWorksAsUnit": true/false,
+  "deviatedChapters": [números de capítulos con problemas GRAVES que requieren reescritura],
+  "issues": [
+    {
+      "chapter": N,
+      "type": "arco_incompleto|hilo_sin_resolver|evento_omitido|temporal|estructura|ritmo|protagonista",
+      "severity": "critica|mayor",
+      "description": "Qué problema específico tiene",
+      "correctionNeeded": "Qué se debe corregir exactamente"
+    }
+  ],
+  "unresolvedThreads": ["Hilo narrativo que quedó sin cerrar"],
+  "arcCompletionStatus": [
+    { "character": "nombre", "arcComplete": true/false, "missing": "qué falta" }
+  ],
+  "lessonsForWriter": [
+    "Lección global sobre la estructura de la novela"
+  ],
+  "verdict": "Resumen ejecutivo de la calidad estructural"
+}`;
+
+    const MAX_RETRIES = 2;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const model = geminiForValidation.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const result = await model.generateContent(prompt);
+        const response = result.response.text();
+
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          if (attempt < MAX_RETRIES) {
+            console.warn(`[FinalStructuralReview] No JSON in response (attempt ${attempt + 1}), retrying...`);
+            continue;
+          }
+          console.error("[FinalStructuralReview] No JSON after all retries");
+          return { rewrittenCount: 0, issues: [], lessonsLearned: [] };
+        }
+
+        const parsed = JSON.parse(jsonMatch[0]);
+        const deviatedChapters: number[] = (parsed.deviatedChapters || []).filter(
+          (ch: number) => !alreadyCorrectedChapters.has(ch)
+        );
+        const issues = (parsed.issues || [])
+          .filter((i: any) => i.severity === 'critica' || i.severity === 'mayor')
+          .map((i: any) => `Cap ${i.chapter}: [${i.type}] ${i.description} → ${i.correctionNeeded}`);
+        const lessonsLearned = parsed.lessonsForWriter || [];
+        const unresolvedThreads = parsed.unresolvedThreads || [];
+        const arcStatus = parsed.arcCompletionStatus || [];
+
+        console.log(`[FinalStructuralReview] Score: ${parsed.overallScore}/10, Works as unit: ${parsed.novelWorksAsUnit}, Deviations: ${deviatedChapters.length}, Unresolved threads: ${unresolvedThreads.length}`);
+
+        await storage.createActivityLog({
+          projectId,
+          level: deviatedChapters.length > 0 ? "warn" : "success",
+          agentRole: "structural-checkpoint",
+          message: `Revisión final: ${parsed.overallScore}/10. ${deviatedChapters.length > 0 ? `${deviatedChapters.length} capítulos con desviaciones graves.` : 'Estructura correcta.'} ${unresolvedThreads.length > 0 ? `Hilos sin resolver: ${unresolvedThreads.join(', ')}` : ''} Veredicto: ${parsed.verdict || 'N/A'}`,
+          metadata: { type: 'final_review_result', score: parsed.overallScore, novelWorksAsUnit: parsed.novelWorksAsUnit, deviatedCount: deviatedChapters.length, unresolvedThreads },
+        });
+
+        for (const issue of (parsed.issues || []).filter((i: any) => i.severity === 'critica' || i.severity === 'mayor')) {
+          await storage.createActivityLog({
+            projectId,
+            level: issue.severity === 'critica' ? 'error' : 'warn',
+            agentRole: "structural-checkpoint",
+            message: `[FINAL] Cap ${issue.chapter}: [${issue.type}] ${issue.description}`,
+            metadata: { correction: issue.correctionNeeded },
+          });
+        }
+
+        for (const arc of arcStatus.filter((a: any) => !a.arcComplete)) {
+          await storage.createActivityLog({
+            projectId,
+            level: "warn",
+            agentRole: "structural-checkpoint",
+            message: `[FINAL] Arco incompleto: ${arc.character} - ${arc.missing}`,
+          });
+        }
+
+        if (lessonsLearned.length > 0) {
+          for (const lesson of lessonsLearned) {
+            await storage.createActivityLog({
+              projectId,
+              level: "info",
+              agentRole: "checkpoint-lessons",
+              message: `[FINAL] ${lesson}`,
+            });
+          }
+        }
+
+        // Rewrite deviated chapters (max 5 to prevent excessive token usage)
+        const MAX_FINAL_REWRITES = 5;
+        let rewrittenCount = 0;
+        const chaptersToRewrite = deviatedChapters.slice(0, MAX_FINAL_REWRITES);
+
+        for (const deviatedChNum of chaptersToRewrite) {
+          if (await this.shouldStopProcessing(projectId)) break;
+
+          const deviationIssue = issues.find(i => i.includes(`Cap ${deviatedChNum}`)) ||
+            `Capítulo ${deviatedChNum} tiene problemas estructurales detectados en la revisión final`;
+
+          this.callbacks.onAgentStatus("structural-checkpoint", "active", `Corrigiendo capítulo ${deviatedChNum} (revisión final)...`);
+
+          const rewritten = await this.rewriteDeviatedChapter(
+            projectId, deviatedChNum, worldBible, outline, deviationIssue
+          );
+
+          if (rewritten) {
+            const updatedChapters = await storage.getChaptersByProject(projectId);
+            const updatedCh = updatedChapters.find(c => c.chapterNumber === deviatedChNum);
+
+            if (updatedCh?.content) {
+              const verification = await this.verifyRewriteFixed(
+                projectId, deviatedChNum, updatedCh.content, outline, deviationIssue
+              );
+
+              if (!verification.fixed && verification.remainingIssues.length > 0) {
+                console.log(`[FinalStructuralReview] Chapter ${deviatedChNum} rewrite did NOT fix problem. Second attempt...`);
+                const enhancedIssue = `${deviationIssue}\n\nPROBLEMAS PERSISTENTES:\n${verification.remainingIssues.join('\n')}`;
+
+                const rewritten2 = await this.rewriteDeviatedChapter(
+                  projectId, deviatedChNum, worldBible, outline, enhancedIssue
+                );
+
+                if (rewritten2) {
+                  const recheckChapters = await storage.getChaptersByProject(projectId);
+                  const recheckCh = recheckChapters.find(c => c.chapterNumber === deviatedChNum);
+                  if (recheckCh?.content) {
+                    const v2 = await this.verifyRewriteFixed(
+                      projectId, deviatedChNum, recheckCh.content, outline, enhancedIssue
+                    );
+                    if (!v2.fixed) {
+                      await storage.createActivityLog({
+                        projectId,
+                        level: "warn",
+                        agentRole: "structural-checkpoint",
+                        message: `[FINAL] Capítulo ${deviatedChNum}: desviación persistente tras 2 intentos. Problemas: ${v2.remainingIssues.join('; ')}`,
+                        metadata: { type: 'persistent_deviation', chapterNumber: deviatedChNum, phase: 'final_review' },
+                      });
+                    }
+                  }
+                }
+              }
+            }
+
+            rewrittenCount++;
+            alreadyCorrectedChapters.add(deviatedChNum);
+
+            // Re-summarize the corrected chapter
+            const finalChapters = await storage.getChaptersByProject(projectId);
+            const finalCh = finalChapters.find(c => c.chapterNumber === deviatedChNum);
+            if (finalCh) {
+              const summaryResult = await this.summarizer.execute({
+                chapterContent: finalCh.content || '',
+                chapterNumber: deviatedChNum,
+              });
+              this.addTokenUsage(summaryResult.tokenUsage);
+              if (summaryResult.content) {
+                await storage.updateChapter(finalCh.id, { summary: summaryResult.content });
+              }
+            }
+          }
+        }
+
+        await storage.createActivityLog({
+          projectId,
+          level: "success",
+          agentRole: "structural-checkpoint",
+          message: `Revisión final completada: ${rewrittenCount} capítulos corregidos de ${deviatedChapters.length} detectados. Puntuación estructural: ${parsed.overallScore}/10.`,
+          metadata: { type: 'final_review_completed', rewrittenCount, totalDeviated: deviatedChapters.length, score: parsed.overallScore },
+        });
+
+        return { rewrittenCount, issues, lessonsLearned };
+      } catch (error) {
+        if (attempt < MAX_RETRIES) {
+          console.warn(`[FinalStructuralReview] Error on attempt ${attempt + 1}, retrying...`, error);
+          continue;
+        }
+        console.error("[FinalStructuralReview] Error after all retries:", error);
+        return { rewrittenCount: 0, issues: [], lessonsLearned: [] };
+      }
+    }
+    return { rewrittenCount: 0, issues: [], lessonsLearned: [] };
   }
 
   private async verifyRewriteFixed(
