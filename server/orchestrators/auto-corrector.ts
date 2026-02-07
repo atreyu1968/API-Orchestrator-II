@@ -539,17 +539,21 @@ async function executeAutoCorrectionLoop(
       });
 
       if (cycle === maxCycles) {
+        const finalBestScore = bestScore > 0 ? bestScore : overallScore;
         await updateRunStatus(runId, 'completed', {
+          finalScore: finalBestScore,
+          finalCriticalIssues: criticalIssues,
           totalIssuesFixed: totalFixed,
           totalStructuralChanges: totalStructural,
           completedAt: new Date(),
-          currentAuditId: auditId,
+          currentAuditId: bestAuditId || auditId,
           currentManuscriptId: manuscriptId,
         });
-        await addLog(runId, 'completed', `Máximo de ciclos alcanzado (${maxCycles}). Total fixed: ${totalFixed}`);
+        await addLog(runId, 'completed', `Máximo de ciclos alcanzado (${maxCycles}). Score: ${finalBestScore}. Total fixed: ${totalFixed}`);
         onProgress?.({
           phase: 'completed',
-          message: `Auto-corrección completada tras ${maxCycles} ciclos. Total corregidos: ${totalFixed}`,
+          message: `Auto-corrección completada tras ${maxCycles} ciclos. Score: ${finalBestScore}. Total corregidos: ${totalFixed}`,
+          score: finalBestScore,
         });
         break;
       }

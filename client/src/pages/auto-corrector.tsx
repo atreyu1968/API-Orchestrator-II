@@ -468,10 +468,22 @@ export default function AutoCorrectorPage() {
                     <span className="font-medium">Run #{run.id}</span>
                     {getStatusBadge(run.status)}
                     {run.finalScore != null && (
-                      <Badge variant="outline">Score: {run.finalScore}</Badge>
+                      <Badge variant={run.finalScore >= (run.targetScore || 85) ? "default" : "outline"} data-testid={`badge-run-score-${run.id}`}>
+                        Score: {run.finalScore}
+                      </Badge>
+                    )}
+                    {run.finalCriticalIssues != null && (
+                      <Badge variant={run.finalCriticalIssues > 0 ? "destructive" : "secondary"} data-testid={`badge-run-critical-${run.id}`}>
+                        {run.finalCriticalIssues} Críticos
+                      </Badge>
                     )}
                     {run.totalIssuesFixed != null && run.totalIssuesFixed > 0 && (
-                      <Badge variant="secondary">{run.totalIssuesFixed} corregidos</Badge>
+                      <Badge variant="secondary" data-testid={`badge-run-fixed-${run.id}`}>{run.totalIssuesFixed} corregidos</Badge>
+                    )}
+                    {run.cycleHistory && run.cycleHistory.length > 0 && (
+                      <span className="text-muted-foreground text-xs" data-testid={`text-run-cycles-${run.id}`}>
+                        {run.cycleHistory.length} ciclo{run.cycleHistory.length !== 1 ? 's' : ''}
+                      </span>
                     )}
                     <span className="text-muted-foreground text-xs">
                       {new Date(run.createdAt).toLocaleDateString()} {new Date(run.createdAt).toLocaleTimeString()}
