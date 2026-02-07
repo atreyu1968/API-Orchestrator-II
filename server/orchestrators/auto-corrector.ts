@@ -202,6 +202,10 @@ async function executeAutoCorrectionLoop(
     const maxCritical = run.maxCriticalIssues || 0;
     let totalFixed = 0;
     let totalStructural = 0;
+    let previousCycleScore = 0;
+    let bestScore = 0;
+    let bestAuditId: number | null = null;
+    let bestCycleSnapshot: Map<number, string> | null = null;
 
     for (let cycle = 1; cycle <= maxCycles; cycle++) {
       if (await isCancelled(runId, control)) {
@@ -259,6 +263,11 @@ async function executeAutoCorrectionLoop(
 
       const { overallScore, criticalIssues, totalIssues, auditId } = auditResult;
 
+      if (overallScore > bestScore) {
+        bestScore = overallScore;
+        bestAuditId = auditId;
+      }
+
       onProgress?.({
         phase: 'audit_complete',
         message: `Ciclo ${cycle}: Auditoría completada. Score: ${overallScore}, Issues críticos: ${criticalIssues}, Total: ${totalIssues}`,
@@ -268,7 +277,56 @@ async function executeAutoCorrectionLoop(
         criticalIssues,
       });
 
-      await addLog(runId, 'audit_complete', `Ciclo ${cycle}: Score=${overallScore}, Críticos=${criticalIssues}, Total=${totalIssues}`);
+      await addLog(runId, 'audit_complete', `Ciclo ${cycle}: Score=${overallScore}, Críticos=${criticalIssues}, Total=${totalIssues}${previousCycleScore > 0 ? ` (anterior: ${previousCycleScore})` : ''}`);
+
+      // SCORE-DROP GUARD: If score dropped from previous cycle, REVERT to best snapshot and stop
+      if (cycle > 1 && previousCycleScore > 0 && overallScore < previousCycleScore - 2) {
+        const scoreDelta = overallScore - previousCycleScore;
+        console.log(`[AutoCorrector] SCORE DROP DETECTED: ${previousCycleScore} → ${overallScore} (delta: ${scoreDelta})`);
+        await addLog(runId, 'score_drop', `Ciclo ${cycle}: Score bajó de ${previousCycleScore} a ${overallScore} (delta: ${scoreDelta}). Revirtiendo al mejor estado (score ${bestScore}).`);
+
+        onProgress?.({
+          phase: 'reverting',
+          message: `Score bajó (${previousCycleScore}→${overallScore}). Revirtiendo al mejor estado (score ${bestScore})...`,
+          cycle,
+          score: overallScore,
+        });
+
+        if (bestCycleSnapshot) {
+          await restoreChapterContents(projectId, bestCycleSnapshot);
+          console.log(`[AutoCorrector] Restored to best cycle snapshot (score ${bestScore})`);
+        }
+
+        const cycleRecord: AutoCorrectionCycle = {
+          cycle,
+          auditId,
+          overallScore,
+          criticalIssues,
+          totalIssues,
+          issuesFixed: 0,
+          structuralChanges: 0,
+          startedAt: cycleStart,
+          completedAt: new Date().toISOString(),
+          result: 'score_drop_reverted',
+        };
+        await appendCycleHistory(runId, cycleRecord);
+
+        await updateRunStatus(runId, 'completed', {
+          finalScore: bestScore,
+          finalCriticalIssues: criticalIssues,
+          totalIssuesFixed: totalFixed,
+          totalStructuralChanges: totalStructural,
+          completedAt: new Date(),
+          currentAuditId: bestAuditId,
+        });
+        await addLog(runId, 'completed', `Detenido por degradación de score. Mejor score: ${bestScore}. Contenido restaurado al mejor ciclo.`);
+        onProgress?.({
+          phase: 'completed',
+          message: `Auto-corrección detenida. Contenido restaurado al mejor estado (score ${bestScore}).`,
+          score: bestScore,
+        });
+        break;
+      }
 
       // Check if quality threshold is already met
       if (overallScore >= targetScore && criticalIssues <= maxCritical) {
@@ -328,22 +386,53 @@ async function executeAutoCorrectionLoop(
         break;
       }
 
-      // PHASE 3: Run corrections
+      // PHASE 3: Run corrections (only critical/high severity in auto-mode for cycles > 1)
       if (await isCancelled(runId, control)) {
         await finishCancelled(runId, cycle, cycleStart, auditResult);
         break;
       }
 
       await updateRunStatus(runId, 'correcting', { currentAuditId: auditId });
+
+      // Filter audit to only critical/high issues for cycle > 1 to prevent style degradation
+      const filteredAuditId = cycle > 1
+        ? await filterAuditToHighSeverity(auditId, cycle, onProgress)
+        : auditId;
+
+      const effectiveIssueCount = cycle > 1
+        ? await countFilteredIssues(filteredAuditId)
+        : totalIssues;
+
+      if (effectiveIssueCount === 0 && cycle > 1) {
+        await addLog(runId, 'completed', `Ciclo ${cycle}: No hay issues críticos/altos restantes. Finalizando.`);
+        const cycleRecord: AutoCorrectionCycle = {
+          cycle, auditId, overallScore, criticalIssues, totalIssues,
+          issuesFixed: 0, structuralChanges: 0,
+          startedAt: cycleStart, completedAt: new Date().toISOString(),
+          result: 'no_critical_issues',
+        };
+        await appendCycleHistory(runId, cycleRecord);
+        await updateRunStatus(runId, 'completed', {
+          finalScore: overallScore,
+          finalCriticalIssues: criticalIssues,
+          totalIssuesFixed: totalFixed,
+          totalStructuralChanges: totalStructural,
+          completedAt: new Date(),
+          currentAuditId: auditId,
+        });
+        onProgress?.({ phase: 'completed', message: `Sin issues críticos restantes. Score final: ${overallScore}` });
+        break;
+      }
+
       onProgress?.({
         phase: 'correcting',
-        message: `Ciclo ${cycle}: Corrigiendo ${totalIssues} issues con DeepSeek...`,
+        message: `Ciclo ${cycle}: Corrigiendo ${effectiveIssueCount} issues${cycle > 1 ? ' (solo críticos/altos)' : ''} con DeepSeek...`,
         cycle,
         maxCycles,
       });
-      await addLog(runId, 'correcting', `Ciclo ${cycle}: Iniciando corrección de ${totalIssues} issues`);
+      await addLog(runId, 'correcting', `Ciclo ${cycle}: Iniciando corrección de ${effectiveIssueCount} issues${cycle > 1 ? ' (filtrado: solo críticos/altos)' : ''}`);
 
-      const correctionResult = await runCorrections(runId, auditId, cycle, onProgress);
+      const correctionResult = await runCorrections(runId, filteredAuditId, cycle, onProgress);
 
       if (await isCancelled(runId, control)) {
         await finishCancelled(runId, cycle, cycleStart, auditResult);
@@ -372,11 +461,14 @@ async function executeAutoCorrectionLoop(
 
       const manuscriptId = correctionResult.manuscriptId;
 
-      // PHASE 4: Handle structural issues
-      const structuralCount = await handleStructuralIssuesAutonomously(
-        manuscriptId, auditId, novelContent, onProgress
-      );
-      totalStructural += structuralCount;
+      // PHASE 4: Handle structural issues (only cycle 1)
+      let structuralCount = 0;
+      if (cycle === 1) {
+        structuralCount = await handleStructuralIssuesAutonomously(
+          manuscriptId, auditId, novelContent, onProgress
+        );
+        totalStructural += structuralCount;
+      }
 
       if (await isCancelled(runId, control)) {
         await finishCancelled(runId, cycle, cycleStart, auditResult);
@@ -411,6 +503,15 @@ async function executeAutoCorrectionLoop(
       await applyCorrectionsToChapters(projectId, manuscriptId);
 
       totalFixed += approvedCount;
+      previousCycleScore = overallScore;
+
+      // Capture best-scoring snapshot for potential rollback
+      if (overallScore >= bestScore) {
+        bestScore = overallScore;
+        bestAuditId = auditId;
+        bestCycleSnapshot = await backupChapterContents(projectId);
+        console.log(`[AutoCorrector] New best score: ${bestScore} at cycle ${cycle}. Snapshot captured.`);
+      }
 
       const cycleRecord: AutoCorrectionCycle = {
         cycle,
@@ -431,7 +532,7 @@ async function executeAutoCorrectionLoop(
 
       onProgress?.({
         phase: 'cycle_complete',
-        message: `Ciclo ${cycle} completado. ${approvedCount} correcciones, ${structuralCount} estructurales.`,
+        message: `Ciclo ${cycle} completado. ${approvedCount} correcciones, ${structuralCount} estructurales. Score previo: ${overallScore}`,
         cycle,
         maxCycles,
         details: { approvedCount, structuralCount },
@@ -458,6 +559,92 @@ async function executeAutoCorrectionLoop(
   } finally {
     activeRuns.delete(runId);
   }
+}
+
+async function backupChapterContents(projectId: number): Promise<Map<number, string>> {
+  const chapters = await storage.getChaptersByProject(projectId);
+  const backup = new Map<number, string>();
+  if (chapters) {
+    for (const ch of chapters) {
+      if (ch.content) {
+        backup.set(ch.id, ch.content);
+      }
+    }
+  }
+  console.log(`[AutoCorrector] Backed up ${backup.size} chapters for project ${projectId}`);
+  return backup;
+}
+
+async function restoreChapterContents(projectId: number, backup: Map<number, string>) {
+  let restored = 0;
+  const entries = Array.from(backup.entries());
+  for (const entry of entries) {
+    await storage.updateChapter(entry[0], { content: entry[1] });
+    restored++;
+  }
+  console.log(`[AutoCorrector] Restored ${restored} chapters for project ${projectId}`);
+}
+
+async function filterAuditToHighSeverity(
+  auditId: number,
+  cycle: number,
+  onProgress?: AutoCorrectorProgressCallback
+): Promise<number> {
+  const [audit] = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.id, auditId));
+  if (!audit || !audit.finalAudit) return auditId;
+
+  const finalAudit = audit.finalAudit as any;
+  const filteredReports: any[] = [];
+  let totalKept = 0;
+  let totalRemoved = 0;
+
+  const highSeverities = ['critical', 'high', 'crítico', 'alto', 'grave'];
+
+  for (const report of (finalAudit.reports || [])) {
+    const filteredIssues = (report.issues || []).filter((issue: any) => {
+      const sev = (issue.severity || '').toLowerCase();
+      return highSeverities.some(hs => sev.includes(hs));
+    });
+    totalKept += filteredIssues.length;
+    totalRemoved += (report.issues || []).length - filteredIssues.length;
+    filteredReports.push({ ...report, issues: filteredIssues });
+  }
+
+  if (totalRemoved > 0) {
+    console.log(`[AutoCorrector] Cycle ${cycle}: Filtered audit - kept ${totalKept} high/critical issues, removed ${totalRemoved} medium/low`);
+    onProgress?.({
+      phase: 'filtering',
+      message: `Ciclo ${cycle}: Filtrando solo issues críticos/altos (${totalKept} de ${totalKept + totalRemoved})`,
+      cycle,
+    });
+
+    const filteredFinalAudit = { ...finalAudit, reports: filteredReports };
+    const [filteredAudit] = await db.insert(manuscriptAudits).values({
+      projectId: audit.projectId,
+      status: 'completed',
+      novelContent: audit.novelContent,
+      bibleContent: audit.bibleContent,
+      finalAudit: filteredFinalAudit,
+      overallScore: audit.overallScore,
+      criticalFlags: audit.criticalFlags,
+      completedAt: new Date(),
+    }).returning();
+
+    return filteredAudit.id;
+  }
+
+  return auditId;
+}
+
+async function countFilteredIssues(auditId: number): Promise<number> {
+  const [audit] = await db.select().from(manuscriptAudits).where(eq(manuscriptAudits.id, auditId));
+  if (!audit || !audit.finalAudit) return 0;
+  const finalAudit = audit.finalAudit as any;
+  let count = 0;
+  for (const report of (finalAudit.reports || [])) {
+    count += (report.issues || []).length;
+  }
+  return count;
 }
 
 async function buildNovelContent(projectId: number): Promise<string> {

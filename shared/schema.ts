@@ -1160,7 +1160,7 @@ export interface AutoCorrectionCycle {
   structuralChanges: number;
   startedAt: string;
   completedAt?: string;
-  result: 'threshold_met' | 'corrected' | 'no_issues' | 'max_cycles' | 'error' | 'cancelled';
+  result: 'threshold_met' | 'corrected' | 'no_issues' | 'max_cycles' | 'error' | 'cancelled' | 'score_drop_reverted' | 'no_critical_issues';
 }
 
 export interface AutoCorrectionLogEntry {

@@ -90,6 +90,8 @@ function getCycleResultLabel(result: string) {
     case 'max_cycles': return 'Max ciclos';
     case 'error': return 'Error';
     case 'cancelled': return 'Cancelado';
+    case 'score_drop_reverted': return 'Revertido (score bajó)';
+    case 'no_critical_issues': return 'Sin issues críticos';
     default: return result;
   }
 }

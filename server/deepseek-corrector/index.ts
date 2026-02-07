@@ -24,7 +24,10 @@ Tu única métrica de éxito es que el lector no note que el texto ha sido edita
 REGLAS ABSOLUTAS:
 1. Mantén el tono, vocabulario y ritmo del autor.
 2. NO añadas información nueva que no sea estrictamente necesaria.
-3. Devuelve SOLO el texto corregido, sin explicaciones, sin markdown, sin comillas.`;
+3. Devuelve SOLO el texto corregido, sin explicaciones, sin markdown, sin comillas.
+4. PROHIBIDO usar clichés de IA: "un escalofrío recorrió", "el peso de", "no pudo evitar", "algo en su interior", "una oleada de", "el mundo se detuvo", "como si el universo", "sin poder evitarlo", "un nudo en", "la tensión era palpable", "intercambiaron una mirada", "con determinación renovada", "el silencio se hizo ensordecedor".
+5. NO embellezas ni añadas metáforas. Sé MÍNIMO: cambia solo las palabras estrictamente necesarias.
+6. Si la corrección requiere cambiar UNA palabra, cambia UNA palabra. No reescribas la oración entera.`;
 
 interface CorrectionRequest {
   fullChapter: string;
@@ -1225,6 +1228,8 @@ INSTRUCCIONES:
 3. Mantén el tono y estilo del autor
 4. NO cambies los hechos ni los personajes mencionados
 5. Devuelve SOLO la oración reescrita, sin explicaciones
+6. PROHIBIDO usar clichés de IA: "un escalofrío recorrió", "el peso de", "no pudo evitar", "algo en su interior", "una oleada de", "la tensión era palpable", "con determinación renovada"
+7. Sé MÍNIMO: varía solo lo necesario para eliminar la repetición
 
 ORACIÓN VARIADA:`;
 
@@ -1386,6 +1391,8 @@ REGLAS:
 2. Usa vocabulario completamente diferente
 3. Mantén el tono y registro del texto
 4. Devuelve SOLO la frase alternativa, sin explicaciones ni comillas
+5. PROHIBIDO usar clichés de IA: "un escalofrío recorrió", "el peso de", "no pudo evitar", "algo en su interior", "una oleada de", "la tensión era palpable", "intercambiaron una mirada", "con determinación renovada"
+6. Sé MÍNIMO: varía solo las palabras necesarias para eliminar la repetición
 
 FRASE ALTERNATIVA:`;
 
@@ -2294,17 +2301,28 @@ export async function approveCorrection(manuscriptId: number, correctionId: stri
     
     if (!correction) return false;
 
-    correction.status = 'approved';
-    correction.reviewedAt = new Date().toISOString();
-
     let updatedContent = manuscript.correctedContent || manuscript.originalContent;
     const nonCorrectableMarkers = [
       '[No se pudo localizar el texto exacto]',
-      '[Problema genérico sin frases identificables]'
+      '[Problema genérico sin frases identificables]',
+      '[Edita manualmente el texto original aquí]',
     ];
     if (!nonCorrectableMarkers.includes(correction.originalText)) {
+      const beforeReplace = updatedContent;
       updatedContent = updatedContent.replace(correction.originalText, correction.correctedText);
+      if (updatedContent === beforeReplace) {
+        console.log(`[ApproveCorrection] WARNING: Replacement had no effect for correction ${correctionId}. Original text not found in content. Marking as skipped.`);
+        correction.status = 'rejected';
+        correction.reviewedAt = new Date().toISOString();
+        await db.update(correctedManuscripts)
+          .set({ pendingCorrections })
+          .where(eq(correctedManuscripts.id, manuscriptId));
+        return false;
+      }
     }
+
+    correction.status = 'approved';
+    correction.reviewedAt = new Date().toISOString();
 
     await db.update(correctedManuscripts)
       .set({
