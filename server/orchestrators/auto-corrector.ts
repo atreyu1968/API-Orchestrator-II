@@ -936,52 +936,62 @@ function selectBestResolutionOption(issue: any): any {
 
 async function autoApproveAllCorrections(manuscriptId: number): Promise<number> {
   try {
-    const { approveCorrection } = await import('../deepseek-corrector/index');
-
     const [manuscript] = await db.select().from(correctedManuscripts).where(eq(correctedManuscripts.id, manuscriptId));
     if (!manuscript) return 0;
 
     const pendingCorrections = (manuscript.pendingCorrections as CorrectionRecord[]) || [];
     let approvedCount = 0;
-
     let skippedCount = 0;
+
+    const nonCorrectableMarkers = [
+      '[No se pudo localizar el texto exacto]',
+      '[Problema genérico sin frases identificables]',
+      '[Edita manualmente el texto original aquí]',
+      '[Escribe aquí la corrección]',
+    ];
+
+    let content = manuscript.correctedContent || manuscript.originalContent;
+
     for (const correction of pendingCorrections) {
       if (correction.status === 'pending') {
-        const nonCorrectableMarkers = [
-          '[No se pudo localizar el texto exacto]',
-          '[Problema genérico sin frases identificables]',
-          '[Edita manualmente el texto original aquí]',
-          '[Escribe aquí la corrección]',
-        ];
-
         if (nonCorrectableMarkers.includes(correction.originalText) ||
-            nonCorrectableMarkers.includes(correction.correctedText)) {
+            nonCorrectableMarkers.includes(correction.correctedText) ||
+            !correction.correctedText ||
+            correction.correctedText === correction.originalText) {
           correction.status = 'rejected';
           correction.reviewedAt = new Date().toISOString();
           skippedCount++;
           continue;
         }
 
-        if (!correction.correctedText || correction.correctedText === correction.originalText) {
-          correction.status = 'rejected';
-          correction.reviewedAt = new Date().toISOString();
-          skippedCount++;
-          continue;
+        if (correction.originalText && !correction.originalText.startsWith('[')) {
+          if (content.includes(correction.originalText)) {
+            content = content.replace(correction.originalText, correction.correctedText);
+          } else if (!content.includes(correction.correctedText)) {
+            console.log(`[AutoCorrector] Corrección ${correction.id} descartada: ni original ni corregido encontrado en contenido`);
+            correction.status = 'rejected';
+            correction.reviewedAt = new Date().toISOString();
+            skippedCount++;
+            continue;
+          }
         }
 
-        const success = await approveCorrection(manuscriptId, correction.id);
-        if (success) {
-          approvedCount++;
-        }
+        correction.status = 'approved';
+        correction.reviewedAt = new Date().toISOString();
+        approvedCount++;
       }
     }
 
-    if (skippedCount > 0) {
-      console.log(`[AutoCorrector] Auto-approve: ${approvedCount} aprobadas, ${skippedCount} no corregibles (saltadas)`);
-      await db.update(correctedManuscripts)
-        .set({ pendingCorrections })
-        .where(eq(correctedManuscripts.id, manuscriptId));
-    }
+    await db.update(correctedManuscripts)
+      .set({
+        pendingCorrections,
+        correctedContent: content,
+        approvedIssues: approvedCount,
+        status: 'approved'
+      })
+      .where(eq(correctedManuscripts.id, manuscriptId));
+
+    console.log(`[AutoCorrector] Auto-approve: ${approvedCount} aprobadas, ${skippedCount} no corregibles (saltadas)`);
 
     return approvedCount;
   } catch (error) {

@@ -16,18 +16,21 @@ const deepseek = new OpenAI({
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-const SYSTEM_PROMPT = `Eres un Editor Literario Técnico ("Ghostwriter") especializado en corrección invisible.
-Tu objetivo es solucionar inconsistencias lógicas manteniendo la prosa EXACTA del autor original.
-NO eres un co-autor creativo. NO mejores el estilo. NO resumas.
+const SYSTEM_PROMPT = `Eres un Editor Literario Técnico ("Cirujano de Texto") especializado en corrección invisible y MÍNIMA.
+Tu objetivo es solucionar EXACTAMENTE el problema indicado sin alterar NADA más.
+NO eres un co-autor creativo. NO mejores el estilo. NO resumas. NO embellezas.
 Tu única métrica de éxito es que el lector no note que el texto ha sido editado.
 
 REGLAS ABSOLUTAS:
-1. Mantén el tono, vocabulario y ritmo del autor.
-2. NO añadas información nueva que no sea estrictamente necesaria.
+1. Mantén el tono, vocabulario y ritmo del autor EXACTAMENTE como está.
+2. NO añadas información nueva que no sea estrictamente necesaria para la corrección.
 3. Devuelve SOLO el texto corregido, sin explicaciones, sin markdown, sin comillas.
-4. PROHIBIDO usar clichés de IA: "un escalofrío recorrió", "el peso de", "no pudo evitar", "algo en su interior", "una oleada de", "el mundo se detuvo", "como si el universo", "sin poder evitarlo", "un nudo en", "la tensión era palpable", "intercambiaron una mirada", "con determinación renovada", "el silencio se hizo ensordecedor".
-5. NO embellezas ni añadas metáforas. Sé MÍNIMO: cambia solo las palabras estrictamente necesarias.
-6. Si la corrección requiere cambiar UNA palabra, cambia UNA palabra. No reescribas la oración entera.`;
+4. PROHIBIDO usar clichés de IA: "un escalofrío recorrió", "el peso de", "no pudo evitar", "algo en su interior", "una oleada de", "el mundo se detuvo", "como si el universo", "sin poder evitarlo", "un nudo en", "la tensión era palpable", "intercambiaron una mirada", "con determinación renovada", "el silencio se hizo ensordecedor", "no era solo", "más que", "era como si", "sintió que", "una sensación de".
+5. NO embellezas ni añadas metáforas. Sé MÍNIMO: cambia SOLO las palabras estrictamente necesarias.
+6. Si la corrección requiere cambiar UNA palabra, cambia UNA palabra. No reescribas la oración entera.
+7. PRINCIPIO DE NO-DAÑO: tu corrección NO debe introducir nuevos problemas. No cambies nombres de personajes, no alteres hechos establecidos, no modifiques descripciones que ya eran correctas, no añadas frases que no existían.
+8. Preserva TODA la información factual del texto original: nombres, lugares, fechas, descripciones físicas, relaciones entre personajes.
+9. El texto corregido debe tener una LONGITUD SIMILAR al original (±15%). No expandas ni recortes significativamente.`;
 
 interface CorrectionRequest {
   fullChapter: string;
@@ -848,12 +851,15 @@ ${nextContext.slice(0, 300)}
 Instrucción: ${req.instruction}
 Solución requerida: ${req.suggestion}
 
-### REGLAS DE EJECUCIÓN (CRÍTICO)
-1. Reescribe SOLAMENTE el "TEXTO A CORREGIR".
-2. Mantén el tono, vocabulario y ritmo del autor (ver Contexto Previo para referencia).
+### REGLAS DE EJECUCIÓN (CRÍTICO - CUMPLIMIENTO OBLIGATORIO)
+1. Reescribe SOLAMENTE el "TEXTO A CORREGIR". Ni una palabra más, ni una palabra menos de lo necesario.
+2. Mantén el tono, vocabulario y ritmo del autor EXACTAMENTE (ver Contexto Previo para referencia).
 3. El nuevo texto debe fluir naturalmente hacia el "Contexto Posterior".
 4. NO añadas información nueva que no sea estrictamente necesaria para la corrección.
-5. Devuelve SOLO el texto corregido, sin explicaciones ni markdown ni comillas.`;
+5. PRESERVA todos los nombres, lugares, descripciones y hechos que ya eran correctos en el texto.
+6. Tu corrección debe tener longitud SIMILAR al texto original (±15%). No expandas ni recortes.
+7. Devuelve SOLO el texto corregido, sin explicaciones ni markdown ni comillas.
+8. PIENSA ANTES DE CORREGIR: ¿tu cambio puede crear un nuevo problema de continuidad, estilo o coherencia? Si sí, busca una corrección más conservadora.`;
 
     const completion = await deepseek.chat.completions.create({
       model: 'deepseek-chat',
@@ -868,13 +874,32 @@ Solución requerida: ${req.suggestion}
     const rawResponse = completion.choices[0]?.message?.content || '';
     const correctedText = sanitizeResponse(rawResponse);
 
-    if (!correctedText || correctedText.length > textToCorrect.length * 2.5) {
+    if (!correctedText || correctedText.length > textToCorrect.length * 1.5 || correctedText.length < textToCorrect.length * 0.4) {
+      console.log(`[DeepSeek] Corrección rechazada: longitud original=${textToCorrect.length}, corregida=${correctedText.length} (ratio=${(correctedText.length / textToCorrect.length).toFixed(2)})`);
       return {
         success: false,
         originalText: textToCorrect,
         correctedText: textToCorrect,
         diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
-        error: 'Corrección descartada por anomalía de longitud'
+        error: 'Corrección descartada: cambio de longitud excesivo'
+      };
+    }
+
+    const originalWords = new Set(textToCorrect.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+    const correctedWords = new Set(correctedText.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+    let preserved = 0;
+    for (const w of originalWords) {
+      if (correctedWords.has(w)) preserved++;
+    }
+    const preservationRatio = originalWords.size > 0 ? preserved / originalWords.size : 1;
+    if (preservationRatio < 0.4) {
+      console.log(`[DeepSeek] Corrección rechazada: demasiado diferente (preservación=${(preservationRatio * 100).toFixed(0)}%)`);
+      return {
+        success: false,
+        originalText: textToCorrect,
+        correctedText: textToCorrect,
+        diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
+        error: 'Corrección descartada: reescritura excesiva'
       };
     }
 
@@ -1572,6 +1597,142 @@ Responde SOLO con el fragmento exacto del texto problemático, sin explicaciones
   }
 }
 
+async function smartChapterCorrection(
+  fullContent: string,
+  issue: AuditIssue & { agentType: string },
+  location: string
+): Promise<{ originalText: string; correctedText: string; success: boolean; diffStats: { wordsAdded: number; wordsRemoved: number; lengthChange: number } }> {
+  if (!GEMINI_API_KEY) {
+    return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+  }
+
+  try {
+    const chapterContent = extractChapterContentByLocation(fullContent, location);
+    if (!chapterContent || chapterContent.length < 50) {
+      return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+    }
+
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+    const prompt = `Eres un editor literario quirúrgico. Tu tarea es identificar y corregir UN problema específico en el siguiente texto de forma MÍNIMA.
+
+PROBLEMA A CORREGIR:
+${issue.description}
+
+SUGERENCIA DEL AUDITOR:
+${issue.suggestion || 'Ninguna proporcionada'}
+
+SEVERIDAD: ${issue.severity}
+
+TEXTO DEL CAPÍTULO (${location}):
+---
+${chapterContent.substring(0, 12000)}
+---
+
+INSTRUCCIONES CRÍTICAS:
+1. Identifica el fragmento EXACTO (1-3 oraciones) que contiene el problema
+2. Genera una versión corregida de SOLO ese fragmento
+3. El cambio debe ser MÍNIMO: cambia SOLO las palabras estrictamente necesarias
+4. Mantén el estilo, tono y vocabulario del autor original
+5. NO introduzcas clichés de IA, metáforas nuevas ni embellecimientos
+6. NO reescribas más texto del necesario
+7. Si el problema es sobre algo AUSENTE (falta una mención, falta un detalle), identifica el punto exacto donde insertar y muestra las 1-2 oraciones circundantes con la inserción incluida
+
+Responde EXCLUSIVAMENTE en JSON válido con este formato exacto (sin markdown, sin backticks):
+{"original": "texto exacto copiado del capítulo que contiene el problema", "corrected": "mismo texto con la corrección mínima aplicada"}`;
+
+    const result = await model.generateContent(prompt);
+    let responseText = result.response.text().trim();
+
+    responseText = responseText.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+
+    let parsed: { original: string; corrected: string };
+    try {
+      parsed = JSON.parse(responseText);
+    } catch {
+      const jsonMatch = responseText.match(/\{[\s\S]*"original"[\s\S]*"corrected"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          parsed = JSON.parse(jsonMatch[0]);
+        } catch {
+          console.log(`[SmartCorrection] No se pudo parsear JSON de respuesta`);
+          return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+        }
+      } else {
+        return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+      }
+    }
+
+    if (!parsed.original || !parsed.corrected || parsed.original === parsed.corrected) {
+      return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+    }
+
+    if (parsed.corrected.length > parsed.original.length * 1.5 || parsed.corrected.length < parsed.original.length * 0.4) {
+      console.log(`[SmartCorrection] Rechazado por cambio excesivo: orig=${parsed.original.length}, corr=${parsed.corrected.length} (ratio=${(parsed.corrected.length / parsed.original.length).toFixed(2)})`);
+      return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+    }
+
+    const origWords = new Set(parsed.original.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+    const corrWords = new Set(parsed.corrected.toLowerCase().split(/\s+/).filter(w => w.length > 3));
+    let smartPreserved = 0;
+    for (const w of origWords) {
+      if (corrWords.has(w)) smartPreserved++;
+    }
+    const smartPreservation = origWords.size > 0 ? smartPreserved / origWords.size : 1;
+    if (smartPreservation < 0.4) {
+      console.log(`[SmartCorrection] Rechazado: reescritura excesiva (preservación=${(smartPreservation * 100).toFixed(0)}%)`);
+      return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+    }
+
+    let verifiedOriginal = parsed.original;
+    if (!chapterContent.includes(parsed.original)) {
+      const normalizedOrig = parsed.original.replace(/\s+/g, ' ').trim();
+      const normalizedContent = chapterContent.replace(/\s+/g, ' ');
+      if (normalizedContent.includes(normalizedOrig)) {
+        const sentences = chapterContent.split(/(?<=[.!?])\s+/);
+        for (const s of sentences) {
+          if (s.replace(/\s+/g, ' ').trim().includes(normalizedOrig.substring(0, 40))) {
+            verifiedOriginal = s.trim();
+            break;
+          }
+        }
+      } else {
+        const firstWords = parsed.original.split(/\s+/).slice(0, 6).join('\\s+');
+        if (firstWords.length > 15) {
+          try {
+            const fuzzyRegex = new RegExp(firstWords.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\s\+/g, '\\s+'), 'i');
+            const fuzzyMatch = chapterContent.match(fuzzyRegex);
+            if (fuzzyMatch && fuzzyMatch.index !== undefined) {
+              const sentEnd = chapterContent.indexOf('.', fuzzyMatch.index + 20);
+              const endPos = sentEnd > fuzzyMatch.index ? sentEnd + 1 : fuzzyMatch.index + parsed.original.length;
+              verifiedOriginal = chapterContent.substring(fuzzyMatch.index, Math.min(endPos, fuzzyMatch.index + parsed.original.length + 50)).trim();
+            } else {
+              console.log(`[SmartCorrection] No se verificó texto original en capítulo`);
+              return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+            }
+          } catch {
+            return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+          }
+        } else {
+          return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+        }
+      }
+    }
+
+    console.log(`[SmartCorrection] Éxito en ${location}: "${verifiedOriginal.substring(0, 50)}..." → "${parsed.corrected.substring(0, 50)}..."`);
+    
+    return {
+      originalText: verifiedOriginal,
+      correctedText: parsed.corrected,
+      success: true,
+      diffStats: calculateDiffStats(verifiedOriginal, parsed.corrected)
+    };
+  } catch (error) {
+    console.error(`[SmartCorrection] Error:`, error);
+    return { originalText: '', correctedText: '', success: false, diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 } };
+  }
+}
+
 export async function startCorrectionProcess(
   auditId: number,
   onProgress?: (progress: { phase: string; current: number; total: number; message: string }) => void,
@@ -1637,6 +1798,18 @@ export async function startCorrectionProcess(
     let successCount = 0;
 
     let totalOccurrences = 0;
+
+    function applyCumulatively(record: CorrectionRecord): void {
+      if (record.status === 'pending' && record.originalText && record.correctedText &&
+          record.originalText !== record.correctedText &&
+          !record.originalText.startsWith('[')) {
+        const updated = correctedContent.replace(record.originalText, record.correctedText);
+        if (updated !== correctedContent) {
+          correctedContent = updated;
+          console.log(`[Cumulative] Aplicado: "${record.originalText.substring(0, 50)}..." → "${record.correctedText.substring(0, 50)}..."`);
+        }
+      }
+    }
     
     for (let i = 0; i < allIssues.length; i++) {
       const issue = allIssues[i];
@@ -1689,6 +1862,7 @@ export async function startCorrectionProcess(
             };
             
             pendingCorrections.push(correctionRecord);
+            applyCumulatively(correctionRecord);
             totalOccurrences++;
             successCount++;
             
@@ -1737,6 +1911,7 @@ export async function startCorrectionProcess(
         };
 
         pendingCorrections.push(correctionRecord);
+        applyCumulatively(correctionRecord);
         totalOccurrences++;
 
         if (result.success) {
@@ -1798,6 +1973,7 @@ export async function startCorrectionProcess(
             };
 
             pendingCorrections.push(correctionRecord);
+            applyCumulatively(correctionRecord);
 
             if (alternative !== occurrence.text) {
               successCount++;
@@ -1848,6 +2024,7 @@ export async function startCorrectionProcess(
               };
 
               pendingCorrections.push(correctionRecord);
+              applyCumulatively(correctionRecord);
 
               if (alternative !== phrase) {
                 successCount++;
@@ -1857,20 +2034,42 @@ export async function startCorrectionProcess(
             }
             totalOccurrences += ngramPhrases.length;
           } else {
-            pendingCorrections.push({
-              id: `correction-${Date.now()}-${i}`,
-              issueId: `issue-${i}`,
-              location: issue.location,
-              chapterNumber: 0,
-              originalText: '[Problema genérico sin frases identificables]',
-              correctedText: '',
-              instruction: issue.description,
-              severity: issue.severity,
-              status: 'rejected',
-              diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
-              createdAt: new Date().toISOString()
-            });
-            totalOccurrences++;
+            console.log(`[DeepSeek] Issue genérico ${i + 1}: sin frases, intentando corrección inteligente...`);
+            const smartGeneric = await smartChapterCorrection(correctedContent, issue, issue.location);
+            if (smartGeneric.success) {
+              const smartGenRecord: CorrectionRecord = {
+                id: `correction-${Date.now()}-${i}-smart-generic`,
+                issueId: `issue-${i}`,
+                location: issue.location,
+                chapterNumber: parseInt(issue.location.match(/\d+/)?.[0] || '0'),
+                originalText: smartGeneric.originalText,
+                correctedText: smartGeneric.correctedText,
+                instruction: `[CORRECCIÓN-INTELIGENTE-GENÉRICA] ${issue.description}`,
+                severity: issue.severity,
+                status: 'pending',
+                diffStats: smartGeneric.diffStats,
+                createdAt: new Date().toISOString()
+              };
+              pendingCorrections.push(smartGenRecord);
+              applyCumulatively(smartGenRecord);
+              totalOccurrences++;
+              successCount++;
+            } else {
+              pendingCorrections.push({
+                id: `correction-${Date.now()}-${i}`,
+                issueId: `issue-${i}`,
+                location: issue.location,
+                chapterNumber: 0,
+                originalText: '[Problema genérico sin frases identificables]',
+                correctedText: '',
+                instruction: issue.description,
+                severity: issue.severity,
+                status: 'rejected',
+                diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
+                createdAt: new Date().toISOString()
+              });
+              totalOccurrences++;
+            }
           }
         }
         continue;
@@ -1914,7 +2113,7 @@ export async function startCorrectionProcess(
                 suggestion: `Reemplazar con: "${characterBibleInfo.correctValue}"`
               });
               
-              pendingCorrections.push({
+              const cbPrologueRecord: CorrectionRecord = {
                 id: `correction-${Date.now()}-${i}-prologue`,
                 issueId: `issue-${i}`,
                 location: 'Prólogo',
@@ -1926,7 +2125,9 @@ export async function startCorrectionProcess(
                 status: result.success ? 'pending' : 'rejected',
                 diffStats: result.diffStats,
                 createdAt: new Date().toISOString()
-              });
+              };
+              pendingCorrections.push(cbPrologueRecord);
+              applyCumulatively(cbPrologueRecord);
               
               totalOccurrences++;
               if (result.success) successCount++;
@@ -1999,7 +2200,7 @@ export async function startCorrectionProcess(
                   suggestion: `Reemplazar con: "${characterBibleInfo.correctValue}"`
                 });
                 
-                pendingCorrections.push({
+                const cbMultiPrologueRec: CorrectionRecord = {
                   id: `correction-${Date.now()}-${i}-prologue-multi`,
                   issueId: `issue-${i}`,
                   location: 'Prólogo',
@@ -2011,7 +2212,9 @@ export async function startCorrectionProcess(
                   status: result.success ? 'pending' : 'rejected',
                   diffStats: result.diffStats,
                   createdAt: new Date().toISOString()
-                });
+                };
+                pendingCorrections.push(cbMultiPrologueRec);
+                applyCumulatively(cbMultiPrologueRec);
                 
                 totalOccurrences++;
                 if (result.success) successCount++;
@@ -2054,7 +2257,7 @@ export async function startCorrectionProcess(
                   suggestion: `Reemplazar con: "${characterBibleInfo.correctValue}"`
                 });
                 
-                pendingCorrections.push({
+                const cbMultiChRec: CorrectionRecord = {
                   id: `correction-${Date.now()}-${i}-ch${chapterNum}`,
                   issueId: `issue-${i}`,
                   location: chapterRef,
@@ -2066,7 +2269,9 @@ export async function startCorrectionProcess(
                   status: result.success ? 'pending' : 'rejected',
                   diffStats: result.diffStats,
                   createdAt: new Date().toISOString()
-                });
+                };
+                pendingCorrections.push(cbMultiChRec);
+                applyCumulatively(cbMultiChRec);
                 
                 totalOccurrences++;
                 if (result.success) successCount++;
@@ -2107,7 +2312,7 @@ export async function startCorrectionProcess(
                   suggestion: `Reemplazar con: "${characterBibleInfo.correctValue}"`
                 });
                 
-                pendingCorrections.push({
+                const cbEpilogueRec: CorrectionRecord = {
                   id: `correction-${Date.now()}-${i}-epilogue`,
                   issueId: `issue-${i}`,
                   location: 'Epílogo',
@@ -2119,7 +2324,9 @@ export async function startCorrectionProcess(
                   status: result.success ? 'pending' : 'rejected',
                   diffStats: result.diffStats,
                   createdAt: new Date().toISOString()
-                });
+                };
+                pendingCorrections.push(cbEpilogueRec);
+                applyCumulatively(cbEpilogueRec);
                 
                 totalOccurrences++;
                 if (result.success) successCount++;
@@ -2166,6 +2373,7 @@ export async function startCorrectionProcess(
           };
 
           pendingCorrections.push(correctionRecord);
+          applyCumulatively(correctionRecord);
           totalOccurrences++;
 
           if (result.success) {
@@ -2229,6 +2437,7 @@ export async function startCorrectionProcess(
             };
 
             pendingCorrections.push(correctionRecord);
+            applyCumulatively(correctionRecord);
             totalOccurrences++;
 
             if (result.success) {
@@ -2311,6 +2520,7 @@ export async function startCorrectionProcess(
             };
             
             pendingCorrections.push(correctionRecord);
+            applyCumulatively(correctionRecord);
             
             if (alternative !== sentence) {
               successCount++;
@@ -2386,6 +2596,7 @@ export async function startCorrectionProcess(
                 };
 
                 pendingCorrections.push(correctionRecord);
+                applyCumulatively(correctionRecord);
                 
                 if (alternative !== foundConcept.sentence) {
                   successCount++;
@@ -2405,22 +2616,56 @@ export async function startCorrectionProcess(
         }
       }
 
-      console.log(`[DeepSeek] Issue ${i + 1} NO CORREGIDO: ningún método encontró el texto problemático. Location: "${issue.location}", Severity: ${issue.severity}, Desc: "${issue.description.substring(0, 100)}"`);
+      console.log(`[DeepSeek] Issue ${i + 1}: métodos estándar fallaron. Intentando corrección inteligente por capítulo con IA...`);
       
-      pendingCorrections.push({
-        id: `correction-${Date.now()}-${i}`,
-        issueId: `issue-${i}`,
-        location: issue.location,
-        chapterNumber: parseInt(issue.location.match(/\d+/)?.[0] || '0'),
-        originalText: '[No se pudo localizar el texto exacto]',
-        correctedText: '',
-        instruction: `[NO LOCALIZABLE] ${issue.description}`,
-        severity: issue.severity,
-        status: 'rejected',
-        diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
-        createdAt: new Date().toISOString()
+      onProgress?.({
+        phase: 'correcting',
+        current: i + 1,
+        total: allIssues.length,
+        message: `IA analizando capítulo completo para corregir issue ${i + 1}...`
       });
-      totalOccurrences++;
+
+      const smartResult = await smartChapterCorrection(correctedContent, issue, issue.location);
+      
+      if (smartResult.success) {
+        console.log(`[SmartCorrection] Issue ${i + 1} CORREGIDO por IA: "${smartResult.originalText.substring(0, 60)}..."`);
+        
+        const smartRecord: CorrectionRecord = {
+          id: `correction-${Date.now()}-${i}-smart`,
+          issueId: `issue-${i}`,
+          location: issue.location,
+          chapterNumber: parseInt(issue.location.match(/\d+/)?.[0] || '0'),
+          originalText: smartResult.originalText,
+          correctedText: smartResult.correctedText,
+          instruction: `[CORRECCIÓN-INTELIGENTE] ${issue.description}`,
+          severity: issue.severity,
+          status: 'pending',
+          diffStats: smartResult.diffStats,
+          createdAt: new Date().toISOString()
+        };
+        
+        pendingCorrections.push(smartRecord);
+        applyCumulatively(smartRecord);
+        totalOccurrences++;
+        successCount++;
+      } else {
+        console.log(`[DeepSeek] Issue ${i + 1} NO CORREGIDO tras todos los intentos. Location: "${issue.location}", Severity: ${issue.severity}`);
+        
+        pendingCorrections.push({
+          id: `correction-${Date.now()}-${i}`,
+          issueId: `issue-${i}`,
+          location: issue.location,
+          chapterNumber: parseInt(issue.location.match(/\d+/)?.[0] || '0'),
+          originalText: '[No se pudo localizar el texto exacto]',
+          correctedText: '',
+          instruction: `[NO LOCALIZABLE] ${issue.description}`,
+          severity: issue.severity,
+          status: 'rejected',
+          diffStats: { wordsAdded: 0, wordsRemoved: 0, lengthChange: 0 },
+          createdAt: new Date().toISOString()
+        });
+        totalOccurrences++;
+      }
     }
 
     await db.update(correctedManuscripts)
