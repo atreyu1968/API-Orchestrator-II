@@ -260,7 +260,7 @@ export class GlobalArchitectAgent extends BaseAgent {
     }
     
     if (!parsed) {
-      console.log("[GlobalArchitect] Attempting aggressive line-by-line JSON repair...");
+      console.log("[GlobalArchitect] Attempting aggressive JSON repair...");
       try {
         parsed = this.aggressiveJsonRepair(content) as GlobalArchitectOutput;
         if (parsed) {
@@ -269,6 +269,19 @@ export class GlobalArchitectAgent extends BaseAgent {
         }
       } catch (aggressiveErr) {
         console.warn("[GlobalArchitect] Aggressive repair also failed:", aggressiveErr);
+      }
+    }
+    
+    if (!parsed) {
+      console.log("[GlobalArchitect] Attempting iterative position-based JSON repair...");
+      try {
+        parsed = this.iterativeJsonRepair(content) as GlobalArchitectOutput;
+        if (parsed) {
+          console.log(`[GlobalArchitect] Iterative repair succeeded! Outline has ${parsed.outline?.length || 0} entries`);
+          parseError = null;
+        }
+      } catch (iterErr) {
+        console.warn("[GlobalArchitect] Iterative repair also failed:", iterErr);
       }
     }
     
@@ -525,6 +538,103 @@ REGLAS:
       try { return JSON.parse(synthetic); } catch {}
     }
     
+    return null;
+  }
+
+  /**
+   * Iteratively repair JSON by parsing, detecting error position, fixing the issue at that
+   * position, and retrying. Handles unescaped quotes inside string values, which is the 
+   * most common cause of "Expected ',' or '}' after property value" errors.
+   */
+  private iterativeJsonRepair(content: string): any | null {
+    let json = content
+      .replace(/```json\s*/gi, '').replace(/```\s*/g, '')
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+    
+    const firstBrace = json.indexOf('{');
+    if (firstBrace === -1) return null;
+    json = json.substring(firstBrace);
+    
+    json = this.fixNewlinesInStrings(json);
+    json = this.fixUnquotedKeys(json);
+    json = json.replace(/,(\s*[}\]])/g, '$1');
+    
+    let openBraces = 0, openBrackets = 0, inStr = false, esc = false;
+    for (const ch of json) {
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (!inStr) {
+        if (ch === '{') openBraces++;
+        else if (ch === '}') openBraces--;
+        else if (ch === '[') openBrackets++;
+        else if (ch === ']') openBrackets--;
+      }
+    }
+    if (inStr) json += '"';
+    for (let i = 0; i < openBrackets; i++) json += ']';
+    for (let i = 0; i < openBraces; i++) json += '}';
+    json = json.replace(/,(\s*[}\]])/g, '$1');
+
+    const MAX_ITERATIONS = 50;
+    for (let attempt = 0; attempt < MAX_ITERATIONS; attempt++) {
+      try {
+        return JSON.parse(json);
+      } catch (e: any) {
+        const msg = e.message || '';
+        const posMatch = msg.match(/position\s+(\d+)/i);
+        if (!posMatch) return null;
+        
+        const pos = parseInt(posMatch[1]);
+        if (pos <= 0 || pos >= json.length) return null;
+        
+        if (msg.includes("Expected ',' or '}'") || msg.includes("Expected ',' or ']'") || msg.includes("Unexpected token")) {
+          let fixStart = pos;
+          while (fixStart > 0 && json[fixStart] !== '"') fixStart--;
+          
+          if (fixStart > 0 && json[fixStart] === '"') {
+            let prevQuote = fixStart - 1;
+            while (prevQuote > 0 && json[prevQuote] !== '"') prevQuote--;
+            
+            if (prevQuote >= 0) {
+              const between = json.substring(prevQuote + 1, fixStart);
+              if (between.match(/^\s*[,:{}\[\]]/)) {
+                json = json.substring(0, pos) + ',' + json.substring(pos);
+                continue;
+              }
+            }
+            
+            json = json.substring(0, fixStart) + '\\' + json.substring(fixStart);
+            continue;
+          }
+          
+          json = json.substring(0, pos) + json.substring(pos + 1);
+          continue;
+        }
+        
+        if (msg.includes("Expected double-quoted property name")) {
+          let insertPos = pos;
+          while (insertPos < json.length && /\s/.test(json[insertPos])) insertPos++;
+          const afterWs = json.substring(insertPos);
+          const keyMatch = afterWs.match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)(\s*:)/);
+          if (keyMatch) {
+            json = json.substring(0, insertPos) + '"' + keyMatch[1] + '"' + keyMatch[2] + json.substring(insertPos + keyMatch[0].length);
+            continue;
+          }
+          return null;
+        }
+        
+        if (msg.includes("Unterminated string")) {
+          json = json.substring(0, pos) + '"' + json.substring(pos);
+          continue;
+        }
+        
+        console.warn(`[GlobalArchitect] Iterative repair: unhandled error type: ${msg}`);
+        return null;
+      }
+    }
+    
+    console.warn("[GlobalArchitect] Iterative repair: max iterations reached");
     return null;
   }
 
