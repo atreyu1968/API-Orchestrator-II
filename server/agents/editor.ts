@@ -178,12 +178,24 @@ PROTOCOLO DE EVALUACIÓN INTEGRADO
    - ¿Los eventos dramáticos tienen suficiente SETUP emocional?
    - ¿Las transiciones son fluidas?
 
-6. VEROSIMILITUD NARRATIVA:
+6. VEROSIMILITUD NARRATIVA (ALTA PRIORIDAD):
    - ¿Hay DEUS EX MACHINA? (soluciones sin preparación previa)
-   - ¿Hay coincidencias muy forzadas?
-   - ¿Los rescates están mínimamente sembrados?
-   - Penalización: -1 punto por deus ex machina evidente (máximo -2)
-   - Coincidencias menores o rescates parcialmente sembrados: nota sin penalizar
+     * ¿Aparece un aliado/recurso/habilidad "justo a tiempo" sin haber sido establecido antes?
+     * ¿El protagonista resuelve un problema sin esfuerzo, sacrificio o costo real?
+     * ¿El antagonista comete errores estúpidos o "confiesa" convenientemente?
+     * ¿Hay coincidencias afortunadas que salvan al protagonista? ("por suerte", "casualmente", "justo entonces")
+     * ¿El protagonista "recuerda de repente" algo conveniente nunca antes mencionado?
+   - Penalización: -2 puntos por deus ex machina evidente. Es el peor error narrativo posible.
+   - Coincidencias menores o rescates parcialmente sembrados: -1 punto
+   - Si detectas deus ex machina, el plan_quirurgico DEBE proponer una resolución alternativa fundamentada en la trama
+
+6b. ADHESIÓN A LA GUÍA DE ESTILO (ALTA PRIORIDAD):
+   - ¿La voz narrativa coincide con la cadencia y tono descritos en la guía?
+   - ¿Se usan las técnicas narrativas preferidas del autor?
+   - ¿Se evitan las palabras/expresiones prohibidas en la guía?
+   - ¿La densidad descriptiva y el ritmo de los diálogos coinciden con el estilo descrito?
+   - Penalización: -1 punto por desviación evidente del estilo del autor
+   - Si el capítulo "suena" genérico y no captura la voz del autor, reportar en violaciones_estilo
 
 INSTRUCCIONES DE REESCRITURA PRECISAS:
 Cuando rechaces un capítulo, tu plan_quirurgico debe incluir:

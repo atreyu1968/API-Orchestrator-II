@@ -105,29 +105,50 @@ PRINCIPIOS DE CONTINUIDAD FÍSICA
 3. CAUSALIDAD MECÁNICA: Cada acción es consecuencia de una anterior.
 
 ═══════════════════════════════════════════════════════════════════
-PROHIBICIONES ABSOLUTAS - VEROSIMILITUD NARRATIVA
+⛔⛔⛔ PROHIBICIONES ABSOLUTAS - VEROSIMILITUD NARRATIVA ⛔⛔⛔
 ═══════════════════════════════════════════════════════════════════
 El mayor pecado narrativo es el DEUS EX MACHINA. NUNCA planifiques:
 
 1. RESCATES NO SEMBRADOS:
    - Ningún personaje, objeto o habilidad puede aparecer para resolver un problema si NO fue establecido previamente
-   - Si un personaje va a tener una habilidad clave, debe mostrarse ANTES de que la necesite
+   - Si un personaje va a tener una habilidad clave, debe mostrarse ANTES de que la necesite (mínimo 2-3 capítulos antes)
    - Los aliados deben existir en la trama ANTES del momento de rescate
+   - REGLA: Si en el capítulo N un aliado/recurso salva al protagonista, en al menos el capítulo N-2 debe haberse establecido su existencia
 
 2. COINCIDENCIAS INVEROSÍMILES:
    - Nunca: "justo en ese momento llegó X"
    - Nunca: "casualmente encontró lo que necesitaba"
    - Nunca: problemas que se resuelven solos sin acción del protagonista
+   - REGLA: Máximo 1 coincidencia afortunada en toda la novela, y debe ser menor, no la resolución del conflicto principal
 
 3. SOLUCIONES MÁGICAS:
    - No introducir reglas de magia/tecnología justo cuando se necesitan
    - No revelar información conveniente sin haber plantado pistas antes
    - Los poderes/recursos deben tener COSTOS y LIMITACIONES establecidos
+   - REGLA: Cada solución a un problema debe costar algo al protagonista (sacrificio, pérdida, dolor, renuncia)
 
 4. REGLA DE SETUP/PAYOFF:
    - Todo payoff (resolución) requiere un setup (preparación) previo
    - Mínimo 2 capítulos de anticipación para revelaciones importantes
    - Los giros deben ser "sorprendentes pero inevitables en retrospectiva"
+
+5. CADENA CAUSAL OBLIGATORIA:
+   Para cada capítulo donde se resuelve un conflicto, documenta explícitamente:
+   - ¿QUÉ recurso/habilidad/aliado usa el protagonista para resolver el problema?
+   - ¿EN QUÉ CAPÍTULO ANTERIOR fue establecido ese recurso/habilidad/aliado?
+   - ¿QUÉ COSTO paga el protagonista por esta resolución?
+   - Si no puedes responder estas 3 preguntas, REDISEÑA la resolución
+
+6. ANTAGONISTAS COMPETENTES:
+   - Los antagonistas deben actuar de forma inteligente y coherente con sus motivaciones
+   - NUNCA planifiques que el antagonista cometa errores estúpidos para facilitar la victoria del protagonista
+   - El antagonista debe ser una amenaza REAL: si pierde, debe ser porque el protagonista fue mejor, no porque el antagonista fue torpe
+   - PROHIBIDO: antagonistas que "confiesan todo", que "bajan la guardia" sin razón, que "subestiman" al protagonista de forma inexplicable
+
+7. ADHESIÓN A LA GUÍA DE ESTILO:
+   - La escaleta debe planificarse CONSIDERANDO la voz narrativa y estilo del autor
+   - Si la guía indica un tono específico (irónico, lírico, crudo, etc.), los beats deben reflejarlo
+   - Si hay prohibiciones léxicas en la guía, los resúmenes de capítulos NO deben incluir esas expresiones
 
 Para CADA capítulo, debes evaluar "riesgos_de_verosimilitud": posibles momentos donde la trama podría caer en deus ex machina, y cómo EVITARLOS con setup adecuado.
 
@@ -344,9 +365,10 @@ Genera un JSON con las siguientes claves:
     "continuidad_salida": "Estado de personajes/mundo al TERMINAR",
     
     "riesgos_de_verosimilitud": {
-      "posibles_deus_ex_machina": ["Momentos donde la resolución podría parecer forzada"],
-      "setup_requerido": ["Qué debe establecerse EN CAPÍTULOS ANTERIORES para que este funcione"],
-      "justificacion_causal": "Por qué cada evento es consecuencia lógica de lo anterior"
+      "posibles_deus_ex_machina": ["Momentos donde la resolución podría parecer forzada - SÉ EXHAUSTIVO"],
+      "setup_requerido": ["Qué debe establecerse EN CAPÍTULOS ANTERIORES para que este funcione - indicar capítulo exacto"],
+      "justificacion_causal": "Cadena causa-efecto COMPLETA: Evento A (cap X) → provoca B (cap Y) → el protagonista hace C",
+      "costo_protagonista": "Qué sacrificio/pérdida/renuncia paga el protagonista en este capítulo por sus logros"
     },
     
     "bestseller_elements": {

@@ -168,28 +168,46 @@ D) INFORMACIÓN NO REPETIDA:
    - Cada oración debe añadir información NUEVA
 
 ═══════════════════════════════════════════════════════════════════
-PROHIBICIONES ABSOLUTAS - VEROSIMILITUD NARRATIVA
+⛔⛔⛔ PROHIBICIONES ABSOLUTAS - VEROSIMILITUD NARRATIVA ⛔⛔⛔
 ═══════════════════════════════════════════════════════════════════
-El peor error es el DEUS EX MACHINA. NUNCA escribas:
+El peor error es el DEUS EX MACHINA. Un capítulo con deus ex machina será RECHAZADO y deberás reescribirlo.
 
-1. RESCATES CONVENIENTES:
-   - Un personaje NO puede aparecer "justo a tiempo" si no estaba ya establecido en la escena
-   - Ningún objeto/habilidad puede salvar al protagonista si no fue mencionado ANTES
-   - Los aliados deben tener razón lógica para estar ahí
+1. RESCATES CONVENIENTES (PROHIBIDO):
+   - Un personaje NO puede aparecer "justo a tiempo" si no estaba ya establecido en la escena o en capítulos anteriores
+   - Ningún objeto/habilidad puede salvar al protagonista si no fue mencionado ANTES en la narrativa
+   - Los aliados deben tener razón lógica y establecida para estar ahí
+   - ✗ EJEMPLO: "De repente, un viejo amigo apareció con un caballo"
+   - ✓ ALTERNATIVA: El protagonista debe usar recursos ya establecidos, o fracasar temporalmente
 
-2. COINCIDENCIAS FORZADAS:
-   - Prohibido: "casualmente encontró", "por suerte apareció", "justo en ese momento"
-   - El protagonista debe GANARSE sus soluciones con acciones previas
-   - Los problemas no se resuelven solos
+2. COINCIDENCIAS FORZADAS (PROHIBIDO):
+   - Prohibido: "casualmente encontró", "por suerte apareció", "justo en ese momento", "por fortuna", "el destino quiso que", "providencialmente"
+   - El protagonista debe GANARSE sus soluciones con acciones PREVIAS, inteligencia o sacrificio
+   - Los problemas no se resuelven solos ni por intervención externa no establecida
+   - ✗ EJEMPLO: "Justo cuando todo parecía perdido, encontró una puerta secreta"
+   - ✓ ALTERNATIVA: El protagonista recordó un detalle mencionado antes, o pagó un alto precio
 
-3. REVELACIONES SIN FUNDAMENTO:
-   - No revelar información crucial sin haberla sembrado antes
-   - No introducir poderes/habilidades nuevas en el momento que se necesitan
-   - Todo giro debe ser "sorprendente pero inevitable"
+3. REVELACIONES SIN FUNDAMENTO (PROHIBIDO):
+   - No revelar información crucial sin haberla sembrado en capítulos anteriores
+   - No introducir poderes/habilidades/conocimientos NUEVOS en el momento exacto que se necesitan
+   - No hacer que un personaje "recuerde de repente" algo conveniente jamás mencionado
+   - Todo giro debe ser "sorprendente pero inevitable en retrospectiva"
+   - ✗ EJEMPLO: "Recordó que su abuelo le había enseñado a descifrar códigos" (nunca mencionado)
+   - ✓ ALTERNATIVA: Usar solo habilidades/conocimientos ya establecidos en la trama
 
-4. VERIFICACIÓN DE SETUP:
-   - Antes de resolver un conflicto, pregúntate: "¿Esto fue establecido antes?"
-   - Si la respuesta es NO, busca otra solución que SÍ esté fundamentada
+4. SOLUCIONES FÁCILES (PROHIBIDO):
+   - El protagonista NO puede resolver problemas complejos sin esfuerzo, sacrificio o costo real
+   - Los antagonistas NO deben cometer errores estúpidos o "confesar sus planes" de forma conveniente
+   - Los problemas NO se resuelven con un solo golpe de suerte o con información que "llega" oportunamente
+   - Si el protagonista gana, debe ser porque fue más inteligente, más sacrificado, o porque pagó un precio alto
+   - ✗ EJEMPLO: "El villano tropezó y perdió el arma, permitiendo al héroe escapar"
+   - ✓ ALTERNATIVA: El héroe usa el entorno de forma inteligente, sacrificando algo valioso
+
+5. AUTO-VERIFICACIÓN OBLIGATORIA ANTES DE ENTREGAR:
+   Para CADA resolución de conflicto en tu capítulo, hazte estas preguntas:
+   a) "¿Este recurso/habilidad/aliado fue establecido en capítulos anteriores o en la escaleta?" → Si NO, REESCRIBE
+   b) "¿El protagonista se GANÓ esta solución con esfuerzo?" → Si NO, añade costo/sacrificio
+   c) "¿Un lector atento encontraría esta solución creíble?" → Si NO, busca una alternativa fundamentada
+   d) "¿El antagonista actuó de forma inteligente y coherente?" → Si NO, dale más agencia y competencia
    - Consulta los "riesgos_de_verosimilitud" del Arquitecto si los hay
 
 ═══════════════════════════════════════════════════════════════════
@@ -336,7 +354,22 @@ export class GhostwriterAgent extends BaseAgent {
     
     let prompt = `
     CONTEXTO DEL MUNDO (World Bible): ${JSON.stringify(input.worldBible)}
-    GUÍA DE ESTILO: ${input.guiaEstilo}
+    
+    ${input.guiaEstilo ? `
+    ═══════════════════════════════════════════════════════════════════
+    ⛔ GUÍA DE ESTILO DEL AUTOR - ADHESIÓN OBLIGATORIA ⛔
+    ═══════════════════════════════════════════════════════════════════
+    ${input.guiaEstilo}
+    
+    INSTRUCCIONES DE ADHESIÓN (INVIOLABLES):
+    1. Tu VOZ NARRATIVA debe imitar fielmente el estilo descrito arriba: ritmo de frases, nivel de formalidad, densidad descriptiva, uso de metáforas.
+    2. RESPETA las PROHIBICIONES LÉXICAS del autor: si hay palabras o expresiones vetadas, NO las uses bajo ninguna circunstancia.
+    3. ADOPTA las TÉCNICAS NARRATIVAS preferidas: si el autor prefiere diálogos concisos, escribe diálogos concisos. Si prefiere descripciones sensoriales extensas, inclúyelas.
+    4. MANTÉN la CADENCIA del autor: analiza si el estilo tiende a frases cortas y punzantes o a períodos largos y envolventes, y replica ese patrón.
+    5. Si la guía describe un TONO específico (irónico, lírico, seco, poético, crudo), ese tono DEBE impregnar cada párrafo.
+    6. NUNCA impongas tu propio estilo sobre el del autor. Eres un GHOSTWRITER: tu voz desaparece, la del autor prevalece.
+    ═══════════════════════════════════════════════════════════════════
+    ` : ""}
     
     ${input.previousContinuity ? `
     ═══════════════════════════════════════════════════════════════════
@@ -607,7 +640,11 @@ export class GhostwriterAgent extends BaseAgent {
     
     Justificación causal: ${chapterData.riesgos_de_verosimilitud.justificacion_causal || "No especificada"}
     
+    COSTO PARA EL PROTAGONISTA (OBLIGATORIO):
+    ${(chapterData.riesgos_de_verosimilitud as any).costo_protagonista || "El protagonista DEBE pagar un precio real (sacrificio, pérdida, dolor, renuncia) por cada logro en este capítulo"}
+    
     IMPORTANTE: Cada resolución debe ser SORPRENDENTE pero INEVITABLE en retrospectiva.
+    El protagonista NO puede ganar "gratis": toda victoria tiene un COSTO.
     ═══════════════════════════════════════════════════════════════════
     ` : ""}
     

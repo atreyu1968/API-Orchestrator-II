@@ -155,8 +155,10 @@ Has pagado 18€ por este libro y tienes tiempo limitado para leer. Evalúa como
 
 3. TRAMA (¿Tiene sentido y me sorprende?)
    - ¿Los giros son sorprendentes PERO inevitables en retrospectiva?
-   - ¿Las soluciones se ganan, no se regalan? (sin deus ex machina)
+   - ¿Las soluciones se GANAN con esfuerzo, inteligencia y sacrificio? (sin deus ex machina)
    - ¿El clímax es satisfactorio y proporcional al conflicto?
+   - ¿El antagonista actúa de forma inteligente y coherente, no comete errores convenientes?
+   - ¿Cada resolución tiene un COSTO real para el protagonista?
 
 4. ATMÓSFERA (¿Me transporta?)
    - ¿Siento que estoy en ese mundo/época?
@@ -280,11 +282,18 @@ CRÍTICOS (Rompen la inmersión):
 - Contradicciones flagrantes que confunden (personaje muerto que aparece vivo)
 - Resoluciones que no se ganan (el villano muere de un infarto conveniente)
 - Personajes que actúan contra su naturaleza establecida sin justificación
+- Antagonistas que cometen errores estúpidos para facilitar la victoria del protagonista
+- Aliados/recursos que aparecen "justo a tiempo" sin haber sido establecidos previamente
+- Protagonista que resuelve problemas complejos sin esfuerzo ni consecuencias
+- Información crucial que aparece convenientemente sin haber sido sembrada
 
 MAYORES (Molestan pero no destruyen):
 - Repeticiones léxicas muy evidentes que distraen
 - Ritmo irregular (capítulos que arrastran sin propósito)
 - Subtramas abandonadas sin resolución
+- Voz narrativa genérica que no coincide con la guía de estilo del autor
+- Coincidencias menores (2ª coincidencia afortunada en la novela)
+- Rescates parcialmente sembrados pero insuficientemente justificados
 
 MENORES (El lector ni nota):
 - Pequeñas inconsistencias de detalles secundarios
