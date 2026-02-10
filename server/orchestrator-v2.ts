@@ -5340,7 +5340,6 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           .sort((a, b) => a.chapterNumber - b.chapterNumber)) {
           if (chapter.summary) {
             chapterSummaries.push(chapter.summary);
-            rollingSummary = chapter.summary;
           }
           
           // LitAgents 2.9.9+: Backfill narrative timeline from existing chapters on resume
@@ -5354,6 +5353,17 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
         
         if (narrativeTimeline.length > 0) {
           console.log(`[OrchestratorV2] Backfilled narrative timeline from ${narrativeTimeline.length} existing chapters`);
+        }
+        
+        // v2.9.10: Rebuild rollingSummary from last 3 chapter summaries (not just the last one)
+        if (chapterSummaries.length > 0) {
+          const recentSummaries = chapterSummaries.slice(-3);
+          const completedSorted = refreshedChapters
+            .filter(c => completedChapterNumbers.has(c.chapterNumber))
+            .sort((a, b) => a.chapterNumber - b.chapterNumber);
+          const lastChapterNums = completedSorted.slice(-3).map(c => c.chapterNumber);
+          rollingSummary = recentSummaries.map((s, idx) => `Cap ${lastChapterNums[idx] || '?'}: ${s}`).join("\n");
+          console.log(`[OrchestratorV2] Rebuilt rollingSummary from last ${recentSummaries.length} chapters`);
         }
       }
 
@@ -5879,17 +5889,20 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           console.error(`[OrchestratorV2] Error extracting injuries from Chapter ${chapterNumber}:`, injuryError);
         }
 
-        // 2e: Narrative Director - Check every 5 chapters, before epilogue, AND always with epilogue (998)
+        // 2e: Narrative Director - Check every 5 chapters, before epilogue, AND always with epilogue/last chapter
         const isMultipleOfFive = chapterNumber > 0 && chapterNumber < 998 && chapterNumber % 5 === 0;
         const currentIdx = outline.findIndex((ch: any) => ch.chapter_num === chapterNumber);
         const nextChapter = outline[currentIdx + 1];
         const isLastBeforeEpilogue = nextChapter && (nextChapter.chapter_num === 998 || nextChapter.chapter_num === 999);
-        const isEpilogue = chapterNumber === 998; // Always run Director with epilogue for final coherence check
+        const isEpilogue = chapterNumber === 998;
+        const isLastChapter = currentIdx === outline.length - 1; // v2.9.10: Also detect when this is the absolute last chapter (no epilogue)
         
-        if (isMultipleOfFive || isLastBeforeEpilogue || isEpilogue) {
+        if (isMultipleOfFive || isLastBeforeEpilogue || isEpilogue || isLastChapter) {
           let label: string;
           if (isEpilogue) {
             label = "Final coherence review with epilogue";
+          } else if (isLastChapter && !isEpilogue) {
+            label = "Final chapter coherence review (no epilogue)";
           } else if (isLastBeforeEpilogue) {
             label = "Pre-epilogue review";
           } else {
@@ -5995,67 +6008,60 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
             }
           }
           
-          // If epilogue needs rewrite due to unresolved threads or issues
-          if (isEpilogue && directorResult.needsRewrite) {
-            console.log(`[OrchestratorV2] Rewriting epilogue to resolve: ${directorResult.unresolvedThreads.join(", ")}`);
-            this.callbacks.onAgentStatus("ghostwriter-v2", "active", "Rewriting epilogue to close narrative threads...");
+          // v2.9.10: If last chapter (epilogue or final regular chapter) needs rewrite to close unresolved threads
+          const shouldRewriteForClosure = (isEpilogue || (isLastChapter && !isEpilogue)) && directorResult.needsRewrite;
+          if (shouldRewriteForClosure) {
+            const targetChapterNum = isEpilogue ? 998 : chapterNumber;
+            console.log(`[OrchestratorV2] Rewriting chapter ${targetChapterNum} to resolve: ${directorResult.unresolvedThreads.join(", ")}`);
+            this.callbacks.onAgentStatus("ghostwriter-v2", "active", `Rewriting chapter ${targetChapterNum} to close narrative threads...`);
             
-            // Get current epilogue chapter
             const allChapters = await storage.getChaptersByProject(project.id);
-            const epilogueChapter = allChapters.find(c => c.chapterNumber === 998);
+            const targetChapter = allChapters.find(c => c.chapterNumber === targetChapterNum);
             
-            if (epilogueChapter) {
-              // Generate enhanced scene plan with closure instructions
+            if (targetChapter) {
               const closureInstructions = directorResult.unresolvedThreads.length > 0 
-                ? `Debes añadir cierres para: ${directorResult.unresolvedThreads.join(", ")}`
+                ? `HILOS NARRATIVOS SIN CERRAR - DEBES resolver estos hilos en la reescritura:\n${directorResult.unresolvedThreads.map(t => `- ${t}`).join("\n")}\n\nReescribe el capítulo completo integrando los cierres de forma natural en la narrativa existente.`
                 : directorResult.directive;
               
-              // Get previous chapter summary for context
-              const prevChapterSummary = chapterSummaries[chapterSummaries.length - 2] || "";
-              
-              // Rewrite epilogue using Ghostwriter with closure instructions
-              // LitAgents 2.2: Get text for vocabulary tracking
-              const epiloguePrevText = await this.getRecentChaptersText(project.id, 998, 2);
-              
-              const rewriteResult = await this.ghostwriter.execute({
-                scenePlan: {
-                  scene_num: 1,
-                  characters: [],
-                  setting: "Final",
-                  plot_beat: closureInstructions,
-                  emotional_beat: "Cierre y resolucion de todos los hilos narrativos",
-                  ending_hook: "Conclusion satisfactoria",
+              // v2.9.10: Use fullRewrite instead of appending to prevent disjointed content
+              const rewriteResult = await this.smartEditor.fullRewrite({
+                chapterContent: targetChapter.content || "",
+                errorDescription: closureInstructions,
+                worldBible: {
+                  characters: ((worldBible as any).characters || (worldBible as any).personajes || []) as any[],
+                  locations: ((worldBible as any).locations || (worldBible as any).lugares || []) as any[],
+                  worldRules: ((worldBible as any).rules || (worldBible as any).reglas || (worldBible as any).worldRules || []) as any[],
+                  persistentInjuries: ((worldBible as any).persistentInjuries || (worldBible as any).lesiones || []) as any[],
+                  plotDecisions: ((worldBible as any).plotDecisions || (worldBible as any).decisiones || []) as any[],
                 },
-                prevSceneContext: prevChapterSummary,
-                rollingSummary: rollingSummary,
-                worldBible,
-                guiaEstilo: "",
-                previousChaptersText: epiloguePrevText,
-                currentChapterText: "",
-                seriesWorldBible, // Series World Bible: Accumulated knowledge from previous volumes
+                chapterNumber: targetChapterNum,
+                chapterTitle: targetChapter.title || chapterOutline.title,
+                previousChapterSummary: chapterSummaries[chapterSummaries.length - 2] || "",
               });
               
               this.addTokenUsage(rewriteResult.tokenUsage);
-              await this.logAiUsage(project.id, "ghostwriter-v2", "deepseek-chat", rewriteResult.tokenUsage, epilogueChapter.chapterNumber);
+              await this.logAiUsage(project.id, "smart-editor", "deepseek-chat", rewriteResult.tokenUsage, targetChapterNum);
               
-              if (rewriteResult.content) {
-                // Append new closure content to existing epilogue instead of replacing it
-                // This prevents truncating well-written epilogues
-                const existingContent = epilogueChapter.content || "";
-                const closureSection = `\n\n---\n\n${rewriteResult.content}`;
-                const newContent = existingContent + closureSection;
-                const newWordCount = newContent.split(/\s+/).length;
+              if (rewriteResult.rewrittenContent && rewriteResult.rewrittenContent.length > 200) {
+                const newWordCount = rewriteResult.rewrittenContent.split(/\s+/).length;
+                const originalWordCount = (targetChapter.content || "").split(/\s+/).length;
                 
-                await storage.updateChapter(epilogueChapter.id, {
-                  originalContent: epilogueChapter.originalContent || existingContent, // Keep original
-                  content: newContent,
-                  wordCount: newWordCount,
-                });
-                
-                console.log(`[OrchestratorV2] Epilogue rewritten to close ${directorResult.unresolvedThreads.length} narrative threads (${newWordCount} words)`);
-                this.callbacks.onAgentStatus("ghostwriter-v2", "completed", `Epilogue rewritten (${directorResult.unresolvedThreads.length} threads closed)`);
+                // Only accept if the rewrite didn't lose too much content
+                if (newWordCount >= originalWordCount * 0.7) {
+                  await storage.updateChapter(targetChapter.id, {
+                    originalContent: targetChapter.originalContent || targetChapter.content,
+                    content: rewriteResult.rewrittenContent,
+                    wordCount: newWordCount,
+                  });
+                  
+                  console.log(`[OrchestratorV2] Chapter ${targetChapterNum} rewritten to close ${directorResult.unresolvedThreads.length} narrative threads (${newWordCount} words)`);
+                  this.callbacks.onAgentStatus("ghostwriter-v2", "completed", `Chapter ${targetChapterNum} rewritten (${directorResult.unresolvedThreads.length} threads closed)`);
+                } else {
+                  console.warn(`[OrchestratorV2] Chapter ${targetChapterNum} rewrite too short (${newWordCount} vs ${originalWordCount}), keeping original`);
+                  this.callbacks.onAgentStatus("ghostwriter-v2", "completed", "Rewrite discarded (too short)");
+                }
               } else {
-                console.log(`[OrchestratorV2] Epilogue rewrite failed - no content generated`);
+                console.log(`[OrchestratorV2] Chapter ${targetChapterNum} rewrite failed - no content generated`);
                 this.callbacks.onAgentStatus("ghostwriter-v2", "completed", "Rewrite skipped");
               }
             }
@@ -6810,12 +6816,16 @@ Devuelve SOLO el texto completo del capítulo reescrito, sin explicaciones ni ma
         chapterContent: chapter.content,
         errorDescription: prompt,
         worldBible: {
-          characters: worldBible.characters as any[],
-          locations: [],
-          worldRules: worldBible.rules as any[],
-          persistentInjuries: [],
-          plotDecisions: [],
+          characters: (worldBible.characters || worldBible.personajes || []) as any[],
+          locations: (worldBible.locations || worldBible.lugares || []) as any[],
+          worldRules: (worldBible.rules || worldBible.reglas || worldBible.worldRules || []) as any[],
+          persistentInjuries: (worldBible.persistentInjuries || worldBible.lesiones || []) as any[],
+          plotDecisions: (worldBible.plotDecisions || worldBible.decisiones || []) as any[],
         },
+        chapterNumber,
+        chapterTitle: outlineEntry.title,
+        previousChapterSummary: prevChapter?.summary || "",
+        nextChapterSummary: nextChapter?.summary || "",
       });
 
       this.addTokenUsage(rewriteResult.tokenUsage);
@@ -7058,11 +7068,24 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
         const MAX_FINAL_REWRITES = 5;
         let rewrittenCount = 0;
         const chaptersToRewrite = deviatedChapters.slice(0, MAX_FINAL_REWRITES);
+        
+        // v2.9.10: Log skipped chapters when limit is exceeded
+        if (deviatedChapters.length > MAX_FINAL_REWRITES) {
+          const skippedChapters = deviatedChapters.slice(MAX_FINAL_REWRITES);
+          console.warn(`[FinalStructuralReview] ${skippedChapters.length} deviated chapters will NOT be corrected (limit ${MAX_FINAL_REWRITES}): ${skippedChapters.join(', ')}`);
+          await storage.createActivityLog({
+            projectId,
+            level: "warn",
+            agentRole: "structural-checkpoint",
+            message: `[FINAL] ${skippedChapters.length} capítulos con desviaciones NO corregidos por límite de reescrituras (${MAX_FINAL_REWRITES}): Capítulos ${skippedChapters.join(', ')}. Considera ejecutar "Detect & Fix" manualmente.`,
+            metadata: { type: 'final_review_skipped', skippedChapters },
+          });
+        }
 
         for (const deviatedChNum of chaptersToRewrite) {
           if (await this.shouldStopProcessing(projectId)) break;
 
-          const deviationIssue = issues.find(i => i.includes(`Cap ${deviatedChNum}`)) ||
+          const deviationIssue = issues.find((i: string) => i.includes(`Cap ${deviatedChNum}`)) ||
             `Capítulo ${deviatedChNum} tiene problemas estructurales detectados en la revisión final`;
 
           this.callbacks.onAgentStatus("structural-checkpoint", "active", `Corrigiendo capítulo ${deviatedChNum} (revisión final)...`);
@@ -7128,12 +7151,51 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
           }
         }
 
+        // v2.9.10: If the final review found unresolved narrative threads, rewrite the last chapter to close them
+        if (unresolvedThreads.length > 0 && !await this.shouldStopProcessing(projectId)) {
+          const chapters = await storage.getChaptersByProject(projectId);
+          const writtenSorted = chapters
+            .filter((ch: any) => ch.content && ch.content.length > 100)
+            .sort((a: any, b: any) => a.chapterNumber - b.chapterNumber);
+          const lastWritten = writtenSorted[writtenSorted.length - 1];
+          
+          if (lastWritten && !chaptersToRewrite.includes(lastWritten.chapterNumber)) {
+            console.log(`[FinalStructuralReview] Rewriting last chapter ${lastWritten.chapterNumber} to close ${unresolvedThreads.length} unresolved threads: ${unresolvedThreads.join(', ')}`);
+            this.callbacks.onAgentStatus("structural-checkpoint", "active", `Cerrando ${unresolvedThreads.length} hilos narrativos abiertos en capítulo ${lastWritten.chapterNumber}...`);
+            
+            const closureIssue = `HILOS NARRATIVOS SIN CERRAR - DEBES resolver estos hilos:\n${unresolvedThreads.map((t: string) => `- ${t}`).join("\n")}\n\nIntegra los cierres de forma natural en la narrativa existente del capítulo.`;
+            
+            const closureRewritten = await this.rewriteDeviatedChapter(
+              projectId, lastWritten.chapterNumber, worldBible, outline, closureIssue
+            );
+            
+            if (closureRewritten) {
+              rewrittenCount++;
+              console.log(`[FinalStructuralReview] Last chapter rewritten to close unresolved threads`);
+              
+              // Re-summarize
+              const updatedChapters = await storage.getChaptersByProject(projectId);
+              const updatedLast = updatedChapters.find(c => c.chapterNumber === lastWritten.chapterNumber);
+              if (updatedLast) {
+                const summaryResult = await this.summarizer.execute({
+                  chapterContent: updatedLast.content || '',
+                  chapterNumber: lastWritten.chapterNumber,
+                });
+                this.addTokenUsage(summaryResult.tokenUsage);
+                if (summaryResult.content) {
+                  await storage.updateChapter(updatedLast.id, { summary: summaryResult.content });
+                }
+              }
+            }
+          }
+        }
+
         await storage.createActivityLog({
           projectId,
           level: "success",
           agentRole: "structural-checkpoint",
-          message: `Revisión final completada: ${rewrittenCount} capítulos corregidos de ${deviatedChapters.length} detectados. Puntuación estructural: ${parsed.overallScore}/10.`,
-          metadata: { type: 'final_review_completed', rewrittenCount, totalDeviated: deviatedChapters.length, score: parsed.overallScore },
+          message: `Revisión final completada: ${rewrittenCount} capítulos corregidos de ${deviatedChapters.length} detectados. ${unresolvedThreads.length > 0 ? `${unresolvedThreads.length} hilos narrativos cerrados.` : ''} Puntuación estructural: ${parsed.overallScore}/10.`,
+          metadata: { type: 'final_review_completed', rewrittenCount, totalDeviated: deviatedChapters.length, score: parsed.overallScore, threadsClosed: unresolvedThreads.length },
         });
 
         return { rewrittenCount, issues, lessonsLearned };
@@ -7269,20 +7331,20 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
         }
       }
 
-      // Check for unresolved threads at epilogue
-      if (currentChapter === 998) {
+      // v2.9.10: Check for unresolved threads at epilogue OR at the last chapter (when no epilogue)
+      const isLastCheckpoint = currentChapter === 998 || currentChapter === totalChapters;
+      if (isLastCheckpoint) {
         unresolvedThreads = plotThreads
           .filter(t => t.status === "active" || t.status === "developing")
           .map(t => t.name);
         
-        // Needs rewrite if there are unresolved threads or critical issues in directive
         const criticalKeywords = ["inconsistencia", "sin resolver", "unresolved", "contradiction", "error", "problema"];
         const hasCriticalIssue = criticalKeywords.some(kw => directive.toLowerCase().includes(kw));
         
         needsRewrite = unresolvedThreads.length > 0 || hasCriticalIssue;
         
         if (needsRewrite) {
-          console.log(`[OrchestratorV2] Epilogue needs rewrite: ${unresolvedThreads.length} unresolved threads, critical issues: ${hasCriticalIssue}`);
+          console.log(`[OrchestratorV2] Chapter ${currentChapter} needs rewrite: ${unresolvedThreads.length} unresolved threads, critical issues: ${hasCriticalIssue}`);
         }
       }
 
