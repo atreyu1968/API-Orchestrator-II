@@ -537,7 +537,7 @@ function PlotTab({ plotOutline }: { plotOutline: PlotOutline | null }) {
   const plotAny = plotOutline as any;
   const hasContent = plotOutline && (
     plotOutline.premise || 
-    plotOutline.chapterOutlines?.length > 0 || 
+    (plotOutline.chapterOutlines?.length ?? 0) > 0 || 
     plotAny?.plotThreads?.length > 0
   );
 

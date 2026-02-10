@@ -240,7 +240,7 @@ function calculateSimilarity(a: string, b: string): number {
   const bSet = new Set(bLower.split(/\s+/));
   
   let intersection = 0;
-  for (const word of aSet) {
+  for (const word of Array.from(aSet)) {
     if (bSet.has(word)) intersection++;
   }
   

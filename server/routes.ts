@@ -4188,8 +4188,8 @@ ${series.seriesGuide.substring(0, 50000)}`;
         wordCount: sourceChapter.wordCount,
         status: sourceChapter.status,
         summary: sourceChapter.summary,
-        sceneBreakdown: sourceChapter.sceneBreakdown,
-        editorFeedback: sourceChapter.editorFeedback,
+        sceneBreakdown: sourceChapter.sceneBreakdown as any,
+        editorFeedback: sourceChapter.editorFeedback as any,
         qualityScore: sourceChapter.qualityScore,
         operation: 'merge',
         operationDetails,
@@ -4206,8 +4206,8 @@ ${series.seriesGuide.substring(0, 50000)}`;
         wordCount: targetChapter.wordCount,
         status: targetChapter.status,
         summary: targetChapter.summary,
-        sceneBreakdown: targetChapter.sceneBreakdown,
-        editorFeedback: targetChapter.editorFeedback,
+        sceneBreakdown: targetChapter.sceneBreakdown as any,
+        editorFeedback: targetChapter.editorFeedback as any,
         qualityScore: targetChapter.qualityScore,
         operation: 'merge',
         operationDetails,
@@ -4323,8 +4323,8 @@ ${series.seriesGuide.substring(0, 50000)}`;
           wordCount: conflictingChapter.wordCount,
           status: conflictingChapter.status,
           summary: conflictingChapter.summary,
-          sceneBreakdown: conflictingChapter.sceneBreakdown,
-          editorFeedback: conflictingChapter.editorFeedback,
+          sceneBreakdown: conflictingChapter.sceneBreakdown as any,
+          editorFeedback: conflictingChapter.editorFeedback as any,
           qualityScore: conflictingChapter.qualityScore,
           operation: 'restore_overwrite',
           operationDetails: JSON.stringify({
@@ -4341,8 +4341,8 @@ ${series.seriesGuide.substring(0, 50000)}`;
           wordCount: backup.wordCount,
           status: backup.status || 'completed',
           summary: backup.summary,
-          sceneBreakdown: backup.sceneBreakdown,
-          editorFeedback: backup.editorFeedback,
+          sceneBreakdown: backup.sceneBreakdown as any,
+          editorFeedback: backup.editorFeedback as any,
           qualityScore: backup.qualityScore,
         });
         
@@ -4358,8 +4358,8 @@ ${series.seriesGuide.substring(0, 50000)}`;
           wordCount: backup.wordCount ?? 0,
           status: backup.status || 'completed',
           summary: backup.summary,
-          sceneBreakdown: backup.sceneBreakdown,
-          editorFeedback: backup.editorFeedback,
+          sceneBreakdown: backup.sceneBreakdown as any,
+          editorFeedback: backup.editorFeedback as any,
           qualityScore: backup.qualityScore,
         });
         
@@ -11122,8 +11122,8 @@ Buscar en la guía de serie los hitos correspondientes al Volumen ${volume.numbe
       if (worldBible) {
         const bibleParts: string[] = [];
         
-        if (worldBible.content) {
-          bibleParts.push(worldBible.content);
+        if ((worldBible as any).content) {
+          bibleParts.push((worldBible as any).content);
         }
         
         if (worldBible.characters) {

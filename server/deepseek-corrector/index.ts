@@ -888,7 +888,7 @@ Solución requerida: ${req.suggestion}
     const originalWords = new Set(textToCorrect.toLowerCase().split(/\s+/).filter(w => w.length > 3));
     const correctedWords = new Set(correctedText.toLowerCase().split(/\s+/).filter(w => w.length > 3));
     let preserved = 0;
-    for (const w of originalWords) {
+    for (const w of Array.from(originalWords)) {
       if (correctedWords.has(w)) preserved++;
     }
     const preservationRatio = originalWords.size > 0 ? preserved / originalWords.size : 1;
@@ -1675,7 +1675,7 @@ Responde EXCLUSIVAMENTE en JSON válido con este formato exacto (sin markdown, s
     const origWords = new Set(parsed.original.toLowerCase().split(/\s+/).filter(w => w.length > 3));
     const corrWords = new Set(parsed.corrected.toLowerCase().split(/\s+/).filter(w => w.length > 3));
     let smartPreserved = 0;
-    for (const w of origWords) {
+    for (const w of Array.from(origWords)) {
       if (corrWords.has(w)) smartPreserved++;
     }
     const smartPreservation = origWords.size > 0 ? smartPreserved / origWords.size : 1;
@@ -1799,7 +1799,7 @@ export async function startCorrectionProcess(
 
     let totalOccurrences = 0;
 
-    function applyCumulatively(record: CorrectionRecord): void {
+    const applyCumulatively = (record: CorrectionRecord): void => {
       if (record.status === 'pending' && record.originalText && record.correctedText &&
           record.originalText !== record.correctedText &&
           !record.originalText.startsWith('[')) {

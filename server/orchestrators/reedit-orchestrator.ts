@@ -1980,7 +1980,7 @@ export class ReeditOrchestrator {
     }
 
     // Apply corrections chapter by chapter
-    for (const [chapterNum, chapterIssues] of issuesByChapter) {
+    for (const [chapterNum, chapterIssues] of Array.from(issuesByChapter)) {
       const chapter = validChapters.find((c: any) => c.chapterNumber === chapterNum);
       if (!chapter) {
         console.log(`[ReeditOrchestrator] Chapter ${chapterNum} not found, skipping`);
@@ -2154,7 +2154,7 @@ export class ReeditOrchestrator {
       }
 
       // Update character states if injuries/conditions were corrected
-      const personajes = (worldBible.personajes as any[]) || [];
+      const personajes = ((worldBible as any).personajes as any[]) || [];
       for (const issue of correctedIssues) {
         if (issue.descripcion?.toLowerCase().includes('lesion') ||
             issue.descripcion?.toLowerCase().includes('herida') ||
@@ -2173,7 +2173,7 @@ export class ReeditOrchestrator {
       // Add chapter summary for future reference
       if (newContent.length > 500) {
         const summary = newContent.substring(0, 300).replace(/\n/g, ' ').trim() + '...';
-        const existingSummaries = (worldBible.chapterSummaries as any) || {};
+        const existingSummaries = ((worldBible as any).chapterSummaries as any) || {};
         updates.chapterSummaries = {
           ...existingSummaries,
           [chapterNumber]: {
@@ -3472,7 +3472,7 @@ export class ReeditOrchestrator {
           } else {
             forensicAuditResult = await this.forensicAuditor.auditManuscript(
               chaptersForAudit,
-              project.genre || "general",
+              (project as any).genre || "general",
               detectedLang
             );
             this.trackTokens(forensicAuditResult);
@@ -3733,7 +3733,7 @@ export class ReeditOrchestrator {
 
         // LitAgents 2.1: Generate consistency constraints for Architect analysis
         let architectConstraints = "";
-        if (forensicAuditResult && !forensicAuditResult.skipped) {
+        if (forensicAuditResult && !(forensicAuditResult as any).skipped) {
           // Build constraints from forensic audit findings
           const violationsSummary = forensicAuditResult.violations?.slice(0, 20).map((v: any) => 
             `- [${v.type}] Cap ${v.chapter}: ${v.description}`
@@ -4340,7 +4340,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           } else {
             const betaResult = await this.betaReader.evaluateNovel(
               projectId,
-              project.genre || "general",
+              (project as any).genre || "general",
               summariesForBeta,
               firstChapterContent.substring(0, 6000),
               lastChapterContent.substring(0, 6000)
@@ -4513,7 +4513,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
 
         // Extract 3-act structure from World Bible for narrative-coherent review
         // Handle both camelCase (threeActStructure) and snake_case (three_act_structure) field names
-        const rawActStructure = worldBibleForReview?.threeActStructure || worldBibleForReview?.three_act_structure;
+        const rawActStructure = (worldBibleForReview as any)?.threeActStructure || (worldBibleForReview as any)?.three_act_structure;
         const threeActStructure = rawActStructure as { 
           act1: { chapters: number[]; goal: string }; 
           act2: { chapters: number[]; goal: string }; 
@@ -4529,8 +4529,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
           pasadaNumero: revisionCycle + 1,
           issuesPreviosCorregidos: correctedIssueDescriptions,
           threeActStructure,
-          onTrancheProgress: (currentTranche, totalTranches, chaptersInTranche) => {
+          onTrancheProgress: (currentTranche: number, totalTranches: number, chaptersInTranche: string) => {
             this.emitProgress({
+              projectId,
               stage: "reviewing",
               currentChapter: completedChapters.length,
               totalChapters: completedChapters.length,
@@ -4590,7 +4591,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
             
             console.warn(`[ReeditOrchestrator] UNATTENDED: ${nonPerfectCount} non-perfect scores reached. Continuing anyway...`);
             
-            await storage.createReeditActivityLog({
+            await storage.createActivityLog({
               projectId,
               level: "warning",
               agentRole: "final-reviewer",
@@ -4948,7 +4949,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
       // This prevents projects from being marked "completed" with low scores
       if (consecutiveHighScores < this.requiredConsecutiveHighScores) {
         // Build detailed diagnostic of WHY quality isn't improving
-        const issues = finalResult?.problemas_detectados || [];
+        const issues = (finalResult as any)?.problemas_detectados || finalResult?.issues || [];
         const criticalIssues = issues.filter((i: any) => i.severidad === "critico" || i.severidad === "mayor");
         const recurrentCategories = this.analyzeRecurrentIssues(issues);
         
@@ -4987,7 +4988,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         
         console.warn(`[ReeditOrchestrator] UNATTENDED: Max cycles reached without achieving consecutive 9+ scores. Completing with score: ${bestsellerScore}/10`);
         
-        await storage.createReeditActivityLog({
+        await storage.createActivityLog({
           projectId,
           level: "warning",
           agentRole: "final-reviewer",
@@ -5201,7 +5202,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
 
       // Extract 3-act structure from World Bible for narrative-coherent review
       // Handle both camelCase (threeActStructure) and snake_case (three_act_structure) field names
-      const rawActStructureFRO = worldBibleForReview?.threeActStructure || worldBibleForReview?.three_act_structure;
+      const rawActStructureFRO = (worldBibleForReview as any)?.threeActStructure || (worldBibleForReview as any)?.three_act_structure;
       const threeActStructureFRO = rawActStructureFRO as { 
         act1: { chapters: number[]; goal: string }; 
         act2: { chapters: number[]; goal: string }; 
@@ -5219,8 +5220,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         issuesPreviosCorregidos: correctedIssueDescriptions,
         userInstructions: userInstructions || undefined,
         threeActStructure: threeActStructureFRO,
-        onTrancheProgress: (currentTranche, totalTranches, chaptersInTranche) => {
+        onTrancheProgress: (currentTranche: number, totalTranches: number, chaptersInTranche: string) => {
           this.emitProgress({
+            projectId,
             stage: "reviewing",
             currentChapter: validChapters.length,
             totalChapters: validChapters.length,
@@ -5616,7 +5618,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
     // CRITICAL: If we exited the loop without achieving 2x consecutive 10/10, pause for instructions
     if (consecutiveHighScores < this.requiredConsecutiveHighScores) {
       // Build detailed diagnostic of WHY quality isn't improving
-      const issues = finalResult?.problemas_detectados || [];
+      const issues = (finalResult as any)?.problemas_detectados || finalResult?.issues || [];
       const criticalIssues = issues.filter((i: any) => i.severidad === "critico" || i.severidad === "mayor");
       const recurrentCategories = this.analyzeRecurrentIssues(issues);
       
@@ -5655,7 +5657,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
       
       console.warn(`[ReeditOrchestrator] UNATTENDED (FRO): Max cycles reached without achieving consecutive 9+ scores. Completing with score: ${bestsellerScore}/10`);
       
-      await storage.createReeditActivityLog({
+      await storage.createActivityLog({
         projectId,
         level: "warning",
         agentRole: "final-reviewer",
@@ -5908,7 +5910,7 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
                 projectId,
                 chapter.chapterNumber,
                 newContent,
-                chapterFixes.map(f => ({ tipo: 'series_thread', descripcion: f.description || f.fix || '' }))
+                chapterFixes.map((f: ThreadFix) => ({ tipo: 'series_thread', descripcion: f.rationale || f.suggestedRevision || '' }))
               );
             }
           } catch (fixError) {
@@ -6276,8 +6278,8 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
       }
 
       // Get world bible for context
-      const worldBible = await storage.getReeditWorldBible(projectId);
-      const worldBibleContext = worldBible?.content ? JSON.stringify(worldBible.content, null, 2) : '';
+      const worldBible = await storage.getReeditWorldBibleByProject(projectId);
+      const worldBibleContext = (worldBible as any)?.content ? JSON.stringify((worldBible as any).content, null, 2) : '';
 
       // Get all chapters for adjacency context
       const allChapters = await storage.getReeditChaptersByProject(projectId);
@@ -6310,16 +6312,10 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         const nextChapter = chapterIndex < sortedChapters.length - 1 ? sortedChapters[chapterIndex + 1] : null;
 
         const adjacentContext = {
-          previousChapter: prevChapter ? {
-            number: prevChapter.chapterNumber,
-            title: prevChapter.title,
-            content: (prevChapter.editedContent || prevChapter.originalContent || '').slice(-2000),
-          } : null,
-          nextChapter: nextChapter ? {
-            number: nextChapter.chapterNumber,
-            title: nextChapter.title,
-            content: (nextChapter.editedContent || nextChapter.originalContent || '').slice(0, 2000),
-          } : null,
+          previousChapter: prevChapter ? 
+            `Cap ${prevChapter.chapterNumber} - ${prevChapter.title || ''}: ${(prevChapter.editedContent || prevChapter.originalContent || '').slice(-2000)}` : undefined,
+          nextChapter: nextChapter ? 
+            `Cap ${nextChapter.chapterNumber} - ${nextChapter.title || ''}: ${(nextChapter.editedContent || nextChapter.originalContent || '').slice(0, 2000)}` : undefined,
         };
 
         // Update chapter status
@@ -6337,11 +6333,11 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
         
         // Create a custom problem that wraps the polishing instructions
         const customProblems = [{
-          categoria: "pulido_manual",
+          tipo: "pulido_manual",
           severidad: "mayor" as const,
           descripcion: polishingInstructions,
-          capitulos_afectados: [chapter.chapterNumber],
-          sugerencia_correccion: polishingInstructions,
+          capitulosAfectados: [chapter.chapterNumber],
+          accionSugerida: polishingInstructions,
         }];
 
         try {
@@ -6350,9 +6346,9 @@ Al analizar la arquitectura, TEN EN CUENTA estas violaciones existentes y recomi
             currentContent || '',
             chapter.chapterNumber,
             customProblems,
-            worldBible?.content || {},
+            (worldBible as any)?.content || {},
             adjacentContext,
-            project.language || 'es',
+            (project as any).language || 'es',
             polishingInstructions
           );
 

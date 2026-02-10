@@ -339,7 +339,7 @@ export class QueueManager {
           }
           
           // LitAgents 2.9.6: Skip auto-recovery for manually cancelled projects
-          const cancelledManually = recentLogs.some((log: { message: string; level: string; agentRole?: string }) => 
+          const cancelledManually = recentLogs.some((log: any) => 
             log.message.includes("cancelada por el usuario") ||
             log.message.includes("Corrección") && log.message.includes("cancelada") ||
             log.message.includes("Generación cancelada") ||

@@ -853,7 +853,7 @@ Responde con un JSON array con EXACTAMENTE ${batch.length} capítulos:
               const objectMatches = repaired.matchAll(/\{[^{}]*"numero"\s*:\s*(-?\d+)[^{}]*\}/g);
               const partialChapters: any[] = [];
               
-              for (const objMatch of objectMatches) {
+              for (const objMatch of Array.from(objectMatches)) {
                 try {
                   const obj = JSON.parse(objMatch[0]);
                   if (obj.numero !== undefined) {

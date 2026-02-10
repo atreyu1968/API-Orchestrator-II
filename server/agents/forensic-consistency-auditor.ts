@@ -220,12 +220,12 @@ RESPONDE EN JSON.`;
       return "CONTEXTO PREVIO: Este es el primer lote. No hay contexto acumulado.";
     }
 
-    const characters = Array.from(entityState.characters.entries())
-      .map(([name, data]: [string, any]) => `- ${name}: ${data.status}${data.injuries.length > 0 ? ` (lesiones: ${data.injuries.join(', ')})` : ''}`)
+    const characters = Array.from(entityState.characters.entries() as IterableIterator<[string, any]>)
+      .map(([name, data]) => `- ${name}: ${data.status}${data.injuries.length > 0 ? ` (lesiones: ${data.injuries.join(', ')})` : ''}`)
       .join('\n');
 
-    const locations = Array.from(entityState.locations.entries())
-      .map(([name, _]: [string, any]) => `- ${name}`)
+    const locations = Array.from(entityState.locations.entries() as IterableIterator<[string, any]>)
+      .map(([name, _]) => `- ${name}`)
       .join('\n');
 
     return `CONTEXTO ACUMULADO DE LOTES ANTERIORES:

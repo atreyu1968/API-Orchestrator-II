@@ -947,7 +947,7 @@ export class OrchestratorV2 {
     const prioritizedChapters: number[] = [];
     
     // Add critical chapters first
-    for (const criticalNum of criticalChapterNums) {
+    for (const criticalNum of Array.from(criticalChapterNums)) {
       if (!chaptersWithProtagonist.has(criticalNum)) {
         prioritizedChapters.push(criticalNum);
       }
@@ -4821,7 +4821,7 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
               const extendedGuideCharacters = this.extractCharactersFromExtendedGuide(extendedGuideContent);
               
               // LitAgents 2.9.6: Pass actual chapter count for accurate protagonist requirements
-              const outlineChapterCount = globalResult.parsed?.outline?.length || project.chapters;
+              const outlineChapterCount = globalResult.parsed?.outline?.length || project.chapterCount;
               
               correctionInstructions = this.buildPlotCorrectionInstructions(
                 plotValidation.criticalIssues,
