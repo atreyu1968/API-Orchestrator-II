@@ -11963,22 +11963,52 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
 
     plan.sort((a, b) => a.priority - b.priority || a.chapter - b.chapter);
 
-    await storage.updateProject(projectId, {
-      targetedRepairDiagnosis: diagnosis,
-      targetedRepairPlan: plan,
-      targetedRepairStatus: 'plan_ready',
-      targetedRepairProgress: {
-        current: 3, total: 3,
-        message: `Plan listo: ${plan.length} capítulos a intervenir (${issues.length} problemas detectados)`,
-      },
-    });
+    console.log(`[TargetedRepair] Diagnosis complete. Score: ${diagnosis.overallScore}/10, Issues: ${issues.length}, Plan items: ${plan.length}`);
+    console.log(`[TargetedRepair] Plan chapters: ${plan.map(p => p.chapter).join(', ')}`);
 
-    await storage.createActivityLog({
-      projectId,
-      level: "info",
-      agentRole: "targeted-repair",
-      message: `Diagnóstico completado: ${diagnosis.overallScore}/10. ${issues.length} problemas en ${plan.length} capítulos. Críticos: ${diagnosis.criticalCount}, Mayores: ${diagnosis.majorCount}`,
-    });
+    try {
+      const planForDb = plan.map(p => ({
+        chapter: p.chapter,
+        chapterNumber: p.chapter,
+        chapterTitle: p.chapterTitle,
+        approach: p.approach,
+        instructions: p.instructions,
+        priority: p.priority,
+        issues: p.issues.map(i => ({
+          chapter: i.chapter,
+          type: i.type,
+          severity: i.severity,
+          description: i.description,
+          expectedVsActual: i.expectedVsActual || '',
+          suggestedFix: i.suggestedFix || '',
+        })),
+      }));
+
+      await storage.updateProject(projectId, {
+        targetedRepairDiagnosis: diagnosis,
+        targetedRepairPlan: planForDb as any,
+        targetedRepairStatus: 'plan_ready',
+        targetedRepairProgress: {
+          current: 3, total: 3,
+          message: `Plan listo: ${plan.length} capítulos a intervenir (${issues.length} problemas detectados)`,
+        },
+      });
+      console.log(`[TargetedRepair] Plan saved to DB successfully for project ${projectId}`);
+    } catch (dbError) {
+      console.error(`[TargetedRepair] CRITICAL: Failed to save plan to DB:`, dbError);
+      throw dbError;
+    }
+
+    try {
+      await storage.createActivityLog({
+        projectId,
+        level: "info",
+        agentRole: "targeted-repair",
+        message: `Diagnóstico completado: ${diagnosis.overallScore}/10. ${issues.length} problemas en ${plan.length} capítulos. Críticos: ${diagnosis.criticalCount}, Mayores: ${diagnosis.majorCount}`,
+      });
+    } catch (logError) {
+      console.error(`[TargetedRepair] Failed to create activity log:`, logError);
+    }
 
     this.callbacks.onAgentStatus("targeted-repair", "completed",
       `Diagnóstico: ${diagnosis.overallScore}/10 - ${plan.length} capítulos a reparar`);
@@ -11988,9 +12018,18 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
 
   async executeRepairPlan(project: any): Promise<RepairResult[]> {
     const projectId = project.id;
-    const plan: RepairPlanItem[] = (project.targetedRepairPlan as RepairPlanItem[]) || [];
+
+    const freshProject = await storage.getProject(projectId);
+    const rawPlan = freshProject?.targetedRepairPlan || project.targetedRepairPlan;
+    const plan: RepairPlanItem[] = (Array.isArray(rawPlan) ? rawPlan : []) as RepairPlanItem[];
+
+    console.log(`[TargetedRepair] executeRepairPlan called. Plan length: ${plan.length}, raw type: ${typeof rawPlan}, isArray: ${Array.isArray(rawPlan)}`);
+    if (plan.length > 0) {
+      console.log(`[TargetedRepair] First plan item: chapter=${plan[0].chapter}, issues=${plan[0].issues?.length}, approach=${plan[0].approach}`);
+    }
 
     if (plan.length === 0) {
+      console.error(`[TargetedRepair] No plan found! rawPlan:`, JSON.stringify(rawPlan)?.substring(0, 200));
       throw new Error("No hay plan de reparación para ejecutar");
     }
 
@@ -12019,7 +12058,9 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
         const planItem = plan[planIdx];
         const chapter = chapterMap.get(planItem.chapter);
 
-        if (await this.shouldStopProcessing(projectId)) {
+        const repairProject = await storage.getProject(projectId);
+        if (repairProject?.targetedRepairStatus === 'idle' || repairProject?.targetedRepairStatus === 'error') {
+          console.log(`[TargetedRepair] Cancelled by user (status: ${repairProject?.targetedRepairStatus})`);
           await storage.updateProject(projectId, {
             targetedRepairStatus: 'error',
             targetedRepairProgress: { current: planIdx, total: plan.length, message: 'Cancelado por el usuario', results },
