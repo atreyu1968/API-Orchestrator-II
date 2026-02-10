@@ -1102,7 +1102,7 @@ export default function Dashboard() {
                         <Crosshair className="h-4 w-4 mr-2" />
                         {diagnoseMutation.isPending ? "Diagnosticando..." : "Diagnosticar"}
                       </Button>
-                      {currentProject.targetedRepairPlan && (currentProject.targetedRepairPlan as any[]).length > 0 && (
+                      {Array.isArray(currentProject.targetedRepairPlan) && currentProject.targetedRepairPlan.length > 0 && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1110,7 +1110,7 @@ export default function Dashboard() {
                           data-testid="button-view-repair-plan"
                         >
                           <FileText className="h-4 w-4 mr-2" />
-                          Ver Plan ({(currentProject.targetedRepairPlan as any[]).length})
+                          Ver Plan ({currentProject.targetedRepairPlan.length})
                         </Button>
                       )}
                       <Button
@@ -1576,7 +1576,7 @@ export default function Dashboard() {
                         <Crosshair className="h-4 w-4 mr-2" />
                         {diagnoseMutation.isPending ? "Diagnosticando..." : "Diagnosticar"}
                       </Button>
-                      {currentProject.targetedRepairPlan && (currentProject.targetedRepairPlan as any[]).length > 0 && (
+                      {Array.isArray(currentProject.targetedRepairPlan) && currentProject.targetedRepairPlan.length > 0 && (
                         <Button
                           variant="outline"
                           size="sm"
@@ -1584,7 +1584,7 @@ export default function Dashboard() {
                           data-testid="button-view-repair-plan-paused"
                         >
                           <FileText className="h-4 w-4 mr-2" />
-                          Ver Plan ({(currentProject.targetedRepairPlan as any[]).length})
+                          Ver Plan ({currentProject.targetedRepairPlan.length})
                         </Button>
                       )}
                     </>
@@ -2003,56 +2003,73 @@ export default function Dashboard() {
 
       {/* Reset Reviewer Confirmation Dialog */}
       <Dialog open={showRepairPlanDialog} onOpenChange={setShowRepairPlanDialog}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Plan de Reparación Dirigida</DialogTitle>
             <DialogDescription>
-              {repairPlanData?.diagnosis || "Análisis de desviaciones del manuscrito"}
+              {repairPlanData?.diagnosis
+                ? (typeof repairPlanData.diagnosis === 'string'
+                    ? repairPlanData.diagnosis
+                    : JSON.stringify(repairPlanData.diagnosis, null, 2).slice(0, 500))
+                : "Análisis de desviaciones del manuscrito"}
             </DialogDescription>
           </DialogHeader>
-          {repairPlanData?.plan && (repairPlanData.plan as any[]).length > 0 ? (
-            <div className="space-y-3">
-              {(repairPlanData.plan as any[]).map((item: any, idx: number) => (
-                <Card key={idx}>
-                  <CardContent className="p-3">
-                    <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-                      <span className="font-medium text-sm">
-                        Capítulo {item.chapterNumber}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <Badge variant={item.priority === 'critical' ? 'destructive' : item.priority === 'high' ? 'default' : 'secondary'}>
-                          {item.priority}
-                        </Badge>
-                        <Badge variant="outline">
-                          {item.approach === 'surgical' ? 'Corrección quirúrgica' : 'Reescritura'}
-                        </Badge>
+          <div className="overflow-y-auto flex-1 pr-1">
+            {!repairPlanData ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-sm text-muted-foreground">Cargando plan...</span>
+              </div>
+            ) : Array.isArray(repairPlanData.plan) && repairPlanData.plan.length > 0 ? (
+              <div className="space-y-3">
+                {repairPlanData.plan.map((item: any, idx: number) => (
+                  <Card key={idx}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+                        <span className="font-medium text-sm">
+                          Capítulo {item.chapterNumber ?? item.chapter ?? idx + 1}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {item.priority && (
+                            <Badge variant={item.priority === 'critical' ? 'destructive' : item.priority === 'high' ? 'default' : 'secondary'}>
+                              {item.priority}
+                            </Badge>
+                          )}
+                          {item.approach && (
+                            <Badge variant="outline">
+                              {item.approach === 'surgical' ? 'Corrección quirúrgica' : 'Reescritura'}
+                            </Badge>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    {item.issues && (item.issues as any[]).length > 0 && (
-                      <ul className="text-xs text-muted-foreground space-y-1">
-                        {(item.issues as any[]).map((issue: any, iidx: number) => (
-                          <li key={iidx} className="flex items-start gap-1">
-                            <span className="text-destructive mt-0.5">-</span>
-                            <span>{typeof issue === 'string' ? issue : issue.description || issue.issue || JSON.stringify(issue)}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {item.instructions && (
-                      <p className="text-xs text-muted-foreground mt-1 italic">{item.instructions}</p>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No se encontraron problemas.</p>
-          )}
+                      {Array.isArray(item.issues) && item.issues.length > 0 && (
+                        <ul className="text-xs text-muted-foreground space-y-1">
+                          {item.issues.map((issue: any, iidx: number) => (
+                            <li key={iidx} className="flex items-start gap-1">
+                              <span className="text-destructive mt-0.5 shrink-0">-</span>
+                              <span>{typeof issue === 'string' ? issue : (issue?.description || issue?.issue || issue?.mensaje || JSON.stringify(issue))}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {item.instructions && (
+                        <p className="text-xs text-muted-foreground mt-1 italic">
+                          {typeof item.instructions === 'string' ? item.instructions : JSON.stringify(item.instructions)}
+                        </p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-4">No se encontraron problemas que reparar.</p>
+            )}
+          </div>
           <DialogFooter className="flex gap-2">
             <Button variant="outline" onClick={() => setShowRepairPlanDialog(false)} data-testid="button-close-repair-plan">
               Cerrar
             </Button>
-            {repairPlanData?.plan && (repairPlanData.plan as any[]).length > 0 && currentProject && (
+            {Array.isArray(repairPlanData?.plan) && repairPlanData.plan.length > 0 && currentProject && (
               <Button
                 onClick={() => executeRepairMutation.mutate(currentProject.id)}
                 disabled={executeRepairMutation.isPending}
