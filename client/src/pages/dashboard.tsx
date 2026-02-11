@@ -946,6 +946,37 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {currentProject && (
+        <div className="flex items-center gap-3 p-3 rounded-lg border bg-card">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold truncate">{currentProject.title}</span>
+              {currentProject.seriesOrder && (
+                <Badge variant="secondary" className="text-xs">
+                  Vol. {currentProject.seriesOrder}
+                </Badge>
+              )}
+              <Badge variant="secondary" className="text-xs">
+                {currentProject.workType === "standalone" ? "Independiente" :
+                 currentProject.workType === "series" ? "Serie" :
+                 currentProject.workType === "trilogy" ? "Trilogía" :
+                 currentProject.workType === "bookbox" ? "Bookbox" : currentProject.workType}
+              </Badge>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openEditMetadataDialog}
+            disabled={currentProject.status === "generating"}
+            data-testid="button-edit-metadata-header"
+          >
+            <Pencil className="h-4 w-4 mr-2" />
+            Editar Datos
+          </Button>
+        </div>
+      )}
+
       {/* Agentes v2 - Pipeline por escenas */}
       <div className="space-y-2">
         <h3 className="text-sm font-medium text-muted-foreground">
