@@ -626,7 +626,8 @@ export abstract class BaseAgent {
       }
       
       try {
-        const modelToUse = this.config.model || "gemini-3-pro-preview";
+        const isDeepSeekModel = this.config.model?.startsWith("deepseek");
+        const modelToUse = (!this.config.model || isDeepSeekModel) ? "gemini-3-pro-preview" : this.config.model;
         const useThinking = this.config.useThinking !== false;
         
         const startTime = Date.now();
