@@ -166,6 +166,7 @@ export default function Dashboard() {
   const [mergeTarget, setMergeTarget] = useState<number | null>(null);
   const [targetChapters, setTargetChapters] = useState("");
   const [useV2Pipeline, setUseV2Pipeline] = useState(true);
+  const [useGeminiArchitect, setUseGeminiArchitect] = useState(false);
   const [sceneProgress, setSceneProgress] = useState<{chapterNumber: number; sceneNumber: number; totalScenes: number; wordCount: number} | null>(null);
   const [chaptersBeingCorrected, setChaptersBeingCorrected] = useState<{chapterNumbers: number[]; revisionCycle: number} | null>(null);
   const [detectAndFixProgress, setDetectAndFixProgress] = useState<DetectAndFixProgress | null>(null);
@@ -345,8 +346,7 @@ export default function Dashboard() {
   });
 
   const startGenerationMutation = useMutation({
-    mutationFn: async (params: { projectId: number; instructions?: string; useV2?: boolean }) => {
-      // First save instructions if provided
+    mutationFn: async (params: { projectId: number; instructions?: string; useV2?: boolean; useGeminiArchitect?: boolean }) => {
       if (params.instructions) {
         await saveArchitectInstructionsMutation.mutateAsync({
           projectId: params.projectId,
@@ -356,7 +356,7 @@ export default function Dashboard() {
       const endpoint = params.useV2 
         ? `/api/projects/${params.projectId}/generate-v2`
         : `/api/projects/${params.projectId}/generate`;
-      const response = await apiRequest("POST", endpoint);
+      const response = await apiRequest("POST", endpoint, { useGeminiArchitect: params.useGeminiArchitect || false });
       return response.json();
     },
     onSuccess: (_, variables) => {
@@ -365,6 +365,7 @@ export default function Dashboard() {
       setShowArchitectDialog(false);
       setArchitectInstructions("");
       setUseV2Pipeline(false);
+      setUseGeminiArchitect(false);
     },
     onError: (error) => {
       toast({
@@ -911,6 +912,7 @@ export default function Dashboard() {
         projectId: currentProject.id,
         instructions: architectInstructions.trim() || undefined,
         useV2: useV2Pipeline,
+        useGeminiArchitect: useGeminiArchitect,
       });
     }
   };
@@ -2003,6 +2005,34 @@ export default function Dashboard() {
               )}
             </div>
             
+            <div className="border rounded-md p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <p className="text-sm font-medium">Arquitecto con Gemini</p>
+                  <p className="text-xs text-muted-foreground">
+                    Usa Gemini en lugar de DeepSeek para planificar la novela (mayor calidad, mayor costo)
+                  </p>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="use-gemini-architect"
+                    checked={useGeminiArchitect}
+                    onCheckedChange={(checked) => setUseGeminiArchitect(checked === true)}
+                    data-testid="checkbox-use-gemini-architect"
+                  />
+                  <label htmlFor="use-gemini-architect" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
+                    Activar
+                  </label>
+                </div>
+              </div>
+              {useGeminiArchitect && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                  <strong>Gemini Architect:</strong> Genera planes de novela de mayor calidad y coherencia. 
+                  Recomendado para novelas complejas o con muchos personajes. Requiere GEMINI_API_KEY configurada.
+                </div>
+              )}
+            </div>
+
             <div className="text-sm text-muted-foreground">
               <p><strong>Nota:</strong> Estas instrucciones son opcionales. Puedes iniciar la generación sin ellas.</p>
             </div>

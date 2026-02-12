@@ -997,7 +997,8 @@ export async function registerRoutes(
       // Mark project as using v2 pipeline for auto-recovery
       await storage.updateProject(id, { pipelineVersion: "v2" });
 
-      res.json({ message: "Generation started (LitAgents 2.0)", projectId: id, version: "2.0" });
+      const useGeminiArchitect = req.body?.useGeminiArchitect === true;
+      res.json({ message: "Generation started (LitAgents 2.0)", projectId: id, version: "2.0", useGeminiArchitect });
 
       const sendToStreams = (data: any) => {
         const streams = activeStreams.get(id);
@@ -1040,7 +1041,7 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.generateNovel(project).catch(console.error);
+      orchestrator.generateNovel(project, { useGeminiArchitect }).catch(console.error);
 
     } catch (error) {
       console.error("Error starting V2 generation:", error);

@@ -4542,8 +4542,8 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
     }
   }
 
-  async generateNovel(project: Project): Promise<void> {
-    console.log(`[OrchestratorV2] Starting novel generation for "${project.title}" (ID: ${project.id})`);
+  async generateNovel(project: Project, options?: { useGeminiArchitect?: boolean }): Promise<void> {
+    console.log(`[OrchestratorV2] Starting novel generation for "${project.title}" (ID: ${project.id})${options?.useGeminiArchitect ? ' [Architect: Gemini]' : ''}`);
     
     try {
       // Update project status
@@ -4803,6 +4803,7 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
             minWordsPerChapter: project.minWordsPerChapter || undefined,
             maxWordsPerChapter: project.maxWordsPerChapter || undefined,
             isKindleUnlimited: project.kindleUnlimitedOptimized || false,
+            useGeminiArchitect: options?.useGeminiArchitect,
           });
 
           if (globalResult.error || !globalResult.parsed) {
@@ -4810,7 +4811,8 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
           }
 
           this.addTokenUsage(globalResult.tokenUsage);
-          await this.logAiUsage(project.id, "global-architect", "deepseek-reasoner", globalResult.tokenUsage);
+          const architectModel = options?.useGeminiArchitect ? "gemini-3-pro-preview" : "deepseek-reasoner";
+          await this.logAiUsage(project.id, "global-architect", architectModel, globalResult.tokenUsage);
           
           // LitAgents 2.9.5: Validate plot coherence (also uses extended guide for thread extraction)
           plotValidation = this.validatePlotCoherence(

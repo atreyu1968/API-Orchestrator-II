@@ -23,6 +23,7 @@ export interface GlobalArchitectInput {
   minWordsPerChapter?: number;
   maxWordsPerChapter?: number;
   isKindleUnlimited?: boolean;
+  useGeminiArchitect?: boolean;
 }
 
 export interface GlobalArchitectOutput {
@@ -172,7 +173,11 @@ export class GlobalArchitectAgent extends BaseAgent {
 
     // For large chapter counts, request more output tokens to avoid truncation
     const maxTokens = input.chapterCount > 20 ? 32000 : 16000;
-    const response = await this.generateContent(prompt, undefined, { maxCompletionTokens: maxTokens });
+    const forceProvider = input.useGeminiArchitect ? "gemini" as const : undefined;
+    if (forceProvider) {
+      console.log(`[GlobalArchitect] Using Gemini as architect provider (user choice)`);
+    }
+    const response = await this.generateContent(prompt, undefined, { maxCompletionTokens: maxTokens, forceProvider });
     
     if (response.error) {
       return response;
