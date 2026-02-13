@@ -216,7 +216,7 @@ Genera ahora la BIBLIA DE SERIE siguiendo exactamente la estructura del prompt d
 Recuerda: NO incluyas las secciones 7 y 8 (hitos y arquitectura por volumen). Esas se generaran por separado.
 `;
 
-    const response = await this.generateContent(prompt);
+    const response = await this.generateContent(prompt, undefined, { forceProvider: "gemini" });
     console.log(`[SeriesGuideGenerator] Phase 1 complete: Bible generated (${response.content?.length || 0} chars)`);
     return response;
   }
@@ -285,7 +285,7 @@ Genera ahora los HITOS Y ARQUITECTURA para el Volumen ${params.volumeNumber} sig
 
     const savedPrompt = this.config.systemPrompt;
     this.config.systemPrompt = VOLUME_MILESTONES_PROMPT;
-    const response = await this.generateContent(prompt);
+    const response = await this.generateContent(prompt, undefined, { forceProvider: "gemini" });
     this.config.systemPrompt = savedPrompt;
     
     console.log(`[SeriesGuideGenerator] Volume ${params.volumeNumber} milestones generated (${response.content?.length || 0} chars)`);
