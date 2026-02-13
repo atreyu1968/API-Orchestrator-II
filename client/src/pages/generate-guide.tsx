@@ -22,6 +22,14 @@ interface Pseudonym {
   defaultTone?: string;
 }
 
+interface StyleGuide {
+  id: number;
+  pseudonymId: number;
+  title: string;
+  content: string;
+  isActive: boolean;
+}
+
 interface Series {
   id: number;
   title: string;
@@ -38,6 +46,7 @@ const formSchema = z.object({
   hasEpilogue: z.boolean().default(true),
   hasAuthorNote: z.boolean().default(false),
   pseudonymId: z.string().optional(),
+  styleGuideId: z.string().optional(),
   seriesId: z.string().optional(),
   seriesOrder: z.number().min(1).default(1),
   kindleUnlimited: z.boolean().default(true),
@@ -52,6 +61,7 @@ export default function GenerateGuidePage() {
   
   const [generatedGuide, setGeneratedGuide] = useState<string | null>(null);
   const [createdProjectId, setCreatedProjectId] = useState<number | null>(null);
+  const [createdExtendedGuideId, setCreatedExtendedGuideId] = useState<number | null>(null);
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -65,6 +75,7 @@ export default function GenerateGuidePage() {
       hasEpilogue: true,
       hasAuthorNote: false,
       pseudonymId: "",
+      styleGuideId: "",
       seriesId: "",
       seriesOrder: 1,
       kindleUnlimited: true,
@@ -76,6 +87,10 @@ export default function GenerateGuidePage() {
     queryKey: ["/api/pseudonyms"],
   });
 
+  const { data: allStyleGuides = [] } = useQuery<StyleGuide[]>({
+    queryKey: ["/api/all-style-guides"],
+  });
+
   const { data: seriesList = [] } = useQuery<Series[]>({
     queryKey: ["/api/series"],
   });
@@ -85,6 +100,7 @@ export default function GenerateGuidePage() {
       const response = await apiRequest("POST", "/api/generate-writing-guide", {
         ...data,
         pseudonymId: data.pseudonymId && data.pseudonymId !== "none" ? parseInt(data.pseudonymId) : undefined,
+        styleGuideId: data.styleGuideId && data.styleGuideId !== "none" ? parseInt(data.styleGuideId) : undefined,
         seriesId: data.seriesId && data.seriesId !== "none" ? parseInt(data.seriesId) : undefined,
       });
       return response.json();
@@ -92,6 +108,7 @@ export default function GenerateGuidePage() {
     onSuccess: (data) => {
       setGeneratedGuide(data.guideContent);
       setCreatedProjectId(data.projectId);
+      setCreatedExtendedGuideId(data.extendedGuideId || null);
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
       toast({
         title: "Guía generada",
@@ -150,12 +167,21 @@ export default function GenerateGuidePage() {
       if (pseudonym.defaultTone) {
         form.setValue("tone", pseudonym.defaultTone);
       }
+      const activeGuide = allStyleGuides.find(g => g.pseudonymId === pseudonym.id && g.isActive);
+      if (activeGuide) {
+        form.setValue("styleGuideId", activeGuide.id.toString());
+      } else {
+        form.setValue("styleGuideId", "none");
+      }
+    } else {
+      form.setValue("styleGuideId", "none");
     }
   };
 
   const resetForm = () => {
     setGeneratedGuide(null);
     setCreatedProjectId(null);
+    setCreatedExtendedGuideId(null);
     form.reset();
   };
 
@@ -469,6 +495,42 @@ export default function GenerateGuidePage() {
                           ))}
                         </SelectContent>
                       </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="styleGuideId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Guía de Estilo del Autor</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-style-guide">
+                            <SelectValue placeholder="Selecciona una guía de estilo (opcional)" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none" data-testid="option-style-guide-none">Sin guía de estilo</SelectItem>
+                          {allStyleGuides.map((g) => {
+                            const pseudonym = pseudonyms.find(p => p.id === g.pseudonymId);
+                            return (
+                              <SelectItem 
+                                key={g.id} 
+                                value={g.id.toString()}
+                                data-testid={`option-style-guide-${g.id}`}
+                              >
+                                {g.title} {pseudonym ? `(${pseudonym.name})` : ''} {g.isActive ? '- Activa' : ''}
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        Define el estilo narrativo del autor para la generación de la guía
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}

@@ -10642,6 +10642,7 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
         hasEpilogue: z.boolean().default(true),
         hasAuthorNote: z.boolean().default(false),
         pseudonymId: z.number().optional(),
+        styleGuideId: z.number().optional(),
         seriesId: z.number().optional(),
         seriesOrder: z.number().optional(),
         kindleUnlimited: z.boolean().default(true),
@@ -10650,10 +10651,16 @@ NOTA IMPORTANTE: No extiendas ni modifiques otras partes del capítulo. Solo apl
       
       const params = schema.parse(req.body);
       
-      // Get style guide if pseudonym is provided
+      // Get style guide - prioritize explicit styleGuideId, then auto-detect from pseudonym
       let styleGuideContent: string | undefined;
       let styleGuideId: number | undefined;
-      if (params.pseudonymId) {
+      if (params.styleGuideId) {
+        const guide = await storage.getStyleGuide(params.styleGuideId);
+        if (guide) {
+          styleGuideContent = guide.content;
+          styleGuideId = guide.id;
+        }
+      } else if (params.pseudonymId) {
         const guides = await storage.getStyleGuidesByPseudonym(params.pseudonymId);
         const activeGuide = guides.find(g => g.isActive);
         if (activeGuide) {

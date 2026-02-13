@@ -28,10 +28,13 @@ function formatCurrency(amount: number): string {
   return `$${amount.toFixed(4)}`;
 }
 
-const PRICING_INFO = `Tarifas DeepSeek (por millón de tokens):
+const PRICING_INFO = `Tarifas por millón de tokens:
 
-R1 (deepseek-reasoner): $0.55 input / $2.19 output
-V3 (deepseek-chat): $0.27 input / $1.10 output`;
+DeepSeek R1 (reasoner): $0.55 input / $2.19 output
+DeepSeek V3 (chat): $0.28 input / $0.42 output
+
+Gemini 3 Pro Preview: $1.25 input / $10.00 output
+Gemini 2.5 Flash: $0.30 input / $2.50 output`;
 
 interface ModelStats {
   model: string;
@@ -104,6 +107,43 @@ function groupByModel(events: AiUsageEvent[]): ModelStats[] {
   return Array.from(grouped.values()).sort((a, b) => b.cost - a.cost);
 }
 
+function getProviderName(model: string): string {
+  if (model.startsWith("gemini")) return "Gemini";
+  if (model.startsWith("deepseek")) return "DeepSeek";
+  return "Otro";
+}
+
+interface ProviderStats {
+  provider: string;
+  inputTokens: number;
+  outputTokens: number;
+  thinkingTokens: number;
+  cost: number;
+}
+
+function groupByProvider(modelStats: ModelStats[]): ProviderStats[] {
+  const grouped = new Map<string, ProviderStats>();
+  for (const stat of modelStats) {
+    const provider = getProviderName(stat.model);
+    const existing = grouped.get(provider);
+    if (existing) {
+      existing.inputTokens += stat.inputTokens;
+      existing.outputTokens += stat.outputTokens;
+      existing.thinkingTokens += stat.thinkingTokens;
+      existing.cost += stat.cost;
+    } else {
+      grouped.set(provider, {
+        provider,
+        inputTokens: stat.inputTokens,
+        outputTokens: stat.outputTokens,
+        thinkingTokens: stat.thinkingTokens,
+        cost: stat.cost,
+      });
+    }
+  }
+  return Array.from(grouped.values()).sort((a, b) => b.cost - a.cost);
+}
+
 export default function CostsHistoryPage() {
   const { currentProject, isLoading: loadingProject } = useProject();
 
@@ -114,6 +154,7 @@ export default function CostsHistoryPage() {
   });
 
   const modelStats = groupByModel(aiUsageEvents || []);
+  const providerStats = groupByProvider(modelStats);
   const projectDates = getProjectDates(aiUsageEvents || []);
   const totalCost = modelStats.reduce((sum, m) => sum + m.cost, 0);
   const totalInput = modelStats.reduce((sum, m) => sum + m.inputTokens, 0);
@@ -173,6 +214,52 @@ export default function CostsHistoryPage() {
           )}
         </CardContent>
       </Card>
+
+      {providerStats.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Desglose por Proveedor</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingUsage ? (
+              <Skeleton className="h-16 w-full" />
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Proveedor</TableHead>
+                    <TableHead className="text-right">Input</TableHead>
+                    <TableHead className="text-right">Output</TableHead>
+                    <TableHead className="text-right">Thinking</TableHead>
+                    <TableHead className="text-right">Costo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {providerStats.map((stat) => (
+                    <TableRow key={stat.provider}>
+                      <TableCell className="font-medium text-sm">
+                        {stat.provider}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(stat.inputTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">
+                        {formatNumber(stat.outputTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                        {formatNumber(stat.thinkingTokens)}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm font-semibold">
+                        {formatCurrency(stat.cost)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
