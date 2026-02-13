@@ -998,7 +998,8 @@ export async function registerRoutes(
       await storage.updateProject(id, { pipelineVersion: "v2" });
 
       const useGeminiArchitect = req.body?.useGeminiArchitect === true;
-      res.json({ message: "Generation started (LitAgents 2.0)", projectId: id, version: "2.0", useGeminiArchitect });
+      const useGeminiQA = req.body?.useGeminiQA || {};
+      res.json({ message: "Generation started (LitAgents 2.0)", projectId: id, version: "2.0", useGeminiArchitect, useGeminiQA });
 
       const sendToStreams = (data: any) => {
         const streams = activeStreams.get(id);
@@ -1041,7 +1042,7 @@ export async function registerRoutes(
         },
       });
 
-      orchestrator.generateNovel(project, { useGeminiArchitect }).catch(console.error);
+      orchestrator.generateNovel(project, { useGeminiArchitect, useGeminiQA }).catch(console.error);
 
     } catch (error) {
       console.error("Error starting V2 generation:", error);
@@ -1143,6 +1144,12 @@ export async function registerRoutes(
           sendToStreams({ type: "detect_and_fix_progress", ...progress });
         },
       });
+
+      // Pass Gemini QA flags if provided
+      const useGeminiQADetect = req.body?.useGeminiQA || {};
+      if (useGeminiQADetect.finalReviewer || useGeminiQADetect.continuitySentinel || useGeminiQADetect.narrativeDirector) {
+        orchestrator.setGeminiQAFlags(useGeminiQADetect);
+      }
 
       // Run the new strategy
       orchestrator.detectAndFixStrategy(project).then(async (result) => {
@@ -1831,11 +1838,16 @@ export async function registerRoutes(
         },
       });
 
+      const useGeminiQA = req.body?.useGeminiQA || {};
+      if (useGeminiQA.finalReviewer || useGeminiQA.continuitySentinel || useGeminiQA.narrativeDirector) {
+        orchestratorV2.setGeminiQAFlags(useGeminiQA);
+      }
+
       orchestratorV2.runFinalReviewOnly(project).finally(() => {
         endCorrection(id); // Ensure cleanup
       });
       
-      console.log(`[FinalReview] Started final review for project ${id} (v2 pipeline)`);
+      console.log(`[FinalReview] Started final review for project ${id} (v2 pipeline)${useGeminiQA.finalReviewer ? ' [Gemini FR]' : ''}`);
 
     } catch (error) {
       console.error("Error starting final review:", error);

@@ -67,8 +67,8 @@ export class NarrativeDirectorAgent extends BaseAgent {
     });
   }
 
-  async execute(input: NarrativeDirectorInput): Promise<AgentResponse & { parsed?: NarrativeDirectorOutput }> {
-    console.log(`[NarrativeDirector] Analyzing progress at Chapter ${input.currentChapter}/${input.totalChapters} (${Math.round(input.currentChapter/input.totalChapters*100)}%)...`);
+  async execute(input: NarrativeDirectorInput, options?: { forceProvider?: "gemini" | "deepseek" }): Promise<AgentResponse & { parsed?: NarrativeDirectorOutput }> {
+    console.log(`[NarrativeDirector] Analyzing progress at Chapter ${input.currentChapter}/${input.totalChapters} (${Math.round(input.currentChapter/input.totalChapters*100)}%)...${options?.forceProvider ? ` [Provider: ${options.forceProvider}]` : ''}`);
     
     const prompt = PROMPTS_V2.NARRATIVE_DIRECTOR(
       input.recentSummaries,
@@ -77,7 +77,7 @@ export class NarrativeDirectorAgent extends BaseAgent {
       input.totalChapters
     );
 
-    const response = await this.generateContent(prompt);
+    const response = await this.generateContent(prompt, undefined, options?.forceProvider ? { forceProvider: options.forceProvider } : undefined);
     
     if (response.error) {
       return response;

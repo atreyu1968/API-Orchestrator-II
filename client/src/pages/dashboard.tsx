@@ -167,6 +167,7 @@ export default function Dashboard() {
   const [targetChapters, setTargetChapters] = useState("");
   const [useV2Pipeline, setUseV2Pipeline] = useState(true);
   const [useGeminiArchitect, setUseGeminiArchitect] = useState(false);
+  const [useGeminiQA, setUseGeminiQA] = useState<{ finalReviewer: boolean; continuitySentinel: boolean; narrativeDirector: boolean }>({ finalReviewer: false, continuitySentinel: false, narrativeDirector: false });
   const [sceneProgress, setSceneProgress] = useState<{chapterNumber: number; sceneNumber: number; totalScenes: number; wordCount: number} | null>(null);
   const [chaptersBeingCorrected, setChaptersBeingCorrected] = useState<{chapterNumbers: number[]; revisionCycle: number} | null>(null);
   const [detectAndFixProgress, setDetectAndFixProgress] = useState<DetectAndFixProgress | null>(null);
@@ -346,7 +347,7 @@ export default function Dashboard() {
   });
 
   const startGenerationMutation = useMutation({
-    mutationFn: async (params: { projectId: number; instructions?: string; useV2?: boolean; useGeminiArchitect?: boolean }) => {
+    mutationFn: async (params: { projectId: number; instructions?: string; useV2?: boolean; useGeminiArchitect?: boolean; useGeminiQA?: { finalReviewer?: boolean; continuitySentinel?: boolean; narrativeDirector?: boolean } }) => {
       if (params.instructions) {
         await saveArchitectInstructionsMutation.mutateAsync({
           projectId: params.projectId,
@@ -356,7 +357,7 @@ export default function Dashboard() {
       const endpoint = params.useV2 
         ? `/api/projects/${params.projectId}/generate-v2`
         : `/api/projects/${params.projectId}/generate`;
-      const response = await apiRequest("POST", endpoint, { useGeminiArchitect: params.useGeminiArchitect || false });
+      const response = await apiRequest("POST", endpoint, { useGeminiArchitect: params.useGeminiArchitect || false, useGeminiQA: params.useGeminiQA || {} });
       return response.json();
     },
     onSuccess: (_, variables) => {
@@ -366,6 +367,7 @@ export default function Dashboard() {
       setArchitectInstructions("");
       setUseV2Pipeline(false);
       setUseGeminiArchitect(false);
+      setUseGeminiQA({ finalReviewer: false, continuitySentinel: false, narrativeDirector: false });
     },
     onError: (error) => {
       toast({
@@ -491,8 +493,8 @@ export default function Dashboard() {
   });
 
   const finalReviewMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const response = await apiRequest("POST", `/api/projects/${id}/final-review`);
+    mutationFn: async (params: { id: number; useGeminiQA?: { finalReviewer?: boolean; continuitySentinel?: boolean; narrativeDirector?: boolean } }) => {
+      const response = await apiRequest("POST", `/api/projects/${params.id}/final-review`, { useGeminiQA: params.useGeminiQA || {} });
       return response.json();
     },
     onSuccess: () => {
@@ -521,8 +523,8 @@ export default function Dashboard() {
   });
 
   const detectAndFixMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const response = await apiRequest("POST", `/api/projects/${id}/detect-and-fix`);
+    mutationFn: async (params: { id: number; useGeminiQA?: { finalReviewer?: boolean; continuitySentinel?: boolean; narrativeDirector?: boolean } }) => {
+      const response = await apiRequest("POST", `/api/projects/${params.id}/detect-and-fix`, { useGeminiQA: params.useGeminiQA || {} });
       return response.json();
     },
     onSuccess: () => {
@@ -913,6 +915,7 @@ export default function Dashboard() {
         instructions: architectInstructions.trim() || undefined,
         useV2: useV2Pipeline,
         useGeminiArchitect: useGeminiArchitect,
+        useGeminiQA: useGeminiQA,
       });
     }
   };
@@ -1157,9 +1160,9 @@ export default function Dashboard() {
                         size="sm"
                         onClick={() => {
                           if (correctionSystem === 'detect-fix') {
-                            detectAndFixMutation.mutate(currentProject.id);
+                            detectAndFixMutation.mutate({ id: currentProject.id, useGeminiQA });
                           } else {
-                            finalReviewMutation.mutate(currentProject.id);
+                            finalReviewMutation.mutate({ id: currentProject.id, useGeminiQA });
                           }
                         }}
                         disabled={finalReviewMutation.isPending || detectAndFixMutation.isPending}
@@ -1641,9 +1644,9 @@ export default function Dashboard() {
                         size="sm"
                         onClick={() => {
                           if (correctionSystem === 'detect-fix') {
-                            detectAndFixMutation.mutate(currentProject.id);
+                            detectAndFixMutation.mutate({ id: currentProject.id, useGeminiQA });
                           } else {
-                            finalReviewMutation.mutate(currentProject.id);
+                            finalReviewMutation.mutate({ id: currentProject.id, useGeminiQA });
                           }
                         }}
                         disabled={finalReviewMutation.isPending || detectAndFixMutation.isPending}
@@ -2029,6 +2032,56 @@ export default function Dashboard() {
                 <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
                   <strong>Gemini Architect:</strong> Genera planes de novela de mayor calidad y coherencia. 
                   Recomendado para novelas complejas o con muchos personajes. Requiere GEMINI_API_KEY configurada.
+                </div>
+              )}
+            </div>
+
+            <div className="border rounded-md p-3 space-y-2">
+              <div>
+                <p className="text-sm font-medium">Agentes QA con Gemini</p>
+                <p className="text-xs text-muted-foreground">
+                  Usa Gemini para agentes de calidad (mayor detección de errores, mayor costo)
+                </p>
+              </div>
+              <div className="space-y-2 pl-2">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="gemini-qa-final-reviewer"
+                    checked={useGeminiQA.finalReviewer}
+                    onCheckedChange={(checked) => setUseGeminiQA(prev => ({ ...prev, finalReviewer: checked === true }))}
+                    data-testid="checkbox-gemini-qa-final-reviewer"
+                  />
+                  <label htmlFor="gemini-qa-final-reviewer" className="text-sm leading-none">
+                    Final Reviewer <span className="text-xs text-muted-foreground">(1 ejecución - detecta agujeros de trama globales)</span>
+                  </label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="gemini-qa-continuity-sentinel"
+                    checked={useGeminiQA.continuitySentinel}
+                    onCheckedChange={(checked) => setUseGeminiQA(prev => ({ ...prev, continuitySentinel: checked === true }))}
+                    data-testid="checkbox-gemini-qa-continuity-sentinel"
+                  />
+                  <label htmlFor="gemini-qa-continuity-sentinel" className="text-sm leading-none">
+                    Continuity Sentinel <span className="text-xs text-muted-foreground">(por bloque - verifica continuidad)</span>
+                  </label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="gemini-qa-narrative-director"
+                    checked={useGeminiQA.narrativeDirector}
+                    onCheckedChange={(checked) => setUseGeminiQA(prev => ({ ...prev, narrativeDirector: checked === true }))}
+                    data-testid="checkbox-gemini-qa-narrative-director"
+                  />
+                  <label htmlFor="gemini-qa-narrative-director" className="text-sm leading-none">
+                    Narrative Director <span className="text-xs text-muted-foreground">(por capítulo - mayor frecuencia/costo)</span>
+                  </label>
+                </div>
+              </div>
+              {(useGeminiQA.finalReviewer || useGeminiQA.continuitySentinel || useGeminiQA.narrativeDirector) && (
+                <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded">
+                  <strong>Gemini QA:</strong> Los agentes seleccionados usarán Gemini para diagnóstico/detección. 
+                  Las correcciones siempre usan DeepSeek. Requiere GEMINI_API_KEY configurada.
                 </div>
               )}
             </div>

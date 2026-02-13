@@ -748,7 +748,8 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
     trancheNum: number,
     totalTranches: number,
     pasadaInfo: string,
-    previousTrancheContext: string = ""
+    previousTrancheContext: string = "",
+    forceProvider?: "gemini" | "deepseek"
   ): Promise<Partial<FinalReviewerResult>> {
     const chaptersText = trancheChapters.map(c => 
       `\n===== ${this.getChapterLabel(c.numero)}: ${c.titulo} =====\n${c.contenido}`
@@ -832,14 +833,14 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
     }, 60000); // Log every 60 seconds
     
     try {
-      const response = await this.generateContent(prompt);
+      const response = await this.generateContent(prompt, undefined, forceProvider ? { forceProvider } : undefined);
       
       if (heartbeatInterval) {
         clearInterval(heartbeatInterval);
         heartbeatInterval = null;
       }
       const elapsedSec = Math.round((Date.now() - startTime) / 1000);
-      console.log(`[FinalReviewer] Tramo ${trancheNum}/${totalTranches}: respuesta recibida en ${elapsedSec}s`);
+      console.log(`[FinalReviewer] Tramo ${trancheNum}/${totalTranches}: respuesta recibida en ${elapsedSec}s${forceProvider ? ` [${forceProvider}]` : ''}`);
     
       try {
         const jsonMatch = response.content.match(/\{[\s\S]*\}/);
@@ -879,7 +880,7 @@ INSTRUCCIÓN: Usa esta información para reportar issues con los CAPÍTULOS ESPE
     }
   }
 
-  async execute(input: FinalReviewerInput): Promise<AgentResponse & { result?: FinalReviewerResult }> {
+  async execute(input: FinalReviewerInput, options?: { forceProvider?: "gemini" | "deepseek" }): Promise<AgentResponse & { result?: FinalReviewerResult }> {
     console.log(`[FinalReviewer] ========== EXECUTE CALLED ==========`);
     console.log(`[FinalReviewer] Input chapters: ${input.chapters?.length || 0}, pasadaNumero: ${input.pasadaNumero}`);
     
@@ -1077,7 +1078,7 @@ Si no hay regresiones y los issues se corrigieron, la puntuación debe ser >= ${
       // Pass accumulated issues from previous tranches to ensure consistency
       // Include act goal in the context for more focused review
       const actContext = tranche.goal ? `\n[OBJETIVO DEL ACTO: ${tranche.goal}]` : '';
-      const result = await this.reviewTranche(input, trancheChapters, t + 1, numTranches, pasadaInfo + actContext, accumulatedIssuesSummary);
+      const result = await this.reviewTranche(input, trancheChapters, t + 1, numTranches, pasadaInfo + actContext, accumulatedIssuesSummary, options?.forceProvider);
       trancheResults.push(result);
       
       // Build context summary for next tranche

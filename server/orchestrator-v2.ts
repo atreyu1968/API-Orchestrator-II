@@ -81,7 +81,7 @@ RESPONDE SOLO EN JSON:
     return this.auditContinuity(input.chapters, input.startChapter, input.endChapter);
   }
 
-  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number): Promise<any> {
+  async auditContinuity(chapterContents: string[], startChapter: number, endChapter: number, options?: { forceProvider?: "gemini" | "deepseek" }): Promise<any> {
     const combinedContent = chapterContents.map((c, i) => 
       `=== CAPÍTULO ${startChapter + i} ===\n${c.substring(0, 8000)}`
     ).join("\n\n");
@@ -92,7 +92,7 @@ ${combinedContent}
 
 Detecta errores de continuidad temporal, espacial, de estado y de conocimiento. RESPONDE EN JSON.`;
 
-    const response = await this.generateContent(prompt);
+    const response = await this.generateContent(prompt, undefined, options?.forceProvider ? { forceProvider: options.forceProvider } : undefined);
     let result: any = { erroresContinuidad: [], resumen: "Sin problemas detectados", puntuacion: 9 };
     try {
       const jsonMatch = response.content.match(/\{[\s\S]*\}/);
@@ -426,6 +426,7 @@ export class OrchestratorV2 {
   
   private callbacks: OrchestratorV2Callbacks;
   private generationToken?: string;
+  private geminiQAFlags?: { finalReviewer?: boolean; continuitySentinel?: boolean; narrativeDirector?: boolean };
   
   private cumulativeTokens = {
     inputTokens: 0,
@@ -444,6 +445,10 @@ export class OrchestratorV2 {
     }
   }
   
+  setGeminiQAFlags(flags: { finalReviewer?: boolean; continuitySentinel?: boolean; narrativeDirector?: boolean }) {
+    this.geminiQAFlags = flags;
+  }
+
   // Check if this orchestrator instance is still valid (not superseded by a new generation)
   private async isTokenStillValid(projectId: number): Promise<boolean> {
     try {
@@ -4542,8 +4547,11 @@ Si detectas cambios problemáticos, recházala con concerns específicos.`;
     }
   }
 
-  async generateNovel(project: Project, options?: { useGeminiArchitect?: boolean }): Promise<void> {
-    console.log(`[OrchestratorV2] Starting novel generation for "${project.title}" (ID: ${project.id})${options?.useGeminiArchitect ? ' [Architect: Gemini]' : ''}`);
+  async generateNovel(project: Project, options?: { useGeminiArchitect?: boolean; useGeminiQA?: { finalReviewer?: boolean; continuitySentinel?: boolean; narrativeDirector?: boolean } }): Promise<void> {
+    const qaGemini = options?.useGeminiQA;
+    this.geminiQAFlags = qaGemini;
+    const qaFlags = qaGemini ? ` [QA Gemini: ${qaGemini.finalReviewer ? 'FR' : ''}${qaGemini.continuitySentinel ? ' CS' : ''}${qaGemini.narrativeDirector ? ' ND' : ''}]` : '';
+    console.log(`[OrchestratorV2] Starting novel generation for "${project.title}" (ID: ${project.id})${options?.useGeminiArchitect ? ' [Architect: Gemini]' : ''}${qaFlags}`);
     
     try {
       // Update project status
@@ -7371,10 +7379,11 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
       plotThreads,
       currentChapter,
       totalChapters,
-    });
+    }, this.geminiQAFlags?.narrativeDirector ? { forceProvider: "gemini" } : undefined);
 
+    const ndModel = this.geminiQAFlags?.narrativeDirector ? "gemini-3-pro-preview" : "deepseek-chat";
     this.addTokenUsage(result.tokenUsage);
-    await this.logAiUsage(projectId, "narrative-director", "deepseek-chat", result.tokenUsage, currentChapter);
+    await this.logAiUsage(projectId, "narrative-director", ndModel, result.tokenUsage, currentChapter);
 
     let needsRewrite = false;
     let directive = "";
@@ -7693,7 +7702,13 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
             this.callbacks.onAgentStatus("beta-reader", "active", `Auditoría continuidad caps ${startChapter}-${endChapter} (${completedAudits}/${totalAudits})...`);
             
             try {
-              const result = await this.continuitySentinel.auditContinuity(block, startChapter, endChapter);
+              const csForceProvider = this.geminiQAFlags?.continuitySentinel ? { forceProvider: "gemini" as const } : undefined;
+              const result = await this.continuitySentinel.auditContinuity(block, startChapter, endChapter, csForceProvider);
+              if (result.tokenUsage) {
+                this.addTokenUsage(result.tokenUsage);
+                const csModel = this.geminiQAFlags?.continuitySentinel ? "gemini-3-pro-preview" : "deepseek-reasoner";
+                await this.logAiUsage(project.id, "continuity-sentinel", csModel, result.tokenUsage);
+              }
               qaResults.push({ type: 'continuity', result, startChapter, endChapter });
             } catch (e: any) {
               qaResults.push({ type: 'continuity', error: e.message });
@@ -8648,6 +8663,7 @@ Si el error es de inconsistencia física/edad:
           console.log(`[OrchestratorV2] No 3-act structure found in World Bible, using fixed-size tranches`);
         }
         
+        const frForceProvider = this.geminiQAFlags?.finalReviewer ? "gemini" as const : undefined;
         const reviewResult = await this.finalReviewer.execute({
           projectTitle: project.title,
           chapters: chaptersForReview,
@@ -8665,10 +8681,11 @@ Si el error es de inconsistencia física/edad:
             );
             console.log(`[OrchestratorV2] FinalReviewer progress: ${currentTranche}/${totalTranches} - ${chaptersInTranche}`);
           },
-        });
+        }, frForceProvider ? { forceProvider: frForceProvider } : undefined);
 
+        const frModel = frForceProvider ? "gemini-3-pro-preview" : "deepseek-reasoner";
         this.addTokenUsage(reviewResult.tokenUsage);
-        await this.logAiUsage(project.id, "final-reviewer", "deepseek-reasoner", reviewResult.tokenUsage);
+        await this.logAiUsage(project.id, "final-reviewer", frModel, reviewResult.tokenUsage);
 
         // FinalReviewer returns 'result' not 'parsed'
         if (!reviewResult.result) {
@@ -10999,6 +11016,7 @@ ${issuesDescription}`;
       });
 
       try {
+        const dfForceProvider = this.geminiQAFlags?.finalReviewer ? "gemini" as const : undefined;
         const reviewResult = await this.finalReviewer.execute({
           chapters: chapters.map(c => ({
             numero: c.chapterNumber,
@@ -11009,10 +11027,11 @@ ${issuesDescription}`;
           projectTitle: project.title,
           guiaEstilo: project.styleGuide || `Género: ${project.genre || 'Ficción'}. Tono: ${project.tone || 'neutral'}.`,
           pasadaNumero: reviewNum,
-        });
+        }, dfForceProvider ? { forceProvider: dfForceProvider } : undefined);
 
+        const dfModel = dfForceProvider ? "gemini-3-pro-preview" : "deepseek-reasoner";
         this.addTokenUsage(reviewResult.tokenUsage);
-        await this.logAiUsage(project.id, "final-reviewer", "deepseek-reasoner", reviewResult.tokenUsage);
+        await this.logAiUsage(project.id, "final-reviewer", dfModel, reviewResult.tokenUsage);
 
         const finalResult = reviewResult.result || reviewResult as any;
         const issues = finalResult?.issues || [];
