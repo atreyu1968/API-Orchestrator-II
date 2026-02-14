@@ -11846,10 +11846,16 @@ ${relatedIssue.instrucciones ? `Instrucciones: ${relatedIssue.instrucciones}` : 
     plan: RepairPlanItem[];
   }> {
     const projectId = project.id;
-    await storage.updateProject(projectId, {
-      targetedRepairStatus: 'diagnosing',
-      targetedRepairProgress: { current: 0, total: 3, message: 'Iniciando diagnóstico...' },
-    });
+    const currentProject = await storage.getProject(projectId);
+    const isInAutoCycle = currentProject?.targetedRepairStatus === 'auto_cycle';
+
+    // Preserve auto_cycle status during the cycle
+    if (!isInAutoCycle) {
+      await storage.updateProject(projectId, {
+        targetedRepairStatus: 'diagnosing',
+        targetedRepairProgress: { current: 0, total: 3, message: 'Iniciando diagnóstico...' },
+      });
+    }
 
     this.callbacks.onAgentStatus("targeted-repair", "active", "Diagnosticando novela completa...");
 
@@ -12046,7 +12052,7 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
       await storage.updateProject(projectId, {
         targetedRepairDiagnosis: diagnosis,
         targetedRepairPlan: planForDb as any,
-        targetedRepairStatus: 'plan_ready',
+        targetedRepairStatus: isInAutoCycle ? 'auto_cycle' : 'plan_ready',
         targetedRepairProgress: {
           current: 3, total: 3,
           message: `Plan listo: ${plan.length} capítulos a intervenir (${issues.length} problemas detectados)`,
@@ -12081,8 +12087,9 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
     const freshProject = await storage.getProject(projectId);
     const rawPlan = freshProject?.targetedRepairPlan || project.targetedRepairPlan;
     const plan: RepairPlanItem[] = (Array.isArray(rawPlan) ? rawPlan : []) as RepairPlanItem[];
+    const isInAutoCycle = freshProject?.targetedRepairStatus === 'auto_cycle';
 
-    console.log(`[TargetedRepair] executeRepairPlan called. Plan length: ${plan.length}, raw type: ${typeof rawPlan}, isArray: ${Array.isArray(rawPlan)}`);
+    console.log(`[TargetedRepair] executeRepairPlan called. Plan length: ${plan.length}, raw type: ${typeof rawPlan}, isArray: ${Array.isArray(rawPlan)}, autoCycle: ${isInAutoCycle}`);
     if (plan.length > 0) {
       console.log(`[TargetedRepair] First plan item: chapter=${plan[0].chapter}, issues=${plan[0].issues?.length}, approach=${plan[0].approach}`);
     }
@@ -12097,10 +12104,12 @@ RESPONDE EXCLUSIVAMENTE EN JSON VÁLIDO:
     if (startCorrection) startCorrection(projectId, 'detect-fix');
 
     try {
-      await storage.updateProject(projectId, {
-        targetedRepairStatus: 'executing',
-        targetedRepairProgress: { current: 0, total: plan.length, message: 'Iniciando reparaciones...', results: [] },
-      });
+      if (!isInAutoCycle) {
+        await storage.updateProject(projectId, {
+          targetedRepairStatus: 'executing',
+          targetedRepairProgress: { current: 0, total: plan.length, message: 'Iniciando reparaciones...', results: [] },
+        });
+      }
 
       this.callbacks.onAgentStatus("targeted-repair", "active",
         `Ejecutando plan: ${plan.length} capítulos a reparar...`);
@@ -12549,7 +12558,7 @@ ${adjacentContext.nextChapter ? `CONTEXTO (capítulo siguiente): ${adjacentConte
         : 'Todos los capítulos corregidos y verificados';
 
       await storage.updateProject(projectId, {
-        targetedRepairStatus: 'completed',
+        targetedRepairStatus: isInAutoCycle ? 'auto_cycle' : 'completed',
         targetedRepairDiagnosis: null,
         targetedRepairPlan: null,
         targetedRepairProgress: {
@@ -12575,6 +12584,196 @@ ${adjacentContext.nextChapter ? `CONTEXTO (capítulo siguiente): ${adjacentConte
         `Reparación completada: ${totalFixed}/${totalIssues} problemas en ${successCount} capítulos`);
 
       return results;
+
+    } finally {
+      if (endCorrection) endCorrection(projectId);
+    }
+  }
+
+  async runAutoCycleRepair(project: any, maxCycles: number = 10): Promise<{
+    cycles: number;
+    finalScore: number;
+    consecutiveHighScores: number;
+    history: Array<{ cycle: number; score: number; issuesFound: number; issuesFixed: number }>;
+    success: boolean;
+  }> {
+    const projectId = project.id;
+    const TARGET_SCORE = 9;
+    const REQUIRED_CONSECUTIVE = 2;
+
+    const startCorrection = (global as any).startCorrection;
+    const endCorrection = (global as any).endCorrection;
+    const isCorrectionCancelled = (global as any).isCorrectionCancelled;
+
+    if (startCorrection) {
+      if (endCorrection) endCorrection(projectId);
+      startCorrection(projectId, 'detect-fix');
+    }
+
+    const history: Array<{ cycle: number; score: number; issuesFound: number; issuesFixed: number }> = [];
+    let consecutiveHighScores = 0;
+    let finalScore = 0;
+
+    try {
+      await storage.updateProject(projectId, {
+        targetedRepairStatus: 'auto_cycle',
+        targetedRepairProgress: {
+          current: 0, total: maxCycles,
+          message: `Ciclo automático iniciado (objetivo: ${REQUIRED_CONSECUTIVE} diagnósticos consecutivos con ${TARGET_SCORE}+/10)`,
+          autoCycle: true,
+          consecutiveHighScores: 0,
+          history: [],
+        },
+      });
+
+      for (let cycle = 1; cycle <= maxCycles; cycle++) {
+        if (isCorrectionCancelled && isCorrectionCancelled(projectId)) {
+          console.log(`[AutoCycle] Cancelled by user at cycle ${cycle}`);
+          await storage.createActivityLog({
+            projectId, level: "info", agentRole: "targeted-repair",
+            message: `Ciclo automático cancelado por el usuario en ciclo ${cycle}`,
+          });
+          break;
+        }
+
+        const freshProject = await storage.getProject(projectId);
+        if (freshProject?.targetedRepairStatus === 'idle' || freshProject?.targetedRepairStatus === 'error') {
+          console.log(`[AutoCycle] Status changed to ${freshProject?.targetedRepairStatus}, stopping`);
+          break;
+        }
+
+        this.callbacks.onAgentStatus("targeted-repair", "active",
+          `Ciclo automático ${cycle}/${maxCycles}: Diagnosticando... (${consecutiveHighScores}/${REQUIRED_CONSECUTIVE} puntuaciones 9+)`);
+
+        await storage.updateProject(projectId, {
+          targetedRepairProgress: {
+            current: cycle, total: maxCycles,
+            message: `Ciclo ${cycle}/${maxCycles}: Diagnosticando...`,
+            autoCycle: true,
+            consecutiveHighScores,
+            history,
+          },
+        });
+
+        await storage.createActivityLog({
+          projectId, level: "info", agentRole: "targeted-repair",
+          message: `Ciclo automático ${cycle}/${maxCycles}: Iniciando diagnóstico (${consecutiveHighScores}/${REQUIRED_CONSECUTIVE} puntuaciones 9+ consecutivas)`,
+        });
+
+        // PHASE 1: Diagnose
+        let diagResult;
+        try {
+          diagResult = await this.diagnoseForTargetedRepair(freshProject || project);
+        } catch (diagError) {
+          console.error(`[AutoCycle] Diagnosis failed at cycle ${cycle}:`, diagError);
+          await storage.createActivityLog({
+            projectId, level: "error", agentRole: "targeted-repair",
+            message: `Ciclo ${cycle}: Error en diagnóstico - ${diagError instanceof Error ? diagError.message : 'Error desconocido'}`,
+          });
+          break;
+        }
+
+        const score = diagResult.diagnosis?.overallScore || 0;
+        finalScore = score;
+
+        if (score >= TARGET_SCORE) {
+          consecutiveHighScores++;
+        } else {
+          consecutiveHighScores = 0;
+        }
+
+        await storage.createActivityLog({
+          projectId, level: score >= TARGET_SCORE ? "success" : "info", agentRole: "targeted-repair",
+          message: `Ciclo ${cycle}: Puntuación ${score}/10. ${diagResult.plan.length} problemas detectados. (${consecutiveHighScores}/${REQUIRED_CONSECUTIVE} puntuaciones 9+ consecutivas)`,
+        });
+
+        // Check if we've reached the target
+        if (consecutiveHighScores >= REQUIRED_CONSECUTIVE) {
+          history.push({ cycle, score, issuesFound: diagResult.plan.length, issuesFixed: 0 });
+          await storage.createActivityLog({
+            projectId, level: "success", agentRole: "targeted-repair",
+            message: `Ciclo automático COMPLETADO: ${REQUIRED_CONSECUTIVE} puntuaciones consecutivas de ${TARGET_SCORE}+ alcanzadas (${score}/10). Novela aprobada tras ${cycle} ciclos.`,
+          });
+          this.callbacks.onAgentStatus("targeted-repair", "completed",
+            `Ciclo automático completado: ${REQUIRED_CONSECUTIVE}x ${TARGET_SCORE}+ consecutivos (${score}/10) en ${cycle} ciclos`);
+          break;
+        }
+
+        // If there are no issues to fix (score is high but first time), record and continue
+        if (diagResult.plan.length === 0) {
+          history.push({ cycle, score, issuesFound: 0, issuesFixed: 0 });
+          continue;
+        }
+
+        // PHASE 2: Execute repairs
+        this.callbacks.onAgentStatus("targeted-repair", "active",
+          `Ciclo ${cycle}/${maxCycles}: Corrigiendo ${diagResult.plan.length} capítulos... (${consecutiveHighScores}/${REQUIRED_CONSECUTIVE} puntuaciones 9+)`);
+
+        await storage.updateProject(projectId, {
+          targetedRepairProgress: {
+            current: cycle, total: maxCycles,
+            message: `Ciclo ${cycle}: Corrigiendo ${diagResult.plan.length} capítulos...`,
+            autoCycle: true,
+            consecutiveHighScores,
+            history,
+          },
+        });
+
+        let issuesFixed = 0;
+        try {
+          const repairResults = await this.executeRepairPlan(freshProject || project);
+          issuesFixed = repairResults.reduce((sum, r) => sum + r.issuesFixed, 0);
+          const totalIssues = repairResults.reduce((sum, r) => sum + r.issuesTotal, 0);
+
+          await storage.createActivityLog({
+            projectId, level: "info", agentRole: "targeted-repair",
+            message: `Ciclo ${cycle}: Reparación completada - ${issuesFixed}/${totalIssues} problemas resueltos`,
+          });
+        } catch (repairError) {
+          console.error(`[AutoCycle] Repair failed at cycle ${cycle}:`, repairError);
+          await storage.createActivityLog({
+            projectId, level: "error", agentRole: "targeted-repair",
+            message: `Ciclo ${cycle}: Error en reparación - ${repairError instanceof Error ? repairError.message : 'Error desconocido'}`,
+          });
+        }
+
+        // Restore auto_cycle status (executeRepairPlan sets it to 'completed' and calls endCorrection)
+        await storage.updateProject(projectId, { targetedRepairStatus: 'auto_cycle' });
+        if (startCorrection) {
+          startCorrection(projectId, 'detect-fix');
+        }
+
+        history.push({ cycle, score, issuesFound: diagResult.plan.length, issuesFixed });
+
+        // Brief pause between cycles to avoid rate limiting
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      const success = consecutiveHighScores >= REQUIRED_CONSECUTIVE;
+
+      await storage.updateProject(projectId, {
+        targetedRepairStatus: success ? 'completed' : 'completed',
+        targetedRepairDiagnosis: null,
+        targetedRepairPlan: null,
+        targetedRepairProgress: {
+          current: history.length, total: maxCycles,
+          message: success
+            ? `Ciclo automático COMPLETADO: ${REQUIRED_CONSECUTIVE} puntuaciones ${TARGET_SCORE}+ consecutivas en ${history.length} ciclos (${finalScore}/10)`
+            : `Ciclo automático finalizado tras ${history.length} ciclos. Última puntuación: ${finalScore}/10 (${consecutiveHighScores}/${REQUIRED_CONSECUTIVE} consecutivas)`,
+          autoCycle: true,
+          consecutiveHighScores,
+          history,
+          finalScore,
+          success,
+        },
+      });
+
+      if (!success) {
+        this.callbacks.onAgentStatus("targeted-repair", "completed",
+          `Ciclo automático finalizado: ${history.length} ciclos, última puntuación ${finalScore}/10`);
+      }
+
+      return { cycles: history.length, finalScore, consecutiveHighScores, history, success };
 
     } finally {
       if (endCorrection) endCorrection(projectId);

@@ -1211,14 +1211,24 @@ export async function registerRoutes(
         return res.status(404).json({ error: "Project not found" });
       }
 
+      // Clear any stale correction state from previous runs
       if (isAnyCorrectionActive(id)) {
-        return res.status(409).json({ error: "Ya hay un proceso activo para este proyecto" });
+        console.log(`[TargetedRepair] Clearing stale correction state for project ${id} before new diagnosis`);
+        endCorrection(id);
       }
 
       const chapters = await storage.getChaptersByProject(id);
       if (chapters.length === 0) {
         return res.status(400).json({ error: "El proyecto no tiene capítulos" });
       }
+
+      // Reset targeted repair state for fresh diagnosis
+      await storage.updateProject(id, {
+        targetedRepairStatus: 'diagnosing',
+        targetedRepairDiagnosis: null,
+        targetedRepairPlan: null,
+        targetedRepairProgress: { current: 0, total: 3, message: 'Iniciando diagnóstico...' },
+      });
 
       res.json({ message: "Diagnóstico iniciado", projectId: id });
 
@@ -1301,8 +1311,10 @@ export async function registerRoutes(
         return res.status(400).json({ error: "No hay plan de reparación. Ejecuta el diagnóstico primero." });
       }
 
+      // Clear any stale correction state from previous runs
       if (isAnyCorrectionActive(id)) {
-        return res.status(409).json({ error: "Ya hay un proceso activo para este proyecto" });
+        console.log(`[TargetedRepair] Clearing stale correction state for project ${id} before execution`);
+        endCorrection(id);
       }
 
       res.json({ message: "Ejecutando plan de reparación", projectId: id });
@@ -1367,6 +1379,81 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error cancelling targeted repair:", error);
       res.status(500).json({ error: "Failed to cancel" });
+    }
+  });
+
+  // Auto-cycle targeted repair: diagnose → correct → repeat until 2 consecutive 9+ scores
+  app.post("/api/projects/:id/targeted-repair/auto-cycle", async (req: Request, res: Response) => {
+    try {
+      const id = parseInt(req.params.id);
+      const project = await storage.getProject(id);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      // Clear any stale correction state
+      if (isAnyCorrectionActive(id)) {
+        console.log(`[AutoCycle] Clearing stale correction state for project ${id}`);
+        endCorrection(id);
+      }
+
+      const chapters = await storage.getChaptersByProject(id);
+      const completedChapters = chapters.filter(c =>
+        (c.status === "completed" || c.status === "approved") && c.content && c.content.length > 100
+      );
+      if (completedChapters.length === 0) {
+        return res.status(400).json({ error: "No hay capítulos completados para diagnosticar" });
+      }
+
+      const maxCycles = Math.min(parseInt(req.body?.maxCycles) || 10, 20);
+
+      res.json({ message: "Ciclo automático iniciado", projectId: id, maxCycles });
+
+      const sendToStreams = (data: any) => {
+        const streams = activeStreams.get(id);
+        if (streams) {
+          const message = `data: ${JSON.stringify(data)}\n\n`;
+          streams.forEach(stream => {
+            try { stream.write(message); } catch (e) { /* ignore */ }
+          });
+        }
+      };
+
+      const orchestrator = new OrchestratorV2({
+        onAgentStatus: async (role, status, message) => {
+          await storage.updateAgentStatus(id, role, { status, currentTask: message });
+          sendToStreams({ type: "agent_status", role, status, message });
+        },
+        onChapterComplete: async () => {},
+        onSceneComplete: async () => {},
+        onProjectComplete: async () => {},
+        onError: async (error) => {
+          sendToStreams({ type: "error", message: error });
+        },
+      });
+
+      orchestrator.runAutoCycleRepair(project, maxCycles).then(async (result) => {
+        sendToStreams({
+          type: "targeted_repair_auto_cycle_complete",
+          ...result,
+        });
+        const statusMsg = result.success
+          ? `Ciclo automático COMPLETADO: 2x 9+ en ${result.cycles} ciclos (${result.finalScore}/10)`
+          : `Ciclo automático finalizado: ${result.cycles} ciclos, última puntuación ${result.finalScore}/10`;
+        await persistActivityLog(id, result.success ? "success" : "warn", statusMsg, "targeted-repair");
+      }).catch(async (error) => {
+        console.error("[AutoCycle] Error:", error);
+        await storage.updateProject(id, {
+          targetedRepairStatus: "error",
+          targetedRepairProgress: { message: error instanceof Error ? error.message : "Error en ciclo automático" },
+        });
+        sendToStreams({ type: "error", message: error instanceof Error ? error.message : "Error en ciclo automático" });
+      });
+
+    } catch (error) {
+      console.error("Error starting auto-cycle repair:", error);
+      res.status(500).json({ error: "Failed to start auto-cycle" });
     }
   });
 

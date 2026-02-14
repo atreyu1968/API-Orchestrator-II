@@ -682,6 +682,21 @@ export default function Dashboard() {
     },
   });
 
+  const autoCycleMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await apiRequest("POST", `/api/projects/${id}/targeted-repair/auto-cycle`, { maxCycles: 10 });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Ciclo automático iniciado", description: "Diagnosticando y corrigiendo hasta obtener 2 puntuaciones 9+ consecutivas..." });
+      addLog("thinking", "Iniciando ciclo automático de diagnóstico-corrección...", "targeted-repair");
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message || "No se pudo iniciar el ciclo automático", variant: "destructive" });
+    },
+  });
+
   const resumeProjectMutation = useMutation({
     mutationFn: async (id: number) => {
       console.log("[Resume] Sending resume request for project:", id);
@@ -901,6 +916,17 @@ export default function Dashboard() {
             addLog("success", `Reparación completada: ${data.totalFixed}/${data.totalIssues} problemas resueltos`, "targeted-repair");
           } else if (data.type === "targeted_repair_chapter_progress") {
             addLog("info", `Reparando capítulo ${data.chapterNumber}: ${data.message}`, "targeted-repair");
+          } else if (data.type === "targeted_repair_auto_cycle_complete") {
+            queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/projects", activeProject?.id, "chapters"] });
+            const statusMsg = data.success
+              ? `Ciclo automático COMPLETADO: 2 puntuaciones 9+ consecutivas en ${data.cycles} ciclos (${data.finalScore}/10)`
+              : `Ciclo automático finalizado: ${data.cycles} ciclos, última puntuación ${data.finalScore}/10`;
+            toast({
+              title: data.success ? "Novela aprobada" : "Ciclo automático finalizado",
+              description: statusMsg,
+            });
+            addLog(data.success ? "success" : "info", statusMsg, "targeted-repair");
           }
         } catch (e) {
           console.error("Error parsing SSE:", e);
@@ -1210,12 +1236,35 @@ export default function Dashboard() {
                         variant="outline"
                         size="sm"
                         onClick={() => diagnoseMutation.mutate(currentProject.id)}
-                        disabled={diagnoseMutation.isPending}
+                        disabled={diagnoseMutation.isPending || autoCycleMutation.isPending || currentProject.targetedRepairStatus === 'auto_cycle'}
                         data-testid="button-diagnose-repair"
                       >
                         <Crosshair className="h-4 w-4 mr-2" />
                         {diagnoseMutation.isPending ? "Diagnosticando..." : "Diagnosticar"}
                       </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => autoCycleMutation.mutate(currentProject.id)}
+                        disabled={autoCycleMutation.isPending || diagnoseMutation.isPending || currentProject.targetedRepairStatus === 'auto_cycle'}
+                        data-testid="button-auto-cycle-repair"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        {autoCycleMutation.isPending || currentProject.targetedRepairStatus === 'auto_cycle'
+                          ? "Ciclo automático..."
+                          : "Auto-ciclo (2x 9+)"}
+                      </Button>
+                      {currentProject.targetedRepairStatus === 'auto_cycle' && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => cancelRepairMutation.mutate(currentProject.id)}
+                          data-testid="button-cancel-auto-cycle"
+                        >
+                          <Ban className="h-4 w-4 mr-2" />
+                          Detener ciclo
+                        </Button>
+                      )}
                       {Array.isArray(currentProject.targetedRepairPlan) && currentProject.targetedRepairPlan.length > 0 && (
                         <Button
                           variant="outline"
@@ -1243,6 +1292,21 @@ export default function Dashboard() {
                 </div>
               </CardHeader>
               <CardContent>
+                {(currentProject.targetedRepairStatus === 'auto_cycle' || currentProject.targetedRepairStatus === 'diagnosing' || currentProject.targetedRepairStatus === 'executing') && (currentProject.targetedRepairProgress as any)?.message && (
+                  <div className="mb-3 p-3 rounded-md bg-muted/80 border border-border" data-testid="repair-progress-banner">
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <span className="text-sm font-medium">{(currentProject.targetedRepairProgress as any).message}</span>
+                    </div>
+                    {(currentProject.targetedRepairProgress as any)?.autoCycle && (currentProject.targetedRepairProgress as any)?.history?.length > 0 && (
+                      <div className="mt-2 text-xs text-muted-foreground space-y-1">
+                        {((currentProject.targetedRepairProgress as any).history as any[]).map((h: any, i: number) => (
+                          <div key={i}>Ciclo {h.cycle}: {h.score}/10 - {h.issuesFound} problemas, {h.issuesFixed} corregidos</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-2">
                   {generateExpectedChapters(currentProject, chapters).map((chapter) => (
                     <div 
@@ -1714,12 +1778,35 @@ export default function Dashboard() {
                         variant="outline"
                         size="sm"
                         onClick={() => diagnoseMutation.mutate(currentProject.id)}
-                        disabled={diagnoseMutation.isPending}
+                        disabled={diagnoseMutation.isPending || autoCycleMutation.isPending || currentProject.targetedRepairStatus === 'auto_cycle'}
                         data-testid="button-diagnose-repair-paused"
                       >
                         <Crosshair className="h-4 w-4 mr-2" />
                         {diagnoseMutation.isPending ? "Diagnosticando..." : "Diagnosticar"}
                       </Button>
+                      <Button
+                        variant="default"
+                        size="sm"
+                        onClick={() => autoCycleMutation.mutate(currentProject.id)}
+                        disabled={autoCycleMutation.isPending || diagnoseMutation.isPending || currentProject.targetedRepairStatus === 'auto_cycle'}
+                        data-testid="button-auto-cycle-repair-paused"
+                      >
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                        {autoCycleMutation.isPending || currentProject.targetedRepairStatus === 'auto_cycle'
+                          ? "Ciclo automático..."
+                          : "Auto-ciclo (2x 9+)"}
+                      </Button>
+                      {currentProject.targetedRepairStatus === 'auto_cycle' && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => cancelRepairMutation.mutate(currentProject.id)}
+                          data-testid="button-cancel-auto-cycle-paused"
+                        >
+                          <Ban className="h-4 w-4 mr-2" />
+                          Detener ciclo
+                        </Button>
+                      )}
                       {Array.isArray(currentProject.targetedRepairPlan) && currentProject.targetedRepairPlan.length > 0 && (
                         <Button
                           variant="outline"
